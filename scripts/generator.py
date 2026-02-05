@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 
 from scripts.config import DEFAULT_CONFIG
-# from scripts.random_noise import add_random_noise
+from scripts.random_noise import add_random_noise
 
-def draw_from_dist(channel_cfg: dict, week: int, rng: np.random.Generator) -> float: #todo temporary
+def draw_from_dist(rng: np.random.Generator) -> float: #todo temporary
     """
     Temporary spend sampler until the real distribution is implemented.
     Currently: uniform(8000, 15000) dollars.
@@ -28,7 +28,7 @@ def generate_synthetic_data(config: dict):
       ground_truth: dict mapping channel -> true ROI
     """
 
-    seed = config.get("seed", 42)
+    seed = config.get("seed", 133233)
     weeks = int(config["weeks"])
     channels_cfg = config["channels"]
 
@@ -42,7 +42,7 @@ def generate_synthetic_data(config: dict):
 
     for j, channel_cfg in enumerate(channels_cfg):
         for w in range(weeks):
-            spend = draw_from_dist(channel_cfg, w, rng)
+            spend = draw_from_dist(rng)
 
             # per channel spend noise
             spend = add_random_noise(
@@ -77,5 +77,5 @@ if __name__ == "__main__":
     for ch, roi in gt.items():
         print(f"  {ch}: {roi:.4f}")
 
-    print("\nFirst 10 rows of generated data:\n")
-    print(df.head(10).to_string(index=False))
+    print("\nFirst 5 rows of generated data:\n")
+    print(df.head(5).to_string(index=False))

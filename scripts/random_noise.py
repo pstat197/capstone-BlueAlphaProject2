@@ -1,9 +1,8 @@
 """Generate random noise scaled by the magnitude of a number."""
 
-import random
+import numpy as np
 
-
-def add_random_noise(x, scale: float = 0.1, min_std: float = 1e-6):
+def add_random_noise(x, rng: np.random.Generator, scale: float = 0.1, min_std: float = 1e-6):
     """
     Add random Gaussian noise around a number, with variance scaled by its size.
 
@@ -27,4 +26,4 @@ def add_random_noise(x, scale: float = 0.1, min_std: float = 1e-6):
     
     magnitude = max(abs(x), 1e-10)
     std = max(scale * magnitude, min_std)
-    return x + random.gauss(0, std)
+    return x + rng.normal(0, std)

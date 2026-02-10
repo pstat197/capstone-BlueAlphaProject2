@@ -3,7 +3,7 @@ import pandas as pd
 
 from scripts.config import DEFAULT_CONFIG
 from scripts.random_noise import add_random_noise
-from scripts.spend_distribution import spend_distribution
+from scripts.spend_distribution import get_spend_and_impressions
 
 
 
@@ -17,7 +17,7 @@ def generate_synthetic_data(config: dict):
       - channels: list[{"name": str, "roi": float, ...}]
 
     Returns:
-      df: DataFrame with columns [week, revenue, <channel spends...>]
+      df: DataFrame with columns [week, revenue, <channel>_spend, <channel>_impressions, ...]
       ground_truth: dict mapping channel -> true ROI
     """
 
@@ -32,10 +32,13 @@ def generate_synthetic_data(config: dict):
     ground_truth = {c["name"]: float(c["roi"]) for c in channels_cfg}
 
     spend_matrix = np.zeros((weeks, len(channels_cfg)), dtype=float)
+    impressions_matrix = np.zeros((weeks, len(channels_cfg)), dtype=np.int64)
 
     for j, channel_cfg in enumerate(channels_cfg):
         for w in range(weeks):
-            spend_matrix[w, j] = spend_distribution(rng)
+            spend, impressions = get_spend_and_impressions(rng)
+            spend_matrix[w, j] = spend
+            impressions_matrix[w, j] = int(impressions)
 
     # --- Revenue from spend and true ROI ---
     revenue = spend_matrix @ true_rois
@@ -47,10 +50,15 @@ def generate_synthetic_data(config: dict):
             rng=rng,
         )
 
-    # --- DataFrame ---
-    df = pd.DataFrame(spend_matrix, columns=channel_names)
-    df.insert(0, "revenue", revenue)
-    df.insert(0, "week", np.arange(1, weeks + 1))
+    # --- DataFrame: week, revenue, <channel>_spend, <channel>_impressions, ... ---
+    records = []
+    for w in range(weeks):
+        row = {"week": w + 1, "revenue": revenue[w]}
+        for j, name in enumerate(channel_names):
+            row[f"{name}_spend"] = spend_matrix[w, j]
+            row[f"{name}_impressions"] = impressions_matrix[w, j]
+        records.append(row)
+    df = pd.DataFrame(records)
 
     return df, ground_truth
 

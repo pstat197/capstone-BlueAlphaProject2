@@ -3,13 +3,8 @@ import pandas as pd
 
 from scripts.config import DEFAULT_CONFIG
 from scripts.random_noise import add_random_noise
+from scripts.spend_distribution import spend_distribution
 
-def draw_from_dist(rng: np.random.Generator) -> float: #todo temporary
-    """
-    Temporary spend sampler until the real distribution is implemented.
-    Currently: uniform(8000, 15000) dollars.
-    """
-    return rng.uniform(8, 15) * 1000
 
 
 def generate_synthetic_data(config: dict):
@@ -40,15 +35,7 @@ def generate_synthetic_data(config: dict):
 
     for j, channel_cfg in enumerate(channels_cfg):
         for w in range(weeks):
-            spend = draw_from_dist(rng)
-
-            # per channel spend noise
-            spend = add_random_noise(
-                spend,
-                rng=rng,
-            )
-
-            spend_matrix[w, j] = spend
+            spend_matrix[w, j] = spend_distribution(rng)
 
     # --- Revenue from spend and true ROI ---
     revenue = spend_matrix @ true_rois

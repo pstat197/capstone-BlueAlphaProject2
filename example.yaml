@@ -1,0 +1,21 @@
+run_identifier: Example Alpha
+week_range: 26
+
+noise_level:
+  impression: 0.2
+  revenue: 0.15
+
+channel_list:
+  - channel:
+      channel_name: TikTok
+      true_roi: 3.1
+      spend_range: [1500, 40000]
+      baseline_revenue: 6000
+      saturation_function: log(x+1)
+
+  - channel:
+      channel_name: LinkedIn
+      true_roi: 2.2
+      spend_range: [3000, 60000]
+      baseline_revenue: 9500
+      saturation_function: sqrt(x)

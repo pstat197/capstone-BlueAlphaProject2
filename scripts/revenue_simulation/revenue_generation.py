@@ -4,8 +4,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-import scripts.dataclasses.channel as Channel
-import scripts.dataclasses.input_configurations as InputConfigurations
+import scripts.synth_input_classes.channel as Channel
+import scripts.synth_input_classes.input_configurations as InputConfigurations
 
 def _saturation_fn(impressions: np.ndarray, saturation_cfg: dict):
     """

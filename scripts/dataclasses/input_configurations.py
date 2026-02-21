@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .channel import Channel
 
@@ -9,10 +9,14 @@ class InputConfigurations:
     run_identifier: str
     week_range: int
     channel_list: List[Channel]
+    seed: Optional[int] = None
 
     @classmethod
     def from_yaml_dict(cls, data: Dict[str, Any]) -> "InputConfigurations":
         """Build InputConfigurations from a dict loaded from YAML."""
+        seed = data.pop("seed", None)
+        if seed is not None:
+            seed = int(seed)
         channel_list_raw = data.get("channel_list") or []
         channels = []
         for item in channel_list_raw:
@@ -35,6 +39,7 @@ class InputConfigurations:
             run_identifier=str(data.get("run_identifier", "")),
             week_range=int(data.get("week_range", 0)),
             channel_list=channels,
+            seed=seed,
         )
 
     def get_run_identifier(self) -> str:
@@ -45,3 +50,11 @@ class InputConfigurations:
 
     def get_channel_list(self) -> List[Channel]:
         return self.channel_list
+
+    def get_seed(self) -> Optional[int]:
+        return self.seed
+
+    def get_rng(self):  # -> np.random.Generator (avoid np import at module level)
+        """Return the RNG for this config (same one used during load, seeded with get_seed() if set)."""
+        from scripts.config.noise import get_default_rng
+        return get_default_rng()

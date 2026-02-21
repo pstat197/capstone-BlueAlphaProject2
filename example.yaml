@@ -1,6 +1,9 @@
+# Optional: set number_of_channels (integer) to generate that many channels from default
+
 run_identifier: Example Alpha
 week_range: 26
-
+seed: 133233
+# number_of_channels: 3
 
 channel_list:
   - channel:

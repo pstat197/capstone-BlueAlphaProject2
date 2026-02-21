@@ -3,7 +3,7 @@ week_range: 52
 
 channel_list:
   - channel:
-      channel_name: Meta
+      channel_name: Channel 1
       spend_sampling_gamma_params:
         shape: 2.5
         scale: 1000
@@ -13,17 +13,4 @@ channel_list:
       true_roi: 2.5
       spend_range: [1000, 50000]
       baseline_revenue: 5000
-      saturation_function: e^x
-
-  - channel:
-      channel_name: Google
-      spend_sampling_gamma_params:
-        shape: 2.5
-        scale: 1000
-      noise_variance:
-        impression: 0.1
-        revenue: 0.1
-      true_roi: 1.8
-      spend_range: [2000, 80000]
-      baseline_revenue: 8000
       saturation_function: e^x

@@ -1,13 +1,14 @@
 import argparse
 from pathlib import Path
 
-import yaml
 import pandas as pd
 import numpy as np
+import datetime
 
 from scripts.spend_simulation.spend_generation import generate_spend
 from scripts.impressions_simulation.impressions_generation import generate_impressions
 from scripts.revenue_simulation.revenue_generation import generate_revenue
+from scripts.config.loader import load_config
 
 from dataclasses.input_configurations import InputConfigurations
 
@@ -65,29 +66,25 @@ def construct_csv(
 
 def main(yaml_path):
 
-    # load config
-    path = Path(yaml_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
-
-    with open(path, "r") as f:
-        data = yaml.safe_load(f)
-
-    config = InputConfigurations.from_yaml_dict(data)
+    # load config (merges with config/default.yaml; supports number_of_channels)
+    config = load_config(yaml_path)
 
     # generate spend
-    # spend_matrix = generate_spend(config)
+    spend_matrix = generate_spend(config)
 
     # generate impressions
-    # impressions_matrix = generate_impressions(config, spend_matrix)
+    impressions_matrix = generate_impressions(config, spend_matrix)
 
     # generate revenue
-    # revenue_matrix = generate_revenue(config, impressions_matrix)
+    revenue_matrix = generate_revenue(config, impressions_matrix)
 
     # construct csv
-    # df = construct_csv(config, spend_matrix, impressions_matrix, revenue_matrix)
-    # df.to_csv(f"output/{config.get_run_identifier()}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", index=False)
-    # print(f"Saved to: output/{config.get_run_identifier()}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv")
+    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_matrix)
+
+    print(df.head())
+
+    df.to_csv(f"output/{config.get_run_identifier()}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", index=False)
+    print(f"Saved to: output/{config.get_run_identifier()}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run with a YAML config (e.g. example.yaml)")

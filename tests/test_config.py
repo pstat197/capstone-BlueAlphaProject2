@@ -1,21 +1,22 @@
 """
-Test loading example.yaml and the dataclasses (InputConfigurations, Channel).
+Tests for configuration loading, input dataclasses, and config step.
 Uses scripts.config.loader.load_config (merge with default.yaml).
-Run from project root: python test.py
+Run from project root: python -m tests.test_config  or  python test.py
 """
 from pathlib import Path
 
-import yaml
-
-# Import via scripts package so stdlib 'dataclasses' is not shadowed
 from scripts.dataclasses.input_configurations import InputConfigurations
 from scripts.dataclasses.channel import Channel
 from scripts.config.loader import load_config
 
 
+def _project_root():
+    return Path(__file__).resolve().parent.parent
+
+
 def test_load_example_yaml():
     """Load example.yaml via loader (merge with default)."""
-    example_path = Path(__file__).resolve().parent / "example.yaml"
+    example_path = _project_root() / "example.yaml"
     assert example_path.exists(), f"example.yaml not found at {example_path}"
     config = load_config(str(example_path))
     return config
@@ -66,10 +67,10 @@ def test_channel_linkedin(config: InputConfigurations):
 
 
 def test_load_default_yaml():
-    """Load scripts/Default.yaml via loader and sanity-check structure."""
-    default_path = Path(__file__).resolve().parent / "scripts" / "Default.yaml"
+    """Load scripts/config/default.yaml via loader and sanity-check structure."""
+    default_path = _project_root() / "scripts" / "config" / "default.yaml"
     if not default_path.exists():
-        return  # skip if no Default.yaml
+        return  # skip if missing
     config = load_config(str(default_path))
     assert config.get_run_identifier() == "Default"
     assert config.get_week_range() == 52
@@ -92,7 +93,6 @@ def test_number_of_channels_generates_from_default():
         assert config.get_run_identifier() == "GeneratedRun"
         channels = config.get_channel_list()
         assert len(channels) == 3
-        # With no channel_list, merge has default's 1 channel; we add 2 generated to reach 3
         names = [c.get_channel_name() for c in channels]
         assert len(names) == 3
         assert names[0] == "Channel 1"  # from default.yaml
@@ -118,7 +118,6 @@ def test_missing_fields_filled_from_default():
         channels = config.get_channel_list()
         assert len(channels) == 1
         assert channels[0].get_channel_name() == "Only"
-        # default channel has gamma and noise; merged in
         assert channels[0].get_spend_sampling_gamma_params()
         assert channels[0].get_noise_variance()
     finally:
@@ -137,7 +136,6 @@ def test_get_rng_returns_generator(config: InputConfigurations):
     assert rng is not None
     assert hasattr(rng, "normal")
     assert hasattr(rng, "random")
-    # Can draw a number
     x = rng.normal(0, 1)
     assert isinstance(x, float)
 
@@ -159,7 +157,6 @@ def test_seed_absent_returns_none():
 def test_missing_run_identifier_gets_timestamp():
     """When run_identifier is empty/missing, loader sets run_YYYYMMDD_HHMM."""
     import tempfile
-    # Empty run_identifier so loader fills with timestamp (default would otherwise supply "Default")
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write('run_identifier: ""\nweek_range: 12\nchannel_list:\n  - channel:\n      channel_name: X\n')
         tmp = f.name
@@ -167,7 +164,6 @@ def test_missing_run_identifier_gets_timestamp():
         config = load_config(tmp)
         rid = config.get_run_identifier()
         assert rid.startswith("run_")
-        # Format run_YYYYMMDD_HHMM
         rest = rid[4:]
         assert "_" in rest
         parts = rest.split("_")
@@ -179,7 +175,7 @@ def test_missing_run_identifier_gets_timestamp():
 
 
 def test_rng_reproducible_with_same_seed():
-    """Loading two configs with the same seed and drawing from get_rng() gives same sequence (after second load)."""
+    """Loading two configs with the same seed and drawing from get_rng() gives same sequence."""
     import tempfile
     yaml_content = "run_identifier: Reproducible\nseed: 12345\nchannel_list:\n  - channel:\n      channel_name: C\n"
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -198,17 +194,12 @@ def test_rng_reproducible_with_same_seed():
 
 
 def main():
-    print("Loading example.yaml and creating InputConfigurations...")
+    print("Config/loading tests...")
+    root = _project_root()
     config = test_load_example_yaml()
     print("  run_identifier:", config.get_run_identifier())
     print("  week_range:", config.get_week_range())
     print("  channels:", [c.get_channel_name() for c in config.get_channel_list()])
-    for c in config.get_channel_list():
-        print("    ", c.get_channel_name(),
-              "gamma:", c.get_spend_sampling_gamma_params(),
-              "noise_variance:", c.get_noise_variance())
-
-    print("\nRunning assertions...")
     test_config_getters(config)
     test_channel_list(config)
     test_channel_tiktok(config)
@@ -221,8 +212,7 @@ def main():
     test_seed_absent_returns_none()
     test_missing_run_identifier_gets_timestamp()
     test_rng_reproducible_with_same_seed()
-
-    print("All tests passed.")
+    print("Config tests passed.")
 
 
 if __name__ == "__main__":

@@ -125,6 +125,78 @@ def test_missing_fields_filled_from_default():
         Path(tmp).unlink(missing_ok=True)
 
 
+def test_seed_stored_when_in_yaml(config: InputConfigurations):
+    """example.yaml has seed; config stores and returns it."""
+    assert config.get_seed() is not None
+    assert config.get_seed() == 133233  # from example.yaml
+
+
+def test_get_rng_returns_generator(config: InputConfigurations):
+    """get_rng() returns a numpy Generator (has .normal, .random)."""
+    rng = config.get_rng()
+    assert rng is not None
+    assert hasattr(rng, "normal")
+    assert hasattr(rng, "random")
+    # Can draw a number
+    x = rng.normal(0, 1)
+    assert isinstance(x, float)
+
+
+def test_seed_absent_returns_none():
+    """When YAML has no seed, get_seed() returns None."""
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write("run_identifier: NoSeedRun\nchannel_list:\n  - channel:\n      channel_name: A\n")
+        tmp = f.name
+    try:
+        config = load_config(tmp)
+        assert config.get_seed() is None
+        assert config.get_rng() is not None  # RNG still available (randomly seeded)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+
+
+def test_missing_run_identifier_gets_timestamp():
+    """When run_identifier is empty/missing, loader sets run_YYYYMMDD_HHMM."""
+    import tempfile
+    # Empty run_identifier so loader fills with timestamp (default would otherwise supply "Default")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write('run_identifier: ""\nweek_range: 12\nchannel_list:\n  - channel:\n      channel_name: X\n')
+        tmp = f.name
+    try:
+        config = load_config(tmp)
+        rid = config.get_run_identifier()
+        assert rid.startswith("run_")
+        # Format run_YYYYMMDD_HHMM
+        rest = rid[4:]
+        assert "_" in rest
+        parts = rest.split("_")
+        assert len(parts) == 2
+        assert len(parts[0]) == 8 and parts[0].isdigit()  # YYYYMMDD
+        assert len(parts[1]) == 4 and parts[1].isdigit()  # HHMM
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+
+
+def test_rng_reproducible_with_same_seed():
+    """Loading two configs with the same seed and drawing from get_rng() gives same sequence (after second load)."""
+    import tempfile
+    yaml_content = "run_identifier: Reproducible\nseed: 12345\nchannel_list:\n  - channel:\n      channel_name: C\n"
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        tmp = f.name
+    try:
+        config1 = load_config(tmp)
+        rng1 = config1.get_rng()
+        draws1 = [rng1.normal(0, 1) for _ in range(3)]
+        config2 = load_config(tmp)
+        rng2 = config2.get_rng()
+        draws2 = [rng2.normal(0, 1) for _ in range(3)]
+        assert draws1 == draws2, "Same seed should give same RNG sequence"
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+
+
 def main():
     print("Loading example.yaml and creating InputConfigurations...")
     config = test_load_example_yaml()
@@ -141,9 +213,14 @@ def main():
     test_channel_list(config)
     test_channel_tiktok(config)
     test_channel_linkedin(config)
+    test_seed_stored_when_in_yaml(config)
+    test_get_rng_returns_generator(config)
     test_load_default_yaml()
     test_number_of_channels_generates_from_default()
     test_missing_fields_filled_from_default()
+    test_seed_absent_returns_none()
+    test_missing_run_identifier_gets_timestamp()
+    test_rng_reproducible_with_same_seed()
 
     print("All tests passed.")
 

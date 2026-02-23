@@ -12,7 +12,7 @@ import yaml
 
 from scripts.dataclasses.input_configurations import InputConfigurations
 
-from .noise import add_noise_to_value, init_rng
+from .loader_noise import add_noise_to_value, init_rng
 
 # Default channel template keys that get default-as-is (no noise)
 NO_NOISE_KEYS = {"saturation_function", "channel_name"}

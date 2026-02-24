@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from scripts.dataclasses.input_configurations import InputConfigurations
+from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 from .noise import add_noise_to_value, init_rng
 

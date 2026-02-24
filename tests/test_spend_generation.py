@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from scripts.dataclasses.input_configurations import InputConfigurations
+from scripts.synth_input_classes.input_configurations import InputConfigurations
 from scripts.config.loader import load_config
 from scripts.config.noise import init_rng
 from scripts.spend_simulation.spend_generation import generate_spend

@@ -1,5 +1,5 @@
 import numpy as np
-from scripts.dataclasses.input_configurations import InputConfigurations
+from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 # Default gamma params if channel config is missing shape/scale (from default.yaml)
 DEFAULT_GAMMA_SHAPE = 2.5

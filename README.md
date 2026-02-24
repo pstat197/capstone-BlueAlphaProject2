@@ -61,7 +61,7 @@ Entry point: `scripts/main.py` (see [Running the pipeline](#running-the-pipeline
 
 ## 1. Config & loading
 
-**Code:** `scripts/config/loader.py`, `scripts/config/default.yaml`, `scripts/dataclasses/`
+**Code:** `scripts/config/loader.py`, `scripts/config/default.yaml`, `scripts/synth_input_classes/`
 
 - **What it does:** Reads the user-provided YAML config file and deep-merges it with the project default configuration in `scripts/config/default.yaml` (which provides all required fields and sensible defaults). The merged config is then used to instantiate an `InputConfigurations` object containing metadata (run id), `week_range`, `channel_list`, and an optional `seed`. Any missing fields at the top level or within channels are automatically filled from `default.yaml`, ensuring robust configuration. If the user specifies fewer channels than `number_of_channels`, additional channels are auto-generated based on the template in `default.yaml`.
 - **Key behavior:**

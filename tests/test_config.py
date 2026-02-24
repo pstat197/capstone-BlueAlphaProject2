@@ -1,12 +1,12 @@
 """
-Tests for configuration loading, input dataclasses, and config step.
+Tests for configuration loading, input synth_input_classes, and config step.
 Uses scripts.config.loader.load_config (merge with default.yaml).
 Run from project root: python -m tests.test_config  or  python test.py
 """
 from pathlib import Path
 
-from scripts.dataclasses.input_configurations import InputConfigurations
-from scripts.dataclasses.channel import Channel
+from scripts.synth_input_classes.input_configurations import InputConfigurations
+from scripts.synth_input_classes.channel import Channel
 from scripts.config.loader import load_config
 
 

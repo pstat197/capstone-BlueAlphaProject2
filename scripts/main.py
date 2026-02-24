@@ -10,7 +10,7 @@ from scripts.impressions_simulation.impressions_generation import generate_impre
 from scripts.revenue_simulation.revenue_generation import generate_revenue
 from scripts.config.loader import load_config
 
-from dataclasses.input_configurations import InputConfigurations
+from synth_input_classes.input_configurations import InputConfigurations
 
 
 def construct_csv(

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from synth_input_classes import dataclass
 from typing import Dict, List
 
 

@@ -178,7 +178,6 @@ saturation_cfg=saturation_cfg, adstock_decay_cfg=decay_cfg, noise_variance=0.0, 
 
 print(_calculate_channel_revenue(channel_cfg, np.array([10000, 20000, 30000, 40000, 50000]), np.array([110000, 210000, 280000, 390000, 500000]), np.random.default_rng(), 11))
 
-"""
 spend_matrix = np.array([[1, 6, 11], [2, 7, 9], [3, 10, 17], [4, 13, 22], [5, 12, 24], [6, 14, 21]])
 alphas = np.array([10, 2, 3])
 noise_matrix = np.random.normal(loc = 0.0, scale = 0.1, size = spend_matrix.shape)
@@ -201,4 +200,4 @@ saturation_cfg=saturation_cfg3, adstock_decay_cfg=decay_cfg3, noise_variance=0.0
 
 config = InputConfigurations(run_identifier="Test", num_weeks=6, channel_list=[channel_cfg, channel_cfg2, channel_cfg3])
 print(generate_revenue(config, spend_matrix, impressions_matrix, alphas))
-
+"""

@@ -61,14 +61,14 @@ Entry point: `scripts/main.py` (see [Running the pipeline](#running-the-pipeline
 
 ## 1. Config & loading
 
-**Code:** `scripts/config/loader.py`, `scripts/config/default.yaml`, `scripts/synth_input_classes/`
+**Code:** `scripts/config/loader.py`, `scripts/config/default.yaml`, `scripts/config/defaults.py`, `scripts/synth_input_classes/`
 
-- **What it does:** Reads the user-provided YAML config file and deep-merges it with the project default configuration in `scripts/config/default.yaml` (which provides all required fields and sensible defaults). The merged config is then used to instantiate an `InputConfigurations` object containing metadata (run id), `week_range`, `channel_list`, and an optional `seed`. Any missing fields at the top level or within channels are automatically filled from `default.yaml`, ensuring robust configuration. If the user specifies fewer channels than `number_of_channels`, additional channels are auto-generated based on the template in `default.yaml`.
+- **What it does:** Reads the user-provided YAML config file and deep-merges it with the project default configuration in `scripts/config/default.yaml` (which provides all required fields and sensible defaults). The loader fills any missing per-channel fields from the default channel template, then passes that template into `InputConfigurations.from_yaml_dict(merged, default_channel_template=...)` so the builder can fill any remaining missing config keys without depending on the config package. The merged config yields an `InputConfigurations` object containing metadata (run id), `week_range`, `channel_list`, and an optional `seed`. If the user specifies fewer channels than `number_of_channels`, additional channels are auto-generated based on the template from `default.yaml`.
 - **Key behavior:**
   - If a `seed` is specified in the YAML, the global random number generator (RNG) is initialized accordingly, ensuring reproducible results for all downstream stochastic steps.
   - The `number_of_channels` key allows for the dynamic creation of placeholder channels (named "Generated Channel 1", etc.) modeled from `default.yaml`'s template.
-  - Each channel is defined by: `channel_name`, `spend_sampling_gamma_params` (shape, scale), `spend_range`, `true_roi`, `baseline_revenue`, `saturation_function`, and `noise_variance`.
-- **default.yaml:** Contains all fallback/default values for top-level configuration and channel templates. This file is always merged in, so user YAMLs can omit fields and still produce a valid configuration.
+  - Each channel is defined by: `channel_name`, `spend_sampling_gamma_params` (shape, scale), `spend_range`, `true_roi`, `baseline_revenue`, `saturation_config`, `adstock_decay_config`, and `noise_variance`. All of these config dicts are filled from `default.yaml` when missing; noise is applied only to non-config fields (e.g. `true_roi`, `spend_range`) when generating extra channels.
+- **default.yaml:** Single source of truth for default channel values. The loader and `scripts/config/defaults.py` (via `get_default_channel_template()`) read it; change this file once to affect all default behavior.
 - **Output:** A validated `InputConfigurations` object is produced and provided as input to all subsequent pipeline steps.
 
 

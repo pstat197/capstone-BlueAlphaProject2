@@ -13,4 +13,13 @@ channel_list:
       true_roi: 2.5
       spend_range: [1000, 50000]
       baseline_revenue: 5000
-      saturation_function: e^x
+      saturation_config:
+        type: linear
+        slope: 1.0
+        K: 50000.0
+        beta: 0.5
+      adstock_decay_config:
+        type: linear
+        lambda: 0.5
+        lag: 10
+        weights: [1.0]

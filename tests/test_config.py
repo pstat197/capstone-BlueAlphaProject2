@@ -41,7 +41,10 @@ def test_channel_tiktok(config: InputConfigurations):
     assert tiktok.get_true_roi() == 3.1
     assert tiktok.get_spend_range() == [1500, 40000]
     assert tiktok.get_baseline_revenue() == 6000
-    assert tiktok.get_saturation_function() == "log(x+1)"
+    sat = tiktok.get_saturation_config()
+    assert sat["type"] == "linear" and sat["slope"] == 1.0 and sat["K"] == 50000.0 and sat["beta"] == 0.5
+    adstock = tiktok.get_adstock_decay_config()
+    assert adstock["type"] == "linear" and adstock["lambda"] == 0.5 and adstock["lag"] == 10 and adstock["weights"] == [1.0]
     gamma = tiktok.get_spend_sampling_gamma_params()
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
@@ -57,7 +60,10 @@ def test_channel_linkedin(config: InputConfigurations):
     assert linkedin.get_true_roi() == 2.2
     assert linkedin.get_spend_range() == [3000, 60000]
     assert linkedin.get_baseline_revenue() == 9500
-    assert linkedin.get_saturation_function() == "sqrt(x)"
+    sat = linkedin.get_saturation_config()
+    assert sat["type"] == "linear" and sat["slope"] == 0.8
+    adstock = linkedin.get_adstock_decay_config()
+    assert adstock["lag"] == 7 and adstock["weights"] == [0.7, 0.2, 0.1]
     gamma = linkedin.get_spend_sampling_gamma_params()
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
@@ -80,6 +86,8 @@ def test_load_default_yaml():
         assert c.get_channel_name()
         assert c.get_spend_sampling_gamma_params() is not None
         assert c.get_noise_variance() is not None
+        assert c.get_saturation_config() is not None
+        assert c.get_adstock_decay_config() is not None
 
 
 def test_number_of_channels_generates_from_default():
@@ -101,6 +109,8 @@ def test_number_of_channels_generates_from_default():
         for c in channels:
             assert c.get_spend_sampling_gamma_params()
             assert c.get_noise_variance()
+            assert c.get_saturation_config() is not None
+            assert c.get_adstock_decay_config() is not None
     finally:
         Path(tmp).unlink(missing_ok=True)
 

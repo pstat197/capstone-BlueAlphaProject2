@@ -2,7 +2,7 @@
 Load user YAML and config/default.yaml; fill or generate missing fields per design plan.
 - Top-level: run_identifier (or run_YYYYMMDD_HHMM), week_range from default.
 - number_of_channels: add channels up to N, named "Generated Channel 1", ... with default + noise.
-- Per-channel: missing fields filled with default or default + noise (saturation_function = default only).
+- Per-channel: missing fields filled with default or default + noise (saturation_config and adstock_decay_config = default only).
 """
 from datetime import datetime
 from pathlib import Path
@@ -12,25 +12,25 @@ import yaml
 
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 
+from .defaults import get_default_channel_template
+
 from .noise import add_noise_to_value, init_rng
 
-# Default channel template keys that get default-as-is (no noise)
-NO_NOISE_KEYS = {"saturation_function", "channel_name"}
+# Default channel template keys that get default-as-is (no noise); all config dicts processed the same way
+NO_NOISE_KEYS = {
+    "saturation_config",
+    "adstock_decay_config",
+    "spend_sampling_gamma_params",
+    "noise_variance",
+    "channel_name",
+}
 
 
 def _default_channel_template(default_data: Dict[str, Any]) -> Dict[str, Any]:
-    """First channel from default config as a template (flat channel dict)."""
+    """First channel from default config as a template (from default.yaml)."""
     raw = default_data.get("channel_list") or []
     if not raw:
-        return {
-            "channel_name": "Channel 1",
-            "spend_sampling_gamma_params": {"shape": 2.5, "scale": 1000},
-            "noise_variance": {"impression": 0.1, "revenue": 0.1},
-            "true_roi": 1.0,
-            "spend_range": [1000, 50000],
-            "baseline_revenue": 5000,
-            "saturation_function": "log(x+1)",
-        }
+        return get_default_channel_template()
     item = raw[0]
     ch = item.get("channel") or item
     return dict(ch)
@@ -56,7 +56,8 @@ def _add_noise_to_channel_template(
     out = {}
     for k, v in template.items():
         if k in NO_NOISE_KEYS:
-            out[k] = v
+            # Copy dicts so we don't mutate shared defaults
+            out[k] = dict(v) if isinstance(v, dict) else v
         elif isinstance(v, dict):
             out[k] = {kk: add_noise_to_value(float(vv)) for kk, vv in v.items()}
         elif isinstance(v, list):
@@ -73,14 +74,14 @@ def _fill_channel_missing_fields(
     default_channel: Dict[str, Any],
     index_1based: int,
 ) -> Dict[str, Any]:
-    """Fill any missing channel fields: default + noise for numerics; default only for saturation_function; placeholder name if missing."""
+    """Fill any missing channel fields: default + noise for numerics; config dicts (saturation, adstock, gamma_params, noise_variance) get default only; placeholder name if missing."""
     out = dict(ch)
     for key, default_val in default_channel.items():
         if key not in out or out[key] is None or out[key] == "":
             if key == "channel_name":
                 out[key] = f"Unnamed Channel {index_1based}"
-            elif key == "saturation_function":
-                out[key] = default_val
+            elif key in ("saturation_config", "adstock_decay_config", "spend_sampling_gamma_params", "noise_variance"):
+                out[key] = dict(default_val) if isinstance(default_val, dict) else default_val
             elif isinstance(default_val, dict):
                 out[key] = {
                     k: add_noise_to_value(float(v))
@@ -159,5 +160,5 @@ def load_config(user_yaml_path: str) -> InputConfigurations:
         filled.append({"channel": filled_ch})
     merged["channel_list"] = filled
 
-    # Step 5: Build
-    return InputConfigurations.from_yaml_dict(merged)
+    # Step 5: Build (inject default channel so builder uses default.yaml defaults for any missing keys)
+    return InputConfigurations.from_yaml_dict(merged, default_channel_template=default_channel)

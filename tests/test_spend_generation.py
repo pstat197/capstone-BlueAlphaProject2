@@ -88,7 +88,8 @@ def test_generate_spend_default_gamma_params():
                     "spend_range": [0, 100000],
                     "true_roi": 1.0,
                     "baseline_revenue": 0,
-                    "saturation_function": "x",
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
                     "noise_variance": {},
                 }
             }
@@ -117,7 +118,8 @@ def test_generate_spend_clipping():
                     "spend_range": [100, 100],
                     "true_roi": 1.0,
                     "baseline_revenue": 0,
-                    "saturation_function": "x",
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
                     "noise_variance": {},
                 }
             }
@@ -144,7 +146,8 @@ def test_generate_spend_single_week_single_channel():
                     "spend_range": [0, 10000],
                     "true_roi": 1.0,
                     "baseline_revenue": 0,
-                    "saturation_function": "x",
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
                     "noise_variance": {},
                 }
             }

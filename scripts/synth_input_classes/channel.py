@@ -1,5 +1,5 @@
-from synth_input_classes import dataclass
-from typing import Dict, List
+from dataclasses import dataclass
+from typing import Any, Dict, List
 
 
 @dataclass
@@ -8,7 +8,8 @@ class Channel:
     true_roi: float
     spend_range: List[float]
     baseline_revenue: float
-    saturation_function: str
+    saturation_config: Dict[str, Any]
+    adstock_decay_config: Dict[str, Any]
     spend_sampling_gamma_params: Dict[str, float]
     noise_variance: Dict[str, float]
 
@@ -24,8 +25,11 @@ class Channel:
     def get_baseline_revenue(self) -> float:
         return self.baseline_revenue
 
-    def get_saturation_function(self) -> str:
-        return self.saturation_function
+    def get_saturation_config(self) -> Dict[str, Any]:
+        return self.saturation_config
+
+    def get_adstock_decay_config(self) -> Dict[str, Any]:
+        return self.adstock_decay_config
 
     def get_spend_sampling_gamma_params(self) -> Dict[str, float]:
         return self.spend_sampling_gamma_params

@@ -12,7 +12,7 @@ channel_list:
         shape: 2.5
         scale: 1000
       noise_variance:
-        impression: 0.2
+        impression: 0.1
         revenue: 0.15
       true_roi: 3.1
       spend_range: [1500, 40000]
@@ -27,6 +27,7 @@ channel_list:
         lambda: 0.5
         lag: 10
         weights: [1.0]
+      cpm: 25
 
   - channel:
       channel_name: LinkedIn
@@ -34,7 +35,7 @@ channel_list:
         shape: 2.5
         scale: 1000
       noise_variance:
-        impression: 0.2
+        impression: 0.0025
         revenue: 0.15
       true_roi: 2.2
       spend_range: [3000, 60000]
@@ -49,3 +50,4 @@ channel_list:
         lambda: 0.3
         lag: 7
         weights: [0.7, 0.2, 0.1]
+      cpm: 10

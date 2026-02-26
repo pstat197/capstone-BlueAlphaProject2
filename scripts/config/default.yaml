@@ -4,11 +4,12 @@ week_range: 52
 channel_list:
   - channel:
       channel_name: Channel 1
+      cpm_sampling_range: [0.5, 50]
       spend_sampling_gamma_params:
         shape: 2.5
         scale: 1000
       noise_variance:
-        impression: 0.1
+        impression: 0.0225
         revenue: 0.1
       true_roi: 2.5
       spend_range: [1000, 50000]

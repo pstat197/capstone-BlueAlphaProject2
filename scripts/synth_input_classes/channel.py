@@ -12,6 +12,7 @@ class Channel:
     adstock_decay_config: Dict[str, Any]
     spend_sampling_gamma_params: Dict[str, float]
     noise_variance: Dict[str, float]
+    cpm: float
 
     def get_channel_name(self) -> str:
         return self.channel_name
@@ -36,3 +37,6 @@ class Channel:
 
     def get_noise_variance(self) -> Dict[str, float]:
         return self.noise_variance
+
+    def get_cpm(self) -> float:
+        return self.cpm

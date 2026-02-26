@@ -5,6 +5,8 @@ Run from project root: python -m tests.test_config  or  python test.py
 """
 from pathlib import Path
 
+import pytest
+
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 from scripts.synth_input_classes.channel import Channel
 from scripts.config.loader import load_config
@@ -14,12 +16,19 @@ def _project_root():
     return Path(__file__).resolve().parent.parent
 
 
+@pytest.fixture
+def config() -> InputConfigurations:
+    """Load example.yaml for tests that need a full config."""
+    example_path = _project_root() / "example.yaml"
+    assert example_path.exists(), f"example.yaml not found at {example_path}"
+    return load_config(str(example_path))
+
+
 def test_load_example_yaml():
     """Load example.yaml via loader (merge with default)."""
     example_path = _project_root() / "example.yaml"
     assert example_path.exists(), f"example.yaml not found at {example_path}"
-    config = load_config(str(example_path))
-    return config
+    load_config(str(example_path))
 
 
 def test_config_getters(config: InputConfigurations):
@@ -49,8 +58,9 @@ def test_channel_tiktok(config: InputConfigurations):
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
     noise = tiktok.get_noise_variance()
-    assert noise["impression"] == 0.2
+    assert noise["impression"] == 0.1
     assert noise["revenue"] == 0.15
+    assert tiktok.get_cpm() == 25
 
 
 def test_channel_linkedin(config: InputConfigurations):
@@ -68,8 +78,9 @@ def test_channel_linkedin(config: InputConfigurations):
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
     noise = linkedin.get_noise_variance()
-    assert noise["impression"] == 0.2
+    assert noise["impression"] == 0.0025
     assert noise["revenue"] == 0.15
+    assert linkedin.get_cpm() == 10
 
 
 def test_load_default_yaml():
@@ -88,6 +99,7 @@ def test_load_default_yaml():
         assert c.get_noise_variance() is not None
         assert c.get_saturation_config() is not None
         assert c.get_adstock_decay_config() is not None
+        assert 0.5 <= c.get_cpm() <= 50.0, "cpm should be in default sampling range when loaded from default"
 
 
 def test_number_of_channels_generates_from_default():
@@ -111,6 +123,7 @@ def test_number_of_channels_generates_from_default():
             assert c.get_noise_variance()
             assert c.get_saturation_config() is not None
             assert c.get_adstock_decay_config() is not None
+            assert 0.5 <= c.get_cpm() <= 50.0, "generated channels should have cpm in default sampling range"
     finally:
         Path(tmp).unlink(missing_ok=True)
 
@@ -130,6 +143,31 @@ def test_missing_fields_filled_from_default():
         assert channels[0].get_channel_name() == "Only"
         assert channels[0].get_spend_sampling_gamma_params()
         assert channels[0].get_noise_variance()
+        assert 0.5 <= channels[0].get_cpm() <= 50.0, "minimal channel without cpm should get sampled cpm in range"
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+
+
+def test_cpm_omitted_sampled_per_channel_in_range():
+    """When cpm is omitted, each channel gets a value in cpm_sampling_range; multiple channels get different values."""
+    import tempfile
+    yaml_content = (
+        "run_identifier: CpmSampled\nseed: 42\nweek_range: 4\n"
+        "channel_list:\n"
+        "  - channel:\n      channel_name: A\n"
+        "  - channel:\n      channel_name: B\n"
+        "  - channel:\n      channel_name: C\n"
+    )
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        tmp = f.name
+    try:
+        config = load_config(tmp)
+        channels = config.get_channel_list()
+        cpms = [c.get_cpm() for c in channels]
+        for cpm in cpms:
+            assert 0.5 <= cpm <= 50.0, f"cpm {cpm} should be in default range [0.5, 50]"
+        assert len(cpms) == len(set(cpms)), "each channel should get a different sampled cpm"
     finally:
         Path(tmp).unlink(missing_ok=True)
 
@@ -206,7 +244,9 @@ def test_rng_reproducible_with_same_seed():
 def main():
     print("Config/loading tests...")
     root = _project_root()
-    config = test_load_example_yaml()
+    example_path = root / "example.yaml"
+    assert example_path.exists(), f"example.yaml not found at {example_path}"
+    config = load_config(str(example_path))
     print("  run_identifier:", config.get_run_identifier())
     print("  week_range:", config.get_week_range())
     print("  channels:", [c.get_channel_name() for c in config.get_channel_list()])
@@ -219,6 +259,7 @@ def main():
     test_load_default_yaml()
     test_number_of_channels_generates_from_default()
     test_missing_fields_filled_from_default()
+    test_cpm_omitted_sampled_per_channel_in_range()
     test_seed_absent_returns_none()
     test_missing_run_identifier_gets_timestamp()
     test_rng_reproducible_with_same_seed()

@@ -10,6 +10,7 @@ _MINIMAL_CHANNEL_DEFAULTS: Dict[str, Any] = {
     "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
     "spend_sampling_gamma_params": {"shape": 2.5, "scale": 1000},
     "noise_variance": {"impression": 0.1, "revenue": 0.1},
+    "cpm": 10.0,
 }
 
 
@@ -21,8 +22,9 @@ def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             "adstock_decay_config": dict(template.get("adstock_decay_config") or _MINIMAL_CHANNEL_DEFAULTS["adstock_decay_config"]),
             "spend_sampling_gamma_params": dict(template.get("spend_sampling_gamma_params") or _MINIMAL_CHANNEL_DEFAULTS["spend_sampling_gamma_params"]),
             "noise_variance": dict(template.get("noise_variance") or _MINIMAL_CHANNEL_DEFAULTS["noise_variance"]),
+            "cpm": float(template.get("cpm", _MINIMAL_CHANNEL_DEFAULTS["cpm"])),
         }
-    return {k: dict(v) for k, v in _MINIMAL_CHANNEL_DEFAULTS.items()}
+    return {k: dict(v) if isinstance(v, dict) else v for k, v in _MINIMAL_CHANNEL_DEFAULTS.items()}
 
 
 @dataclass
@@ -64,6 +66,7 @@ class InputConfigurations:
                 adstock_decay_config["lag"] = int(adstock_decay_config["lag"])
             if "weights" in adstock_decay_config:
                 adstock_decay_config["weights"] = [float(w) for w in adstock_decay_config["weights"]]
+            cpm = float(ch.get("cpm") if ch.get("cpm") is not None else defaults["cpm"])
             channels.append(
                 Channel(
                     channel_name=ch.get("channel_name", ""),
@@ -74,6 +77,7 @@ class InputConfigurations:
                     adstock_decay_config=adstock_decay_config,
                     spend_sampling_gamma_params=spend_sampling_gamma_params,
                     noise_variance=noise_variance,
+                    cpm=cpm,
                 )
             )
         return cls(

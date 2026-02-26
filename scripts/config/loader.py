@@ -14,7 +14,7 @@ from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 from .defaults import get_default_channel_template
 
-from .noise import add_noise_to_value, init_rng
+from .noise import add_noise_to_value, get_default_rng, init_rng
 
 # Default channel template keys that get default-as-is (no noise); all config dicts processed the same way
 NO_NOISE_KEYS = {
@@ -23,6 +23,7 @@ NO_NOISE_KEYS = {
     "spend_sampling_gamma_params",
     "noise_variance",
     "channel_name",
+    "cpm_sampling_range",  # used only to sample cpm when cpm is missing
 }
 
 
@@ -74,9 +75,11 @@ def _fill_channel_missing_fields(
     default_channel: Dict[str, Any],
     index_1based: int,
 ) -> Dict[str, Any]:
-    """Fill any missing channel fields: default + noise for numerics; config dicts (saturation, adstock, gamma_params, noise_variance) get default only; placeholder name if missing."""
+    """Fill any missing channel fields: default + noise for numerics; config dicts (saturation, adstock, gamma_params, noise_variance) get default only; placeholder name if missing. If cpm is missing, sample from Uniform(cpm_sampling_range)."""
     out = dict(ch)
     for key, default_val in default_channel.items():
+        if key == "cpm_sampling_range":
+            continue  # meta key for sampling cpm when missing; do not copy into channel
         if key not in out or out[key] is None or out[key] == "":
             if key == "channel_name":
                 out[key] = f"Unnamed Channel {index_1based}"
@@ -93,6 +96,13 @@ def _fill_channel_missing_fields(
                 out[key] = add_noise_to_value(float(default_val))
             else:
                 out[key] = default_val
+    # If cpm not provided, sample per channel from Uniform(cpm_sampling_range)
+    if "cpm" not in out or out["cpm"] is None:
+        low, high = 0.5, 50.0
+        cpm_range = default_channel.get("cpm_sampling_range")
+        if isinstance(cpm_range, (list, tuple)) and len(cpm_range) >= 2:
+            low, high = float(cpm_range[0]), float(cpm_range[1])
+        out["cpm"] = float(get_default_rng().uniform(low, high))
     return out
 
 

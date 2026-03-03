@@ -25,14 +25,52 @@ Requirements: `numpy`, `pandas`, `PyYAML`.
 ## Table of contents
 
 - [Setup](#setup)
+- [Running the pipeline](#running-the-pipeline)
+- [Running tests](#running-tests)
 - [Pipeline overview](#pipeline-overview)
 - [1. Config & loading](#1-config--loading)
 - [2. Spend generation](#2-spend-generation)
 - [3. Impressions simulation](#3-impressions-simulation)
 - [4. Revenue simulation](#4-revenue-simulation)
 - [5. CSV output & full pipeline](#5-csv-output--full-pipeline)
-- [Running the pipeline](#running-the-pipeline)
-- [Running tests](#running-tests)
+
+---
+
+## Running the pipeline
+
+From the project root, with a YAML config (e.g. `example.yaml`):
+
+```bash
+# Run as a module (recommended)
+python -m scripts.main example.yaml
+
+# Or, with explicit flag
+python -m scripts.main -c path/to/config.yaml
+```
+
+Output CSV is written under `output/` and includes one row per week with per-channel spend/impressions and totals.
+
+---
+
+## Running tests
+
+From the project root, run all tests:
+
+```bash
+python test.py
+```
+
+Run a single test suite:
+
+```bash
+python -m tests.test_config
+python -m tests.test_spend_generation
+python -m tests.test_impressions_simulation
+python -m tests.test_revenue_simulation
+python -m tests.test_pipeline
+```
+
+Test modules live under `tests/` and mirror the pipeline: config/loading, spend generation, impressions simulation, revenue simulation, and full-pipeline tests.
 
 ---
 
@@ -70,7 +108,6 @@ Entry point: `scripts.main` (see [Running the pipeline](#running-the-pipeline)).
   - Each channel is defined by: `channel_name`, `spend_sampling_gamma_params` (shape, scale), `spend_range`, `true_roi`, `baseline_revenue`, `saturation_config`, `adstock_decay_config`, and `noise_variance`. All of these config dicts are filled from `default.yaml` when missing; noise is applied only to non-config fields (e.g. `true_roi`, `spend_range`) when generating extra channels.
 - **default.yaml:** Single source of truth for default channel values. The loader and `scripts/config/defaults.py` (via `get_default_channel_template()`) read it; change this file once to affect all default behavior.
 - **Output:** A validated `InputConfigurations` object is produced and provided as input to all subsequent pipeline steps.
-
 
 ---
 
@@ -118,40 +155,3 @@ Entry point: `scripts.main` (see [Running the pipeline](#running-the-pipeline)).
 - **What it does:** Builds a pandas DataFrame with columns: `week`, `revenue`, then for each channel `{channel}_impressions` and `{channel}_spend`, then `total_impressions` and `total_spend`. Saves to `output/{run_identifier}_{timestamp}.csv`.
 - **Full pipeline:** Load config → generate spend → generate impressions → generate revenue → construct CSV → write file.
 
----
-
-## Running the pipeline
-
-From the project root, with a YAML config (e.g. `example.yaml`):
-
-```bash
-# Run as a module (recommended)
-python -m scripts.main example.yaml
-
-# Or, with explicit flag
-python -m scripts.main -c path/to/config.yaml
-```
-
-Output CSV is written under `output/` and includes one row per week with per-channel spend/impressions and totals.
-
----
-
-## Running tests
-
-From the project root, run all tests:
-
-```bash
-python test.py
-```
-
-Run a single test suite:
-
-```bash
-python -m tests.test_config
-python -m tests.test_spend_generation
-python -m tests.test_impressions_simulation
-python -m tests.test_revenue_simulation
-python -m tests.test_pipeline
-```
-
-Test modules live under `tests/` and mirror the pipeline: config/loading, spend generation, impressions simulation, revenue simulation, and full-pipeline tests.

@@ -55,7 +55,7 @@ YAML config  →  load_config  →  InputConfigurations
 - **Input:** Path to a YAML config file (e.g. `example.yaml`).
 - **Output:** A CSV with one row per week: `week`, `revenue`, per-channel `{channel}_impressions` and `{channel}_spend`, and `total_impressions`, `total_spend`.
 
-Entry point: `scripts/main.py` (see [Running the pipeline](#running-the-pipeline)).
+Entry point: `scripts.main` (see [Running the pipeline](#running-the-pipeline)).
 
 ---
 
@@ -88,7 +88,10 @@ Entry point: `scripts/main.py` (see [Running the pipeline](#running-the-pipeline
 
 **Code:** `scripts/impressions_simulation/impressions_generation.py`
 
-- **What it does:** *(To be implemented.)* Should map spend to impressions per channel per week, using channel-specific logic (e.g. saturation, noise).
+- **What it does:** Converts weekly spend per channel into impressions per channel per week, using each channel’s **CPM** and impression noise variance:
+  - Base impressions: \(\text{impressions} = \frac{\text{spend}}{\text{CPM}} \times 1000\).
+  - Adds Gaussian noise with variance proportional to the base impressions and the channel’s `noise_variance["impression"]`.
+  - Clips results at 0 so impressions are non‑negative.
 - **Input:** `InputConfigurations`, `spend_matrix` (weeks × channels).
 - **Output:** 2D `np.ndarray` of shape `(num_weeks, num_channels)` (impressions per week per channel).
 
@@ -98,7 +101,11 @@ Entry point: `scripts/main.py` (see [Running the pipeline](#running-the-pipeline
 
 **Code:** `scripts/revenue_simulation/revenue_generation.py`
 
-- **What it does:** *(To be implemented.)* Should map impressions (and possibly config such as baseline, ROI, saturation) to total revenue per week.
+- **What it does:** Maps impressions to total weekly revenue across all channels:
+  - Applies the channel’s `saturation_config` (e.g. linear, hill, diminishing_returns) to impressions.
+  - Applies the channel’s `adstock_decay_config` (geometric/exponential, weighted, or linear) to model carry‑over of effects across weeks.
+  - Scales by `true_roi` and adds `baseline_revenue`.
+  - Adds Gaussian revenue noise controlled by `noise_variance["revenue"]` for each channel.
 - **Input:** `InputConfigurations`, `impressions_matrix` (weeks × channels).
 - **Output:** 1D `np.ndarray` of length `num_weeks` (one total revenue value per week).
 
@@ -118,12 +125,14 @@ Entry point: `scripts/main.py` (see [Running the pipeline](#running-the-pipeline
 From the project root, with a YAML config (e.g. `example.yaml`):
 
 ```bash
-python scripts/main.py example.yaml
-# or
-python scripts/main.py -c path/to/config.yaml
+# Run as a module (recommended)
+python -m scripts.main example.yaml
+
+# Or, with explicit flag
+python -m scripts.main -c path/to/config.yaml
 ```
 
-Output CSV is written under `output/`.
+Output CSV is written under `output/` and includes one row per week with per-channel spend/impressions and totals.
 
 ---
 

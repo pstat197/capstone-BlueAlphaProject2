@@ -1,141 +1,147 @@
-import sys
-import os
+from typing import Dict
+
 import numpy as np
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from scripts.synth_input_classes.input_configurations import InputConfigurations
+from scripts.synth_input_classes.channel import Channel
 
-import scripts.synth_input_classes.channel as Channel
-import scripts.synth_input_classes.input_configurations as InputConfigurations
 
-def _saturation_fn(impressions: np.ndarray, saturation_cfg: dict):
+def _saturation_fn(impressions: np.ndarray, saturation_config: Dict) -> np.ndarray:
     """
     Apply saturation function to impressions.
 
-    We incorporate the following:
-    'hill' - Hill function: x^slope / (x^slope + K^slope)
-            - slope: shape parameter
-            - K: half-saturation point
-
-    'diminishing_returns' - Square-root decay: x / (1 + beta * x)
-            - beta: decay rate
-
-    'linear' - No saturation applied
-            - No parameters
-
-    impressions: shape (num_weeks,)
-    returns: shape (num_weeks,) saturated values
+    Supported types:
+      - 'hill':            x^slope / (x^slope + K^slope)
+      - 'diminishing_returns': x / (1 + beta * x)
+      - 'linear':          return impressions unchanged
     """
-    saturation_type = saturation_cfg.get('type', 'linear')
-    
-    if saturation_type == 'hill':
-        slope = saturation_cfg['slope']
-        K = saturation_cfg['K']
+    saturation_type = (saturation_config or {}).get("type", "linear")
+
+    if saturation_type == "hill":
+        slope = float(saturation_config.get("slope", 1.0))
+        K = float(saturation_config.get("K", 1.0))
         x_a = np.power(impressions, slope)
         K_a = np.power(K, slope)
-        return x_a / (x_a + K_a)
+        return x_a / (x_a + K_a + 1e-9)
 
-    elif saturation_type == 'diminishing_returns':
-        beta = saturation_cfg['beta']
+    if saturation_type == "diminishing_returns":
+        beta = float(saturation_config.get("beta", 0.0))
         return impressions / (1.0 + beta * impressions)
 
-    elif saturation_type == 'linear':
-        return impressions.copy()
+    if saturation_type == "linear":
+        return impressions.astype(float, copy=True)
 
-    else:
-        raise ValueError(
-            f'Unknown saturation_function type "{saturation_type}". '
-            'Expected one of: "hill", "diminishing_returns", "linear".'
-        )
+    raise ValueError(
+        f'Unknown saturation_config type "{saturation_type}". '
+        'Expected one of: "hill", "diminishing_returns", "linear".'
+    )
 
-def _adstock_decay(impressions: np.ndarray, adstock_decay_cfg: dict):
+
+def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
     """
-    Apply adstock decay function to impressions.
-    """
-    adstock_decay_type = adstock_decay_cfg["type"]
-    lambda_ = adstock_decay_cfg["decay_rate"]
-    lag = adstock_decay_cfg["lag"]
+    Apply adstock decay to impressions.
 
-    if adstock_decay_type == 'geometric':
-        lag_array = np.arange(lag+1)
+    Supported types:
+      - 'geometric' or 'exponential': geometric decay with rate lambda and lag
+      - 'weighted': arbitrary finite impulse response with provided weights
+      - 'linear': no adstock (return impressions)
+    """
+    adstock_config = adstock_config or {}
+    adstock_type = adstock_config.get("type", "linear")
+    lag = int(adstock_config.get("lag", 0))
+
+    if adstock_type in ("geometric", "exponential"):
+        lambda_ = float(adstock_config.get("lambda", adstock_config.get("decay_rate", 0.0)))
+        if lag < 0:
+            raise ValueError(f"adstock lag must be non-negative, got {lag}.")
+        lag_array = np.arange(lag + 1)
         decay_weights = np.power(lambda_, lag_array)
-        return  np.convolve(impressions, decay_weights, mode='full')[:len(impressions)]
-    elif adstock_decay_type == 'weighted':
-        weights = adstock_decay_cfg.get('weights', [1.0])
-        return np.convolve(impressions, weights, mode='full')[:len(impressions)]
-    elif adstock_decay_type == 'linear':
-        return impressions.copy()
-    else:
-        raise ValueError(
-            f'Unknown adstock_decay_function type "{adstock_decay_type}". '
-            'Expected one of: "geometric", "weighted", "linear".'
-        )
+        return np.convolve(impressions, decay_weights, mode="full")[: len(impressions)]
+
+    if adstock_type == "weighted":
+        weights = adstock_config.get("weights", [1.0])
+        weights_arr = np.asarray(weights, dtype=float)
+        return np.convolve(impressions, weights_arr, mode="full")[: len(impressions)]
+
+    if adstock_type == "linear":
+        return impressions.astype(float, copy=True)
+
+    raise ValueError(
+        f'Unknown adstock_decay_config type "{adstock_type}". '
+        'Expected one of: "geometric", "exponential", "weighted", "linear".'
+    )
 
 
 def _channel_revenue(
     channel: Channel,
     impressions: np.ndarray,
     rng: np.random.Generator,
-    alpha: float,
 ) -> np.ndarray:
     """
     Compute weekly revenue contribution for a single channel.
 
     Pipeline:
-      -> saturation - diminishing returns on reach
-      -> ROI scaling - saturated_impressions * beta
-      -> baseline - added baseline_revenue each week
-      -> noise - additive gaussian, variance = noise_variance
-
-    returns shape (num_weeks,)
+      impressions
+        → saturation (diminishing returns)
+        → adstock (carry-over effects)
+        → ROI scaling (true_roi)
+        → + baseline_revenue
+        → + Gaussian noise (variance from noise_variance['revenue'])
     """
-    saturated = _saturation_fn(impressions, channel.saturation_function)
-    transformed_imp = saturated * _adstock_decay(impressions, channel.adstock_decay_cfg)
+    saturated = _saturation_fn(impressions, channel.saturation_config)
+    transformed_imp = _adstock_decay(saturated, channel.adstock_decay_config)
 
-    beta = channel.true_roi / alpha
-    revenue = transformed_imp * beta
-    revenue += channel.baseline_revenue
-    revenue += rng.normal(loc = 0.0, scale = np.sqrt(channel.noise_variance)*transformed_imp, size = len(impressions))
+    revenue = transformed_imp * float(channel.true_roi)
+    revenue += float(channel.baseline_revenue)
+
+    noise_cfg = channel.noise_variance or {}
+    var_rev = float(noise_cfg.get("revenue", 0.0))
+    if var_rev < 0:
+        raise ValueError(
+            f"Revenue noise variance for channel {channel.channel_name} must be non-negative, got {var_rev}."
+        )
+    if var_rev > 0:
+        sigma = np.sqrt(var_rev) * np.abs(revenue)
+        noise = rng.normal(loc=0.0, scale=sigma)
+        revenue = revenue + noise
+
     return revenue
 
-def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray, coefficients: list[float]) -> np.ndarray:
+
+def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray) -> np.ndarray:
     """
     Map impressions to total weekly revenue across all channels.
 
-    parameters:
-
-    config: InputConfigurations
-    impressions_matrix: np.ndarray, shape (num_weeks, num_channels)
+    Parameters
+    ----------
+    config : InputConfigurations
+        Configuration with channel list, week_range, and RNG.
+    impressions_matrix : np.ndarray, shape (num_weeks, num_channels)
         Impressions per channel per week, as produced by generate_impressions.
-    coefficients: list[float], shape (num_channels,)
-        Coefficients for each channel's impressions contribution.
 
-    returns: 
-
-    revenue_vector: np.ndarray, shape (num_weeks,)
+    Returns
+    -------
+    revenue_vector : np.ndarray, shape (num_weeks,)
         Total revenue per week, across all channels.
     """
     num_weeks, num_channels = impressions_matrix.shape
+    expected_weeks = config.get_week_range()
+    channels = config.get_channel_list()
 
-    assert num_channels == config.num_channels, (
-        f'impressions_matrix has {num_channels} channels, '
-        f'config expects {config.num_channels}.'
-    )
+    if num_weeks != expected_weeks:
+        raise ValueError(
+            f"impressions_matrix has {num_weeks} weeks, config expects {expected_weeks}."
+        )
+    if num_channels != len(channels):
+        raise ValueError(
+            f"impressions_matrix has {num_channels} channels, config has {len(channels)}."
+        )
 
-    assert num_weeks == config.num_weeks, (
-        f'impressions_matrix has {num_weeks} weeks,'
-        f'config expects {config.num_weeks}'
-    )
-
+    rng = config.get_rng()
     weekly_revenue = np.zeros(num_weeks, dtype=float)
 
-    for c, channel in enumerate(config.channel_list):
+    for c, channel in enumerate(channels):
         channel_impressions = impressions_matrix[:, c].astype(float)
-        weekly_revenue += _channel_revenue(channel, channel_impressions, config.rng, coefficients[c])
+        weekly_revenue += _channel_revenue(channel, channel_impressions, rng)
 
     return weekly_revenue
-"""
-Model Assumptions:
-    - true_ROI is constant across all weeks
-    - baseline revenue is constant across all weeks
-    
-"""     

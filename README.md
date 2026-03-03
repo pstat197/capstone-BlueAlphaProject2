@@ -126,7 +126,7 @@ Entry point: `scripts.main` (see [Running the pipeline](#running-the-pipeline)).
 **Code:** `scripts/impressions_simulation/impressions_generation.py`
 
 - **What it does:** Converts weekly spend per channel into impressions per channel per week, using each channel’s **CPM** and impression noise variance:
-  - Base impressions: \(\text{impressions} = \frac{\text{spend}}{\text{CPM}} \times 1000\).
+  - Base impressions: $\text{impressions} = \frac{\text{spend}}{\text{CPM}} \times 1000$.
   - Adds Gaussian noise with variance proportional to the base impressions and the channel’s `noise_variance["impression"]`.
   - Clips results at 0 so impressions are non‑negative.
 - **Input:** `InputConfigurations`, `spend_matrix` (weeks × channels).

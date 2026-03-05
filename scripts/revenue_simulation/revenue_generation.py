@@ -42,16 +42,16 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
     Apply adstock decay to impressions.
 
     Supported types:
-      - 'geometric' or 'exponential': geometric decay with rate lambda and lag
+      - 'geometric' or 'exponential': geometric decay with rate lambda and truncated lag L
       - 'weighted': arbitrary finite impulse response with provided weights
       - 'linear': no adstock (return impressions)
     """
     adstock_config = adstock_config or {}
     adstock_type = adstock_config.get("type", "linear")
-    lag = int(adstock_config.get("lag", 0))
 
     if adstock_type in ("geometric", "exponential"):
         lambda_ = float(adstock_config.get("lambda", adstock_config.get("decay_rate", 0.0)))
+        lag = int(adstock_config.get("lag", 0))
         if lag < 0:
             raise ValueError(f"adstock lag must be non-negative, got {lag}.")
         lag_array = np.arange(lag + 1)
@@ -72,10 +72,12 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
     )
 
 
-def _channel_revenue(
+def _calculate_channel_revenue(
     channel: Channel,
+    spend: np.ndarray,
     impressions: np.ndarray,
     rng: np.random.Generator,
+    alpha: float
 ) -> np.ndarray:
     """
     Compute weekly revenue contribution for a single channel.
@@ -84,14 +86,20 @@ def _channel_revenue(
       impressions
         → saturation (diminishing returns)
         → adstock (carry-over effects)
-        → ROI scaling (true_roi)
+        → ROI scaling (beta = true_roi * spend / expected_transformed_imp(alpha, spend))
         → + baseline_revenue
         → + Gaussian noise (variance from noise_variance['revenue'])
     """
-    saturated = _saturation_fn(impressions, channel.saturation_config)
-    transformed_imp = _adstock_decay(saturated, channel.adstock_decay_config)
 
-    revenue = transformed_imp * float(channel.true_roi)
+    adstocked_imp = _adstock_decay(impressions, channel.adstock_decay_config)
+    transformed_imp = _saturation_fn(adstocked_imp, channel.saturation_config)
+
+    expected_imp = alpha * spend
+    expected_imp = _adstock_decay(expected_imp, channel.adstock_decay_cfg)
+    expected_transformed_imp = _saturation_fn(expected_imp, channel.saturation_cfg)
+
+    beta = channel.true_roi * spend / expected_transformed_imp
+    revenue = transformed_imp * beta
     revenue += float(channel.baseline_revenue)
 
     noise_cfg = channel.noise_variance or {}
@@ -108,7 +116,7 @@ def _channel_revenue(
     return revenue
 
 
-def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray) -> np.ndarray:
+def generate_revenue(config: InputConfigurations, spend_matrix: np.ndarray, impressions_matrix: np.ndarray, coefficients: list[float]) -> np.ndarray:
     """
     Map impressions to total weekly revenue across all channels.
 
@@ -116,13 +124,17 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
     ----------
     config : InputConfigurations
         Configuration with channel list, week_range, and RNG.
+    spend_matrix : np.ndarray, shape (num_weeks, num_channels)
+        Spend per channel per week, as produced by generate_spend.
     impressions_matrix : np.ndarray, shape (num_weeks, num_channels)
         Impressions per channel per week, as produced by generate_impressions.
+    coefficients : list[float]        
+        Coefficients for each channel's impressions contribution.
 
     Returns
     -------
-    revenue_vector : np.ndarray, shape (num_weeks,)
-        Total revenue per week, across all channels.
+    revenue_matrix : np.ndarray, shape (num_weeks, num_channels)
+        Weekly revenue across all channels.
     """
     num_weeks, num_channels = impressions_matrix.shape
     expected_weeks = config.get_week_range()
@@ -141,7 +153,8 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
     weekly_revenue = np.zeros(num_weeks, dtype=float)
 
     for c, channel in enumerate(channels):
+        channel_spend = spend_matrix[:, c].astype(float)
         channel_impressions = impressions_matrix[:, c].astype(float)
-        weekly_revenue += _channel_revenue(channel, channel_impressions, rng)
+        weekly_revenue += _calculate_channel_revenue(channel, channel_impressions, rng, coefficients[c])
 
     return weekly_revenue

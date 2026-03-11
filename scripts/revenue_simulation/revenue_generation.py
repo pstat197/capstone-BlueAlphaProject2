@@ -1,9 +1,8 @@
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from typing import Dict
 import numpy as np
-from scripts.dataclasses.channel import Channel
-from scripts.dataclasses.input_configurations import InputConfigurations
+
+from scripts.synth_input_classes.channel import Channel
+from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 def _saturation_fn(impressions: np.ndarray, saturation_cfg: dict):
     """

@@ -1,5 +1,4 @@
 from typing import Dict
-
 import numpy as np
 
 from scripts.synth_input_classes.input_configurations import InputConfigurations
@@ -77,7 +76,7 @@ def _calculate_channel_revenue(
     spend: np.ndarray,
     impressions: np.ndarray,
     rng: np.random.Generator,
-    alpha: float
+    cpm: float
 ) -> np.ndarray:
     """
     Compute weekly revenue contribution for a single channel.
@@ -94,7 +93,7 @@ def _calculate_channel_revenue(
     adstocked_imp = _adstock_decay(impressions, channel.adstock_decay_config)
     transformed_imp = _saturation_fn(adstocked_imp, channel.saturation_config)
 
-    expected_imp = alpha * spend
+    expected_imp = spend / cpm * 1000
     expected_imp = _adstock_decay(expected_imp, channel.adstock_decay_cfg)
     expected_transformed_imp = _saturation_fn(expected_imp, channel.saturation_cfg)
 
@@ -115,8 +114,7 @@ def _calculate_channel_revenue(
 
     return revenue
 
-
-def generate_revenue(config: InputConfigurations, spend_matrix: np.ndarray, impressions_matrix: np.ndarray, coefficients: list[float]) -> np.ndarray:
+def generate_revenue(config: InputConfigurations, spend_matrix: np.ndarray, impressions_matrix: np.ndarray, cpm_list: list[float]) -> np.ndarray:
     """
     Map impressions to total weekly revenue across all channels.
 
@@ -133,8 +131,8 @@ def generate_revenue(config: InputConfigurations, spend_matrix: np.ndarray, impr
 
     Returns
     -------
-    revenue_matrix : np.ndarray, shape (num_weeks, num_channels)
-        Weekly revenue across all channels.
+    revenue_matrix : np.ndarray, shape (num_weeks, num_channels+1)
+        Weekly revenue across all channels, appended with total revenue in the last column.
     """
     num_weeks, num_channels = impressions_matrix.shape
     expected_weeks = config.get_week_range()
@@ -155,6 +153,9 @@ def generate_revenue(config: InputConfigurations, spend_matrix: np.ndarray, impr
     for c, channel in enumerate(channels):
         channel_spend = spend_matrix[:, c].astype(float)
         channel_impressions = impressions_matrix[:, c].astype(float)
-        weekly_revenue += _calculate_channel_revenue(channel, channel_impressions, rng, coefficients[c])
+        weekly_revenue[:, c] = _calculate_channel_revenue(channel, channel_spend, channel_impressions, np.random.default_rng(), cpm_list[c])
+
+    total_revenue = np.sum(weekly_revenue, axis=1)
+    weekly_revenue = np.concatenate((weekly_revenue, total_revenue.reshape(-1, 1)), axis=1)
 
     return weekly_revenue

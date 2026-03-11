@@ -29,10 +29,11 @@ def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
 @dataclass
 class InputConfigurations:
-    run_identifier: str
-    week_range: int
-    channel_list: List[Channel]
-    seed: Optional[int] = None
+    _run_identifier: str
+    _week_range: int
+    _num_channels: int
+    _channel_list: Optional[List[Channel]] = None
+    _seed: Optional[int] = None
 
     @classmethod
     def from_yaml_dict(
@@ -87,17 +88,17 @@ class InputConfigurations:
             seed=seed,
         )
 
-    def get_run_identifier(self) -> str:
-        return self.run_identifier
+    def run_identifier(self) -> str:
+        return self._run_identifier
 
-    def get_week_range(self) -> int:
-        return self.week_range
+    def week_range(self) -> int:
+        return self._num_weeks
 
-    def get_channel_list(self) -> List[Channel]:
-        return self.channel_list
+    def channel_list(self) -> List[Channel]:
+        return self._channel_list
 
-    def get_seed(self) -> Optional[int]:
-        return self.seed
+    def seed(self) -> Optional[int]:
+        return self._seed
 
     def get_rng(self):  # -> np.random.Generator (avoid np import at module level)
         """Return the RNG for this config (same one used during load, seeded with get_seed() if set)."""

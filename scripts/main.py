@@ -1,4 +1,5 @@
 import argparse
+import os
 from datetime import datetime
 
 import pandas as pd
@@ -82,6 +83,7 @@ def main(yaml_path):
     print(df.head())
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+    os.makedirs("output", exist_ok=True)
     output_path = f"output/{config.get_run_identifier()}_{timestamp}.csv"
     df.to_csv(output_path, index=False)
     print(f"Saved to: {output_path}")

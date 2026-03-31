@@ -41,7 +41,7 @@ class InputConfigurations:
         default_channel_template: Optional[Dict[str, Any]] = None,
     ) -> "InputConfigurations":
         """Build InputConfigurations from a dict. When a channel omits a config, use default_channel_template if provided (e.g. from loader), else minimal fallback."""
-        seed = data.pop("seed", None)
+        seed = data.get("seed", None)
         if seed is not None:
             seed = int(seed)
         channel_list_raw = data.get("channel_list") or []

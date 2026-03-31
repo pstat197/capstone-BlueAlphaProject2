@@ -4,6 +4,7 @@ week_range: 52
 channel_list:
   - channel:
       channel_name: Channel 1
+      cpm: 10.0
       cpm_sampling_range: [0.5, 50]
       spend_sampling_gamma_params:
         shape: 2.5

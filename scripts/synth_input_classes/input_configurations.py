@@ -2,29 +2,18 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 
 from .channel import Channel
-
-# Minimal fallback when from_yaml_dict is called without default_channel_template (e.g. tests).
-# Normal runs use the loader, which injects the template from default.yaml.
-_MINIMAL_CHANNEL_DEFAULTS: Dict[str, Any] = {
-    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
-    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
-    "spend_sampling_gamma_params": {"shape": 2.5, "scale": 1000},
-    "noise_variance": {"impression": 0.1, "revenue": 0.1},
-    "cpm": 10.0,
-}
-
+from scripts.config.defaults import get_default_channel_template
 
 def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Resolve per-channel config defaults from injected template or minimal fallback."""
-    if template:
-        return {
-            "saturation_config": dict(template.get("saturation_config") or _MINIMAL_CHANNEL_DEFAULTS["saturation_config"]),
-            "adstock_decay_config": dict(template.get("adstock_decay_config") or _MINIMAL_CHANNEL_DEFAULTS["adstock_decay_config"]),
-            "spend_sampling_gamma_params": dict(template.get("spend_sampling_gamma_params") or _MINIMAL_CHANNEL_DEFAULTS["spend_sampling_gamma_params"]),
-            "noise_variance": dict(template.get("noise_variance") or _MINIMAL_CHANNEL_DEFAULTS["noise_variance"]),
-            "cpm": float(template.get("cpm", _MINIMAL_CHANNEL_DEFAULTS["cpm"])),
-        }
-    return {k: dict(v) if isinstance(v, dict) else v for k, v in _MINIMAL_CHANNEL_DEFAULTS.items()}
+    """Resolve per-channel config defaults from injected template or default.yaml."""
+    resolved_template = template or get_default_channel_template()
+    return {
+        "saturation_config": dict(resolved_template.get("saturation_config") or {}),
+        "adstock_decay_config": dict(resolved_template.get("adstock_decay_config") or {}),
+        "spend_sampling_gamma_params": dict(resolved_template.get("spend_sampling_gamma_params") or {}),
+        "noise_variance": dict(resolved_template.get("noise_variance") or {}),
+        "cpm": resolved_template.get("cpm"),
+    }
 
 
 @dataclass
@@ -40,7 +29,7 @@ class InputConfigurations:
         data: Dict[str, Any],
         default_channel_template: Optional[Dict[str, Any]] = None,
     ) -> "InputConfigurations":
-        """Build InputConfigurations from a dict. When a channel omits a config, use default_channel_template if provided (e.g. from loader), else minimal fallback."""
+        """Build InputConfigurations from a dict using provided defaults or default.yaml."""
         seed = data.get("seed", None)
         if seed is not None:
             seed = int(seed)
@@ -66,7 +55,7 @@ class InputConfigurations:
                 adstock_decay_config["lag"] = int(adstock_decay_config["lag"])
             if "weights" in adstock_decay_config:
                 adstock_decay_config["weights"] = [float(w) for w in adstock_decay_config["weights"]]
-            cpm = float(ch.get("cpm") if ch.get("cpm") is not None else defaults["cpm"])
+            cpm = float(ch.get("cpm", defaults["cpm"]))
             channels.append(
                 Channel(
                     channel_name=ch.get("channel_name", ""),

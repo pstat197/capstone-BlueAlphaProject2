@@ -138,8 +138,6 @@ def load_config(user_yaml_path: str) -> InputConfigurations:
         merged["run_identifier"] = "run_" + datetime.now().strftime("%Y%m%d_%H%M")
     if "week_range" not in merged or merged.get("week_range") is None:
         merged["week_range"] = default_data.get("week_range") or default_data.get("weeks", 52)
-    if "weeks" in merged and "week_range" not in merged:
-        merged["week_range"] = merged.get("weeks")
     merged.pop("weeks", None)
 
     # Step 3: Ensure enough channels (number_of_channels)

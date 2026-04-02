@@ -727,7 +727,7 @@ def _preview_table(df: pd.DataFrame) -> pd.DataFrame:
 
 def _render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
     night = st.session_state.get("night_mode", False)
-    colorblind = bool(st.session_state.get("colorblind_charts", False))
+    colorblind = bool(st.session_state.get("colorblind_charts", True))
     rid = st.session_state.get("last_run_id", "")
     hit = st.session_state.get("last_cache_hit", False)
     ch = st.session_state.get("last_hash", "")
@@ -838,7 +838,7 @@ def main() -> None:
     if "night_mode" not in st.session_state:
         st.session_state.night_mode = False
     if "colorblind_charts" not in st.session_state:
-        st.session_state.colorblind_charts = False
+        st.session_state.colorblind_charts = True
 
     inject_theme_css(night=bool(st.session_state.night_mode))
 

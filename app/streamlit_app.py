@@ -128,6 +128,128 @@ def _group_slider_items(items: List[Dict[str, Any]]) -> Dict[str, List[Dict[str,
     return out
 
 
+def _select_session_key(i: int, path_suffix: str) -> str:
+    return f"sel_{i}_{path_suffix.replace('.', '_')}"
+
+
+def _effective_curve_type(
+    i: int,
+    path_suffix: str,
+    data: Dict[str, Any],
+    options: List[str],
+) -> str:
+    """Widget selection if set, else YAML value, else first option."""
+    key = _select_session_key(i, path_suffix)
+    if key in st.session_state:
+        v = st.session_state[key]
+        if v in options:
+            return str(v)
+    parts = path_string_to_parts(f"channel_list.{i}.{path_suffix}")
+    cur = get_at(data, parts)
+    if cur in options:
+        return str(cur)
+    return str(options[0]) if options else "linear"
+
+
+def _saturation_slider_visible(item: Dict[str, Any], sat_type: str) -> bool:
+    types = item.get("saturation_types")
+    if types is None:
+        return True
+    return sat_type in types
+
+
+def _adstock_slider_visible(item: Dict[str, Any], ad_type: str) -> bool:
+    types = item.get("adstock_types")
+    if types is None:
+        return True
+    return ad_type in types
+
+
+def _render_pc_fields_flex(i: int, fields: List[Dict[str, Any]], data: Dict[str, Any]) -> None:
+    """Lay out 1–3 per-channel numeric fields in rows of up to 3 columns."""
+    if not fields:
+        return
+    chunk = 3
+    for start in range(0, len(fields), chunk):
+        row = fields[start : start + chunk]
+        cols = st.columns(len(row))
+        for col, it in zip(cols, row):
+            with col:
+                _render_one_pc_field(i, it, data)
+
+
+def _adstock_weights_key(i: int) -> str:
+    return f"adw_{i}"
+
+
+def _channel_adstock_weights_from_data(data: Dict[str, Any], i: int) -> List[float]:
+    parts = path_string_to_parts(f"channel_list.{i}.channel.adstock_decay_config.weights")
+    w = get_at(data, parts)
+    if isinstance(w, list) and w:
+        out: List[float] = []
+        for x in w:
+            try:
+                out.append(float(x))
+            except (TypeError, ValueError):
+                continue
+        return out if out else [1.0]
+    return [1.0]
+
+
+def _fmt_weights_placeholder(weights: List[float]) -> str:
+    return ", ".join(_fmt_default(x) for x in weights)
+
+
+def _parse_weights_csv(raw: Any) -> Tuple[Optional[List[float]], bool]:
+    """Returns (weights or None if empty, ok). None + True means skip override."""
+    if raw is None:
+        return None, True
+    s = str(raw).strip()
+    if s == "":
+        return None, True
+    parts = [p.strip() for p in s.replace(";", ",").split(",") if p.strip()]
+    if not parts:
+        return None, True
+    try:
+        return [float(p) for p in parts], True
+    except ValueError:
+        return None, False
+
+
+def _render_adstock_weights_field(i: int, data: Dict[str, Any]) -> None:
+    key = _adstock_weights_key(i)
+    default_w = _channel_adstock_weights_from_data(data, i)
+    ph = f"Default: {_fmt_weights_placeholder(default_w)}"
+    help_txt = (
+        "Comma-separated weights for the adstock kernel (oldest → newest lag). "
+        "Leave empty to keep YAML / default. Example: 0.5, 0.3, 0.2"
+    )
+    if key not in st.session_state:
+        tmpl_ch = _get_default_channel_template()
+        tmpl_ad = tmpl_ch.get("adstock_decay_config") or {}
+        tmpl_list = tmpl_ad.get("weights")
+        if not isinstance(tmpl_list, list):
+            tmpl_list = [1.0]
+        try:
+            tmpl_wf = [float(x) for x in tmpl_list]
+        except (TypeError, ValueError):
+            tmpl_wf = [1.0]
+        same_as_template = len(default_w) == len(tmpl_wf) and all(
+            _numeric_close(float(a), float(b)) for a, b in zip(default_w, tmpl_wf)
+        )
+        if same_as_template:
+            st.session_state[key] = ""
+        else:
+            st.session_state[key] = _fmt_weights_placeholder(default_w)
+    st.text_input(
+        "Adstock weights (comma-separated)",
+        key=key,
+        placeholder=ph,
+        help=help_txt,
+        on_change=_yaml_sync_from_form,
+    )
+
+
 def _yaml_sync_from_form() -> None:
     st.session_state["yaml_manual_edit"] = False
 
@@ -202,7 +324,7 @@ def _render_select_for_path(
     parts = path_string_to_parts(full_path)
     cur = get_at(data, parts)
     opts = list(item.get("options", []))
-    key = f"sel_{i}_{path_suffix.replace('.', '_')}"
+    key = _select_session_key(i, path_suffix)
     sel_idx = opts.index(cur) if cur in opts else 0
     if key not in st.session_state and opts:
         st.session_state[key] = opts[sel_idx]
@@ -286,29 +408,31 @@ def _render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int
 
             st.markdown("##### Saturation")
             st.caption("How impressions map to effective response before ROI (curve type + shape).")
+            sat_opts = list(sat_select.get("options", [])) if sat_select else []
             if sat_select is not None:
                 _render_select_for_path(i, sat_select, data)
-            sat = grouped.get("saturation", [])
-            if len(sat) >= 3:
-                s1, s2, s3 = st.columns(3)
-                with s1:
-                    _render_one_pc_field(i, sat[0], data)
-                with s2:
-                    _render_one_pc_field(i, sat[1], data)
-                with s3:
-                    _render_one_pc_field(i, sat[2], data)
+            eff_sat = _effective_curve_type(i, "channel.saturation_config.type", data, sat_opts)
+            sat = [
+                it
+                for it in grouped.get("saturation", [])
+                if _saturation_slider_visible(it, eff_sat)
+            ]
+            _render_pc_fields_flex(i, sat, data)
 
             st.markdown("##### Adstock")
             st.caption("How past media carries into this week (type + decay parameters).")
+            ad_opts = list(ad_select.get("options", [])) if ad_select else []
             if ad_select is not None:
                 _render_select_for_path(i, ad_select, data)
-            ads = grouped.get("adstock", [])
-            if len(ads) >= 2:
-                a1, a2 = st.columns(2)
-                with a1:
-                    _render_one_pc_field(i, ads[0], data)
-                with a2:
-                    _render_one_pc_field(i, ads[1], data)
+            eff_ad = _effective_curve_type(i, "channel.adstock_decay_config.type", data, ad_opts)
+            ads = [
+                it
+                for it in grouped.get("adstock", [])
+                if _adstock_slider_visible(it, eff_ad)
+            ]
+            _render_pc_fields_flex(i, ads, data)
+            if eff_ad == "weighted":
+                _render_adstock_weights_field(i, data)
 
 
 def _parse_optional_num(
@@ -333,8 +457,22 @@ def _parse_optional_num(
 def _collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Dict[str, Any]], List[str]]:
     overrides: List[Dict[str, Any]] = []
     warnings: List[str] = []
+    selects = list(schema.get("per_channel_selects", []))
+    sat_select = next((s for s in selects if s.get("path") == "channel.saturation_config.type"), None)
+    ad_select = next((s for s in selects if s.get("path") == "channel.adstock_decay_config.type"), None)
+    sat_opts = list(sat_select.get("options", [])) if sat_select else []
+    ad_opts = list(ad_select.get("options", [])) if ad_select else []
+    base_cfg = st.session_state.sim_config
+
     for i in range(n_channels):
+        eff_sat = _effective_curve_type(i, "channel.saturation_config.type", base_cfg, sat_opts)
+        eff_ad = _effective_curve_type(i, "channel.adstock_decay_config.type", base_cfg, ad_opts)
+
         for item in schema.get("per_channel_sliders", []):
+            if item.get("group") == "saturation" and not _saturation_slider_visible(item, eff_sat):
+                continue
+            if item.get("group") == "adstock" and not _adstock_slider_visible(item, eff_ad):
+                continue
             path_suffix = item["path"]
             list_index = item.get("list_index")
             key = _pc_field_key(i, path_suffix, list_index)
@@ -358,9 +496,23 @@ def _collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Di
             else:
                 overrides.append({"path": full_path, "value": float(val)})
 
+        if eff_ad == "weighted":
+            wkey = _adstock_weights_key(i)
+            raw = st.session_state.get(wkey, "")
+            wl, wok = _parse_weights_csv(raw)
+            if not wok:
+                warnings.append(f"Channel {i + 1} adstock weights: invalid list, skipped.")
+            elif wl is not None:
+                overrides.append(
+                    {
+                        "path": f"channel_list.{i}.channel.adstock_decay_config.weights",
+                        "value": wl,
+                    }
+                )
+
         for item in schema.get("per_channel_selects", []):
             path_suffix = item["path"]
-            key = f"sel_{i}_{path_suffix.replace('.', '_')}"
+            key = _select_session_key(i, path_suffix)
             if key not in st.session_state:
                 continue
             full_path = f"channel_list.{i}.{path_suffix}"
@@ -371,14 +523,24 @@ def _collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Di
 
 def _clear_channel_widget_keys() -> None:
     for k in list(st.session_state.keys()):
-        if k.startswith(("pc_", "sel_", "ch_name_", "del_ch_")):
+        if k.startswith(("pc_", "sel_", "ch_name_", "del_ch_", "adw_")):
             del st.session_state[k]
 
 
 def _clear_widget_keys() -> None:
     for k in list(st.session_state.keys()):
         if k.startswith(
-            ("tl_", "pc_", "sel_", "ch_name_", "week_range_", "run_identifier_", "seed_input", "del_ch_")
+            (
+                "tl_",
+                "pc_",
+                "sel_",
+                "ch_name_",
+                "week_range_",
+                "run_identifier_",
+                "seed_input",
+                "del_ch_",
+                "adw_",
+            )
         ) or k in ("new_channel_name", "advanced_yaml"):
             del st.session_state[k]
 
@@ -697,7 +859,7 @@ def main() -> None:
         )
     with col_r:
         st.text_input(
-            "Run identifier",
+            "Run Name",
             key="run_identifier_input",
             placeholder="e.g. Example Alpha",
             help="Labels CSV downloads and run summaries.",

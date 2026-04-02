@@ -63,22 +63,21 @@ def construct_csv(
     df = pd.DataFrame(data, columns=columns)
     return df
 
+
+def run_simulation(config: InputConfigurations) -> pd.DataFrame:
+    """Run spend → impressions → revenue and return the weekly DataFrame."""
+    spend_matrix = generate_spend(config)
+    impressions_matrix = generate_impressions(config, spend_matrix)
+    revenue_matrix = generate_revenue(config, impressions_matrix)
+    return construct_csv(config, spend_matrix, impressions_matrix, revenue_matrix)
+
+
 def main(yaml_path):
 
     # load config (merges with config/default.yaml; supports number_of_channels)
     config = load_config(yaml_path)
 
-    # generate spend
-    spend_matrix = generate_spend(config)
-
-    # generate impressions
-    impressions_matrix = generate_impressions(config, spend_matrix)
-
-    # generate revenue
-    revenue_matrix = generate_revenue(config, impressions_matrix)
-
-    # construct csv
-    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_matrix)
+    df = run_simulation(config)
 
     print(df.head())
 

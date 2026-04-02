@@ -6,7 +6,7 @@ See also: [Documentation of Code](https://docs.google.com/document/d/1glQWezaB3e
 
 ## Setup
 
-From the project root, create a virtual environment (recommended) and install dependencies:
+From the project root, create a virtual environment (recommended) and install the project in **editable** mode so `scripts` and `app` import without setting `PYTHONPATH`:
 
 ```bash
 python -m venv venv
@@ -15,10 +15,22 @@ venv\Scripts\activate
 # macOS/Linux:
 # source venv/bin/activate
 
-pip install -r requirements.txt
+pip install -e .
 ```
 
-Requirements: `numpy`, `pandas`, `PyYAML`.
+This installs dependencies from `pyproject.toml` (same set as `requirements.txt`). If you prefer not to use editable install, you can instead run `pip install -r requirements.txt` and keep the repository root on `PYTHONPATH` when running tests or the CLI.
+
+### Streamlit UI
+
+After `pip install -e .`, from the project root:
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+See [app/README.md](app/README.md) for UI behavior and options.
+
+Requirements (declared in `pyproject.toml` / `requirements.txt`): `numpy`, `pandas`, `PyYAML`, `pytest`, `streamlit`, `plotly`.
 
 ---
 
@@ -26,6 +38,7 @@ Requirements: `numpy`, `pandas`, `PyYAML`.
 
 - [Setup](#setup)
 - [Running the pipeline](#running-the-pipeline)
+- [Streamlit UI](#streamlit-ui)
 - [Running tests](#running-tests)
 - [Pipeline overview](#pipeline-overview)
 - [1. Config & loading](#1-config--loading)

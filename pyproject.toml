@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "capstone-bluealpha-project2"
+version = "0.1.0"
+description = "Marketing simulation pipeline and Streamlit UI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "PyYAML",
+    "pytest",
+    "streamlit>=1.28.0",
+    "plotly>=5.18.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scripts*", "app*"]

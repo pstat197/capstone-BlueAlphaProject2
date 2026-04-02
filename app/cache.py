@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 import pandas as pd
 
 # Bump when simulation outputs change for the same YAML (invalidate old cache files).
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 _CACHE_ROOT = Path(__file__).resolve().parent / ".cache" / "runs"
 

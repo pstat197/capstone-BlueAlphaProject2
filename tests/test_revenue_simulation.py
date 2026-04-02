@@ -8,7 +8,11 @@ import numpy as np
 
 from scripts.config.loader import load_config
 from scripts.impressions_simulation.impressions_generation import generate_impressions
-from scripts.revenue_simulation.revenue_generation import generate_revenue
+from scripts.revenue_simulation.revenue_generation import (
+    _adstock_decay,
+    _saturation_fn,
+    generate_revenue,
+)
 from scripts.spend_simulation.spend_generation import generate_spend
 
 
@@ -36,6 +40,28 @@ def test_generate_revenue_shape_and_finite():
     assert np.all(np.isfinite(revenue))
 
 
+def test_linear_saturation_scales_by_slope():
+    x = np.array([1.0, 2.0, 3.0])
+    out = _saturation_fn(x, {"type": "linear", "slope": 2.0})
+    np.testing.assert_array_almost_equal(out, np.array([2.0, 4.0, 6.0]))
+    same = _saturation_fn(x, {"type": "linear"})
+    np.testing.assert_array_almost_equal(same, x)
+
+
+def test_linear_adstock_uniform_moving_average_when_lag_positive():
+    x = np.array([0.0, 0.0, 9.0, 0.0, 0.0])
+    out = _adstock_decay(x, {"type": "linear", "lag": 2})
+    w = np.ones(3) / 3.0
+    expected = np.convolve(x, w, mode="full")[: len(x)]
+    np.testing.assert_array_almost_equal(out, expected)
+
+
+def test_linear_adstock_lag_zero_is_identity():
+    x = np.array([1.0, 5.0, 2.0])
+    out = _adstock_decay(x, {"type": "linear", "lag": 0})
+    np.testing.assert_array_almost_equal(out, x)
+
+
 def test_generate_revenue_reproducible_with_seed():
     """With a fixed seed in the config, two runs produce identical revenue vectors."""
     example_path = _project_root() / "example.yaml"
@@ -57,6 +83,9 @@ def test_generate_revenue_reproducible_with_seed():
 def main():
     print("Revenue simulation tests...")
     test_generate_revenue_shape_and_finite()
+    test_linear_saturation_scales_by_slope()
+    test_linear_adstock_uniform_moving_average_when_lag_positive()
+    test_linear_adstock_lag_zero_is_identity()
     test_generate_revenue_reproducible_with_seed()
     print("Revenue simulation tests passed.")
 

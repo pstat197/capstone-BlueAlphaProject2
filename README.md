@@ -152,8 +152,8 @@ Entry point: `scripts.main` (see [Running the pipeline](#running-the-pipeline)).
 **Code:** `scripts/revenue_simulation/revenue_generation.py`
 
 - **What it does:** Maps impressions to total weekly revenue across all channels:
-  - Applies the channel’s `saturation_config` (e.g. linear, hill, diminishing_returns) to impressions.
-  - Applies the channel’s `adstock_decay_config` (geometric/exponential, weighted, or linear) to model carry‑over of effects across weeks.
+  - Applies the channel’s `saturation_config` (e.g. linear = `slope` × impressions with default slope 1, hill, diminishing_returns) to impressions.
+  - Applies the channel’s `adstock_decay_config` (geometric/exponential, weighted, or linear = uniform moving average over `lag`+1 weeks when `lag` > 0) to model carry‑over of effects across weeks.
   - Scales by `true_roi` and adds `baseline_revenue`.
   - Adds Gaussian revenue noise controlled by `noise_variance["revenue"]` for each channel.
 - **Input:** `InputConfigurations`, `impressions_matrix` (weeks × channels).

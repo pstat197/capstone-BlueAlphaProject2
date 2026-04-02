@@ -8,6 +8,7 @@ Run from repository root:
 from __future__ import annotations
 
 import copy
+import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -72,6 +73,48 @@ def _pc_field_key(i: int, path_suffix: str, list_index: Optional[int]) -> str:
     return f"pc_{i}_{path_suffix.replace('.', '_')}_{li}"
 
 
+_default_channel_template: Optional[Dict[str, Any]] = None
+
+
+def _get_default_channel_template() -> Dict[str, Any]:
+    global _default_channel_template
+    if _default_channel_template is None:
+        _default_channel_template = default_channel_dict()
+    return _default_channel_template
+
+
+def _numeric_close(a: float, b: float) -> bool:
+    return math.isclose(a, b, rel_tol=0.0, abs_tol=1e-9 * max(1.0, abs(a), abs(b)))
+
+
+def _template_scalar_at(path_suffix: str, list_index: Optional[int]) -> Any:
+    """Scalar from default channel template at the same path as the UI field."""
+    tmpl_ch = _get_default_channel_template()
+    ref = {"channel_list": [{"channel": tmpl_ch}]}
+    v = get_at(ref, path_string_to_parts(f"channel_list.0.{path_suffix}"))
+    if list_index is not None:
+        if isinstance(v, list) and len(v) > list_index:
+            return v[list_index]
+        return None
+    return v
+
+
+def _matches_channel_template_default(
+    path_suffix: str,
+    list_index: Optional[int],
+    cur: Any,
+) -> bool:
+    """True when YAML value equals the default channel template (form stays blank; placeholder shows default)."""
+    if cur is None or isinstance(cur, bool):
+        return False
+    exp = _template_scalar_at(path_suffix, list_index)
+    if exp is None:
+        return False
+    if isinstance(cur, (int, float)) and isinstance(exp, (int, float)) and not isinstance(exp, bool):
+        return _numeric_close(float(cur), float(exp))
+    return cur == exp
+
+
 def _group_slider_items(items: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     out: Dict[str, List[Dict[str, Any]]] = {
         "core": [],
@@ -101,20 +144,45 @@ def _render_one_pc_field(
     path_suffix = item["path"]
     full_path = f"channel_list.{i}.{path_suffix}"
     parts = path_string_to_parts(full_path)
-    cur = get_at(data, parts)
+    raw = get_at(data, parts)
     list_index = item.get("list_index")
     if list_index is not None:
-        if isinstance(cur, list) and len(cur) > list_index:
-            cur = cur[list_index]
+        if isinstance(raw, list) and len(raw) > list_index:
+            cur: Any = raw[list_index]
         else:
-            cur = item["min"]
+            cur = None
+    else:
+        cur = raw
+    if isinstance(cur, bool) or (cur is not None and not isinstance(cur, (int, float))):
+        cur = None
+
     key = _pc_field_key(i, path_suffix, list_index)
-    default_v = item["min"] if cur is None else cur
+    tmpl_v = _template_scalar_at(path_suffix, list_index)
+    if isinstance(cur, (int, float)) and not isinstance(cur, bool):
+        default_v = cur
+    elif (
+        tmpl_v is not None
+        and isinstance(tmpl_v, (int, float))
+        and not isinstance(tmpl_v, bool)
+    ):
+        default_v = tmpl_v
+    else:
+        default_v = item["min"]
     if not isinstance(default_v, (int, float)):
         default_v = item["min"]
     label = item["label"]
     ph = f"Default: {_fmt_default(default_v)}"
     help_txt = item.get("help", "Leave empty to use the default in the placeholder.")
+    # Widget value lives in session_state; seed when missing (e.g. after Apply YAML clears keys).
+    # Equal to template default → leave blank (run still uses YAML / merged config).
+    if key not in st.session_state:
+        if isinstance(cur, (int, float)) and not isinstance(cur, bool):
+            if _matches_channel_template_default(path_suffix, list_index, cur):
+                st.session_state[key] = ""
+            else:
+                st.session_state[key] = _fmt_default(cur)
+        else:
+            st.session_state[key] = ""
     st.text_input(
         label,
         key=key,
@@ -136,6 +204,8 @@ def _render_select_for_path(
     opts = list(item.get("options", []))
     key = f"sel_{i}_{path_suffix.replace('.', '_')}"
     sel_idx = opts.index(cur) if cur in opts else 0
+    if key not in st.session_state and opts:
+        st.session_state[key] = opts[sel_idx]
     st.selectbox(
         item["label"],
         options=opts,
@@ -184,8 +254,8 @@ def _render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int
                         st.rerun()
 
             st.caption(
-                "Leave blank for placeholder default. * — template jitter may apply when values are "
-                "auto-filled from defaults (not saturation/adstock blocks). † — variance for impression/revenue noise in the simulator."
+                "† — template jitter may apply when values are "
+                "auto-filled from defaults."
             )
 
             st.markdown("**Spend & ROI**")
@@ -552,6 +622,15 @@ def main() -> None:
         s = st.session_state.sim_config.get("seed")
         st.session_state.seed_input = int(s) if s is not None else 0
 
+    # Apply YAML updates widget-bound keys here, before those widgets are instantiated.
+    if st.session_state.pop("_sync_top_widgets_from_sim_config", False):
+        st.session_state.week_range_num = int(st.session_state.sim_config.get("week_range", 52))
+        st.session_state.run_identifier_input = str(
+            st.session_state.sim_config.get("run_identifier", "run")
+        )
+        s = st.session_state.sim_config.get("seed")
+        st.session_state.seed_input = int(s) if s is not None else 0
+
     # Sync Advanced YAML from form when the user is not mid-edit in the YAML box.
     pending_yaml = st.session_state.pop("pending_yaml_dump", None)
     if pending_yaml is not None:
@@ -682,12 +761,7 @@ def main() -> None:
                 st.session_state.sim_config = parsed
                 st.session_state.yaml_manual_edit = False
                 _clear_channel_widget_keys()
-                st.session_state.week_range_num = int(st.session_state.sim_config.get("week_range", 52))
-                st.session_state.run_identifier_input = str(
-                    st.session_state.sim_config.get("run_identifier", "run")
-                )
-                s = st.session_state.sim_config.get("seed")
-                st.session_state.seed_input = int(s) if s is not None else 0
+                st.session_state["_sync_top_widgets_from_sim_config"] = True
                 st.session_state["pending_yaml_dump"] = _yaml_dump(st.session_state.sim_config)
                 st.success("YAML applied.")
                 st.rerun()

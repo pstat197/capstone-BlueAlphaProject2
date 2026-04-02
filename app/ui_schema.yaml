@@ -1,4 +1,4 @@
-# group: layout. * = loader may jitter when auto-filling (excludes saturation/adstock dicts). † = sim noise variance.
+# group: layout. † = loader may jitter when auto-filling (excludes saturation/adstock dicts).
 # Paths are relative to channel_list.{i}.
 
 top_level_sliders: []
@@ -6,28 +6,28 @@ top_level_sliders: []
 per_channel_sliders:
   - path: channel.true_roi
     group: core
-    label: "ROI *"
+    label: "ROI †"
     help: "Multiplies adstocked impressions to get revenue contribution (before noise)."
     min: 0.0
     max: 15.0
     step: 0.1
   - path: channel.baseline_revenue
     group: core
-    label: "Baseline revenue *"
+    label: "Baseline revenue †"
     help: "Weekly revenue not explained by media (added after ROI scaling)."
     min: 0.0
     max: 100000.0
     step: 100.0
   - path: channel.cpm
     group: core
-    label: "CPM *"
+    label: "CPM †"
     help: "Cost per thousand impressions; links spend to simulated impressions."
     min: 0.5
     max: 100.0
     step: 0.5
   - path: channel.spend_range
     group: core
-    label: "Spend min *"
+    label: "Spend min †"
     list_index: 0
     help: "Lower bound of weekly spend sampling (gamma distribution)."
     min: 0.0
@@ -35,7 +35,7 @@ per_channel_sliders:
     step: 500.0
   - path: channel.spend_range
     group: core
-    label: "Spend max *"
+    label: "Spend max †"
     list_index: 1
     help: "Upper bound of weekly spend sampling."
     min: 0.0
@@ -43,14 +43,14 @@ per_channel_sliders:
     step: 500.0
   - path: channel.noise_variance.impression
     group: noise
-    label: "Noise variance (impressions) †"
+    label: "Noise variance (impressions)"
     help: "Variance of Gaussian noise on weekly impressions (after CPM mapping)."
     min: 0.0
     max: 1.0
     step: 0.01
   - path: channel.noise_variance.revenue
     group: noise
-    label: "Noise variance (revenue) †"
+    label: "Noise variance (revenue)"
     help: "Variance of Gaussian noise on weekly revenue for this channel."
     min: 0.0
     max: 1.0
@@ -94,14 +94,14 @@ per_channel_sliders:
 per_channel_selects:
   - path: channel.saturation_config.type
     label: "Saturation type"
-    help: "linear: identity; hill / diminishing_returns: nonlinear response."
+    help: "linear: slope × impressions (slope=1 is identity); hill / diminishing_returns: nonlinear."
     options:
       - linear
       - hill
       - diminishing_returns
   - path: channel.adstock_decay_config.type
     label: "Adstock type"
-    help: "How past weeks weight current effective impressions."
+    help: "linear: uniform average over lag+1 weeks (lag 0 = none); geometric/exponential/weighted: decay kernels."
     options:
       - linear
       - geometric

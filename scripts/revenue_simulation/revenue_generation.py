@@ -13,7 +13,7 @@ def _saturation_fn(impressions: np.ndarray, saturation_config: Dict) -> np.ndarr
     Supported types:
       - 'hill':            x^slope / (x^slope + K^slope)
       - 'diminishing_returns': x / (1 + beta * x)
-      - 'linear':          return impressions unchanged
+      - 'linear':          linear scaling slope * impressions (default slope=1 → identity)
     """
     saturation_type = (saturation_config or {}).get("type", "linear")
 
@@ -29,7 +29,8 @@ def _saturation_fn(impressions: np.ndarray, saturation_config: Dict) -> np.ndarr
         return impressions / (1.0 + beta * impressions)
 
     if saturation_type == "linear":
-        return impressions.astype(float, copy=True)
+        slope = float(saturation_config.get("slope", 1.0))
+        return slope * impressions.astype(float, copy=True)
 
     raise ValueError(
         f'Unknown saturation_config type "{saturation_type}". '
@@ -44,11 +45,19 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
     Supported types:
       - 'geometric' or 'exponential': geometric decay with rate lambda and lag
       - 'weighted': arbitrary finite impulse response with provided weights
-      - 'linear': no adstock (return impressions)
+      - 'linear': if lag <= 0, return impressions; else uniform moving average over lag+1 weeks
     """
     adstock_config = adstock_config or {}
     adstock_type = adstock_config.get("type", "linear")
     lag = int(adstock_config.get("lag", 0))
+
+    if adstock_type == "linear":
+        if lag < 0:
+            raise ValueError(f"adstock lag must be non-negative, got {lag}.")
+        if lag == 0:
+            return impressions.astype(float, copy=True)
+        weights = np.ones(lag + 1, dtype=float) / (lag + 1)
+        return np.convolve(impressions, weights, mode="full")[: len(impressions)]
 
     if adstock_type in ("geometric", "exponential"):
         lambda_ = float(adstock_config.get("lambda", adstock_config.get("decay_rate", 0.0)))
@@ -62,9 +71,6 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
         weights = adstock_config.get("weights", [1.0])
         weights_arr = np.asarray(weights, dtype=float)
         return np.convolve(impressions, weights_arr, mode="full")[: len(impressions)]
-
-    if adstock_type == "linear":
-        return impressions.astype(float, copy=True)
 
     raise ValueError(
         f'Unknown adstock_decay_config type "{adstock_type}". '

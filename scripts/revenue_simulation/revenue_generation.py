@@ -116,7 +116,7 @@ def _channel_revenue(
 
 def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray) -> np.ndarray:
     """
-    Map impressions to total weekly revenue across all channels.
+    Map impressions to weekly revenue per channel and total.
 
     Parameters
     ----------
@@ -127,8 +127,8 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
 
     Returns
     -------
-    revenue_vector : np.ndarray, shape (num_weeks,)
-        Total revenue per week, across all channels.
+    revenue_matrix : np.ndarray, shape (num_weeks, num_channels)
+        Weekly revenue attributed to each channel (same summation as total as before).
     """
     num_weeks, num_channels = impressions_matrix.shape
     expected_weeks = config.get_week_range()
@@ -144,10 +144,10 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
         )
 
     rng = config.get_rng()
-    weekly_revenue = np.zeros(num_weeks, dtype=float)
+    out = np.zeros((num_weeks, num_channels), dtype=float)
 
     for c, channel in enumerate(channels):
         channel_impressions = impressions_matrix[:, c].astype(float)
-        weekly_revenue += _channel_revenue(channel, channel_impressions, rng)
+        out[:, c] = _channel_revenue(channel, channel_impressions, rng)
 
-    return weekly_revenue
+    return out

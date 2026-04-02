@@ -27,7 +27,7 @@ def _load_example_config():
 
 
 def test_generate_revenue_shape_and_finite():
-    """generate_revenue returns a 1D vector of length num_weeks with finite values."""
+    """generate_revenue returns (num_weeks, num_channels) with finite values."""
     config = _load_example_config()
     spend = generate_spend(config)
     impressions = generate_impressions(config, spend)
@@ -35,8 +35,8 @@ def test_generate_revenue_shape_and_finite():
     revenue = generate_revenue(config, impressions)
 
     assert isinstance(revenue, np.ndarray)
-    assert revenue.ndim == 1
-    assert revenue.shape[0] == config.get_week_range()
+    assert revenue.ndim == 2
+    assert revenue.shape == (config.get_week_range(), len(config.get_channel_list()))
     assert np.all(np.isfinite(revenue))
 
 
@@ -78,6 +78,7 @@ def test_generate_revenue_reproducible_with_seed():
     np.testing.assert_array_almost_equal(spend1, spend2)
     np.testing.assert_array_almost_equal(imps1, imps2)
     np.testing.assert_array_almost_equal(rev1, rev2)
+    assert rev1.shape[1] == len(config1.get_channel_list())
 
 
 def main():

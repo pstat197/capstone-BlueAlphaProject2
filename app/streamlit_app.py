@@ -24,7 +24,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from app.cache import clear_run_cache, run_with_cache  # noqa: E402
+from app.cache import cached_dataframe_schema_ok, clear_run_cache, run_with_cache  # noqa: E402
 from app.default_channel import default_channel_dict  # noqa: E402
 from app.pipeline_runner import run_pipeline  # noqa: E402
 from app.theme import inject_theme_css  # noqa: E402
@@ -573,9 +573,26 @@ def _norm_series(s: pd.Series) -> pd.Series:
     return (s - lo) / (hi - lo)
 
 
+def _channel_names_from_results_df(df: pd.DataFrame) -> List[str]:
+    names: List[str] = []
+    for col in df.columns:
+        c = str(col).strip().lstrip("\ufeff")
+        if c.endswith("_impressions") and c != "total_impressions":
+            names.append(c[: -len("_impressions")])
+    return names
+
+
+def _results_df_clean_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Copy with stripped / BOM-safe headers so *_revenue lines up with *_impressions."""
+    out = df.copy()
+    out.columns = [str(c).strip().lstrip("\ufeff") for c in out.columns]
+    return out
+
+
 def _make_charts(
     df: pd.DataFrame,
     *,
+    channel: Optional[str] = None,
     overlay: bool = False,
     night: bool = False,
     colorblind: bool = False,
@@ -586,16 +603,31 @@ def _make_charts(
     plot_bg = "rgba(30,41,59,0.5)" if night else "rgba(248,250,252,0.9)"
     title_color = "#e2e8f0" if night else "#0f172a"
 
+    r_col, sp_col, im_col = "revenue", "total_spend", "total_impressions"
+    sub_r, sub_sp, sub_im = "Revenue", "Total spend", "Total impressions"
+    if channel:
+        rc, sc, ic = f"{channel}_revenue", f"{channel}_spend", f"{channel}_impressions"
+        if rc in df.columns and sc in df.columns and ic in df.columns:
+            r_col, sp_col, im_col = rc, sc, ic
+            sub_r = f"Revenue ({channel})"
+            sub_sp = f"Spend ({channel})"
+            sub_im = f"Impressions ({channel})"
+        else:
+            channel = None
+
     if overlay:
-        r = _norm_series(df["revenue"])
-        sp = _norm_series(df["total_spend"])
-        im = _norm_series(df["total_impressions"])
+        r = _norm_series(df[r_col])
+        sp = _norm_series(df[sp_col])
+        im = _norm_series(df[im_col])
         fig = go.Figure()
+        nm_r = f"{sub_r} (normalized)"
+        nm_sp = f"{sub_sp} (normalized)"
+        nm_im = f"{sub_im} (normalized)"
         fig.add_trace(
             go.Scatter(
                 x=df["week"],
                 y=r,
-                name="Revenue (normalized)",
+                name=nm_r,
                 mode="lines",
                 line=dict(color=c1, width=2),
             )
@@ -604,7 +636,7 @@ def _make_charts(
             go.Scatter(
                 x=df["week"],
                 y=sp,
-                name="Total spend (normalized)",
+                name=nm_sp,
                 mode="lines",
                 line=dict(color=c2, width=2),
             )
@@ -613,14 +645,17 @@ def _make_charts(
             go.Scatter(
                 x=df["week"],
                 y=im,
-                name="Total impressions (normalized)",
+                name=nm_im,
                 mode="lines",
                 line=dict(color=c3, width=2),
             )
         )
+        overlay_title = "Series overlaid (min–max normalized per series)"
+        if channel:
+            overlay_title = f"{overlay_title} · {channel}"
         fig.update_layout(
             height=480,
-            title=dict(text="Series overlaid (min–max normalized per series)", font=dict(color=title_color)),
+            title=dict(text=overlay_title, font=dict(color=title_color)),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
             margin=dict(l=48, r=24, t=72, b=48),
             paper_bgcolor=paper,
@@ -640,16 +675,18 @@ def _make_charts(
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.08,
-        subplot_titles=("Revenue", "Total spend", "Total impressions"),
+        subplot_titles=(sub_r, sub_sp, sub_im),
     )
     fig.add_trace(
-        go.Scatter(x=df["week"], y=df["revenue"], name="Revenue", mode="lines", line=dict(color=c1, width=2)),
+        go.Scatter(
+            x=df["week"], y=df[r_col], name=sub_r, mode="lines", line=dict(color=c1, width=2)
+        ),
         row=1,
         col=1,
     )
     fig.add_trace(
         go.Scatter(
-            x=df["week"], y=df["total_spend"], name="Total spend", mode="lines", line=dict(color=c2, width=2)
+            x=df["week"], y=df[sp_col], name=sub_sp, mode="lines", line=dict(color=c2, width=2)
         ),
         row=2,
         col=1,
@@ -657,8 +694,8 @@ def _make_charts(
     fig.add_trace(
         go.Scatter(
             x=df["week"],
-            y=df["total_impressions"],
-            name="Total impressions",
+            y=df[im_col],
+            name=sub_im,
             mode="lines",
             line=dict(color=c3, width=2),
         ),
@@ -695,6 +732,8 @@ def _render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
     hit = st.session_state.get("last_cache_hit", False)
     ch = st.session_state.get("last_hash", "")
 
+    df = _results_df_clean_columns(df)
+
     if "overlay_results_charts" not in st.session_state:
         st.session_state.overlay_results_charts = False
 
@@ -723,13 +762,51 @@ def _render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
         f"Run **{rid}** · {'served from cache' if hit else 'newly computed'} · config `…{ch[-8:]}`"
     )
 
-    st.checkbox(
-        "Overlay series (min–max normalized on one chart)",
-        key="overlay_results_charts",
-    )
+    ch_names = _channel_names_from_results_df(df)
+    schema_ok = cached_dataframe_schema_ok(df)
+    if not schema_ok and ch_names:
+        if hit:
+            st.info(
+                "These results were loaded from **disk cache** in an older CSV shape (no per-channel "
+                "**`*_revenue`** columns). Click **Run simulation** once to rebuild, or use "
+                "**Clear simulation cache** in the sidebar."
+            )
+        else:
+            st.warning(
+                "This run’s table is missing per-channel **`*_revenue`** columns next to "
+                "**`*_impressions`** (unexpected for a new run). **Stop and restart** the Streamlit "
+                "server so it picks up the latest `scripts.main` code, then run again."
+            )
+        scope_options = ["All channels (totals)"]
+        st.session_state.results_chart_scope = scope_options[0]
+    else:
+        scope_options = ["All channels (totals)"] + ch_names
+
+    if "results_chart_scope" not in st.session_state:
+        st.session_state.results_chart_scope = scope_options[0]
+    if st.session_state.results_chart_scope not in scope_options:
+        st.session_state.results_chart_scope = scope_options[0]
+
+    csel1, csel2 = st.columns([1, 1])
+    with csel1:
+        st.selectbox(
+            "Chart view",
+            options=scope_options,
+            key="results_chart_scope",
+            help="Totals across all channels, or one channel’s revenue, spend, and impressions.",
+        )
+    with csel2:
+        st.checkbox(
+            "Overlay series (min–max normalized on one chart)",
+            key="overlay_results_charts",
+        )
+
+    scope = str(st.session_state.results_chart_scope)
+    ch_view: Optional[str] = None if scope == scope_options[0] else scope
+
     overlay = bool(st.session_state.overlay_results_charts)
     st.plotly_chart(
-        _make_charts(df, overlay=overlay, night=night, colorblind=colorblind),
+        _make_charts(df, channel=ch_view, overlay=overlay, night=night, colorblind=colorblind),
         use_container_width=True,
     )
 

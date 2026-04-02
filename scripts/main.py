@@ -16,14 +16,14 @@ def construct_csv(
     config: InputConfigurations,
     spend_matrix: "np.ndarray",  # matrix: weeks x channels
     impressions_matrix: "np.ndarray",  # matrix: weeks x channels
-    revenue_vector: "np.ndarray",  # vector: weeks
+    revenue_matrix: "np.ndarray",  # matrix: weeks x channels
 ) -> pd.DataFrame:
     """
     Construct a DataFrame: each row corresponds to a week.
     Columns:
       - 'week': week number (starting from 1)
-      - 'revenue': total revenue for the week
-      - For each channel: f"{channel}_impressions" and f"{channel}_spend"
+      - 'revenue': total revenue for the week (sum across channels)
+      - For each channel: f"{channel}_impressions", f"{channel}_spend", f"{channel}_revenue"
       - 'total_impressions', 'total_spend'
     """
     # Get channel names and week count
@@ -34,14 +34,12 @@ def construct_csv(
     # Prepare column names for each channel
     channel_impression_cols = [f"{name}_impressions" for name in channel_names]
     channel_spend_cols = [f"{name}_spend" for name in channel_names]
+    channel_revenue_cols = [f"{name}_revenue" for name in channel_names]
 
     # Build rows
     data = []
     for week in range(num_weeks):
-        row = {
-            "week": week + 1,
-            "revenue": revenue_vector[week],
-        }
+        row: dict = {"week": week + 1}
         total_impressions = 0
         total_spend = 0
         for ch in range(num_channels):
@@ -49,17 +47,23 @@ def construct_csv(
             spd = spend_matrix[week, ch]
             row[channel_impression_cols[ch]] = imp
             row[channel_spend_cols[ch]] = spd
+            row[channel_revenue_cols[ch]] = float(revenue_matrix[week, ch])
             total_impressions += imp
             total_spend += spd
+        row["revenue"] = float(revenue_matrix[week].sum())
         row["total_impressions"] = total_impressions
         row["total_spend"] = total_spend
         data.append(row)
 
-    columns = (
-        ["week", "revenue"]
-        + [col for pair in zip(channel_impression_cols, channel_spend_cols) for col in pair]
-        + ["total_impressions", "total_spend"]
-    )
+    # One block per channel: impressions, spend, revenue (easier to read in CSV / print(df.head()))
+    columns = ["week", "revenue"]
+    for i in range(num_channels):
+        columns += [
+            channel_impression_cols[i],
+            channel_spend_cols[i],
+            channel_revenue_cols[i],
+        ]
+    columns += ["total_impressions", "total_spend"]
     df = pd.DataFrame(data, columns=columns)
     return df
 
@@ -68,8 +72,8 @@ def run_simulation(config: InputConfigurations) -> pd.DataFrame:
     """Run spend → impressions → revenue and return the weekly DataFrame."""
     spend_matrix = generate_spend(config)
     impressions_matrix = generate_impressions(config, spend_matrix)
-    revenue_matrix = generate_revenue(config, impressions_matrix)
-    return construct_csv(config, spend_matrix, impressions_matrix, revenue_matrix)
+    revenue_by_channel = generate_revenue(config, impressions_matrix)
+    return construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel)
 
 
 def main(yaml_path):
@@ -80,6 +84,7 @@ def main(yaml_path):
     df = run_simulation(config)
 
     print(df.head())
+    print("Columns:", ", ".join(map(str, df.columns)))
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M')
     os.makedirs("output", exist_ok=True)

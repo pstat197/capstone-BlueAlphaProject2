@@ -61,7 +61,7 @@ python -m scripts.main example.yaml
 python -m scripts.main -c path/to/config.yaml
 ```
 
-Output CSV is written under `output/` and includes one row per week with per-channel spend/impressions and totals.
+Output CSV is written under `output/` and includes one row per week with per-channel impressions, spend, revenue, and totals.
 
 ---
 
@@ -98,13 +98,13 @@ YAML config  →  load_config  →  InputConfigurations
                                       ↓
                               generate_impressions(config, spend_matrix)  →  impressions_matrix (weeks × channels)
                                       ↓
-                              generate_revenue(config, impressions_matrix)  →  revenue_vector (weeks,)
+                              generate_revenue(config, impressions_matrix)  →  revenue_matrix (weeks × channels)
                                       ↓
                               construct_csv  →  DataFrame  →  CSV file in output/
 ```
 
 - **Input:** Path to a YAML config file (e.g. `example.yaml`).
-- **Output:** A CSV with one row per week: `week`, `revenue`, per-channel `{channel}_impressions` and `{channel}_spend`, and `total_impressions`, `total_spend`.
+- **Output:** A CSV with one row per week: `week`, `revenue` (sum across channels), per-channel `{channel}_impressions`, `{channel}_spend`, `{channel}_revenue`, and `total_impressions`, `total_spend`.
 
 Entry point: `scripts.main` (see [Running the pipeline](#running-the-pipeline)).
 
@@ -165,6 +165,6 @@ Entry point: `scripts.main` (see [Running the pipeline](#running-the-pipeline)).
 
 **Code:** `scripts/main.py` (`construct_csv`, `main`)
 
-- **What it does:** Builds a pandas DataFrame with columns: `week`, `revenue`, then for each channel `{channel}_impressions` and `{channel}_spend`, then `total_impressions` and `total_spend`. Saves to `output/{run_identifier}_{timestamp}.csv`.
+- **What it does:** Builds a pandas DataFrame with columns: `week`, total `revenue`, then for **each channel** (in order) `{channel}_impressions`, `{channel}_spend`, and `{channel}_revenue`, then `total_impressions` and `total_spend`. Saves to `output/{run_identifier}_{timestamp}.csv`.
 - **Full pipeline:** Load config → generate spend → generate impressions → generate revenue → construct CSV → write file.
 

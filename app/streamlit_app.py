@@ -326,8 +326,6 @@ def _render_select_for_path(
     opts = list(item.get("options", []))
     key = _select_session_key(i, path_suffix)
     sel_idx = opts.index(cur) if cur in opts else 0
-    if key not in st.session_state and opts:
-        st.session_state[key] = opts[sel_idx]
     st.selectbox(
         item["label"],
         options=opts,

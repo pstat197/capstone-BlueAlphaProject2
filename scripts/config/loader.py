@@ -168,5 +168,22 @@ def load_config(user_yaml_path: str) -> InputConfigurations:
         filled.append({"channel": filled_ch})
     merged["channel_list"] = filled
 
-    # Step 5: Build (inject default channel so builder uses default.yaml defaults for any missing keys)
+    # Step 5: Validate correlations block (if present)
+    correlations_raw = merged.get("correlations") or []
+    channel_names = set()
+    for item in merged.get("channel_list", []):
+        ch = item.get("channel") or item
+        channel_names.add(ch.get("channel_name", ""))
+    for entry in correlations_raw:
+        pair = entry.get("channels", [])
+        if len(pair) != 2:
+            raise ValueError(f"Each correlation entry must specify exactly 2 channels, got {pair}")
+        for name in pair:
+            if name not in channel_names:
+                raise ValueError(f"Correlation references unknown channel '{name}'. Available: {sorted(channel_names)}")
+        rho = float(entry.get("rho", 0.0))
+        if not (-1.0 <= rho <= 1.0):
+            raise ValueError(f"Correlation rho must be in [-1, 1], got {rho} for {pair}")
+
+    # Step 6: Build (inject default channel so builder uses default.yaml defaults for any missing keys)
     return InputConfigurations.from_yaml_dict(merged, default_channel_template=default_channel)

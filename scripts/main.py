@@ -9,7 +9,7 @@ from scripts.spend_simulation.spend_generation import generate_spend
 from scripts.impressions_simulation.impressions_generation import generate_impressions
 from scripts.revenue_simulation.revenue_generation import generate_revenue
 
-from dataclasses.input_configurations import InputConfigurations
+from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 
 def construct_csv(

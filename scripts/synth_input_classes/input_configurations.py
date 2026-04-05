@@ -1,11 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 from .channel import Channel
-from scripts.config.defaults import get_default_channel_template
+
 
 def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Resolve per-channel config defaults from injected template or default.yaml."""
+    from scripts.config.defaults import get_default_channel_template
     resolved_template = template or get_default_channel_template()
     return {
         "saturation_config": dict(resolved_template.get("saturation_config") or {}),
@@ -22,6 +23,7 @@ class InputConfigurations:
     week_range: int
     channel_list: List[Channel]
     seed: Optional[int] = None
+    correlations: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_yaml_dict(
@@ -69,11 +71,20 @@ class InputConfigurations:
                     cpm=cpm,
                 )
             )
+        correlations_raw = data.get("correlations") or []
+        correlations = []
+        for entry in correlations_raw:
+            correlations.append({
+                "channels": list(entry.get("channels", [])),
+                "rho": float(entry.get("rho", 0.0)),
+            })
+
         return cls(
             run_identifier=str(data.get("run_identifier", "")),
             week_range=int(data.get("week_range", 0)),
             channel_list=channels,
             seed=seed,
+            correlations=correlations,
         )
 
     def get_run_identifier(self) -> str:
@@ -87,6 +98,9 @@ class InputConfigurations:
 
     def get_seed(self) -> Optional[int]:
         return self.seed
+
+    def get_correlations(self) -> List[Dict[str, Any]]:
+        return self.correlations
 
     def get_rng(self):  # -> np.random.Generator (avoid np import at module level)
         """Return the RNG for this config (same one used during load, seeded with get_seed() if set)."""

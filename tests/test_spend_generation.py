@@ -131,6 +131,182 @@ def test_generate_spend_clipping():
     np.testing.assert_array_almost_equal(matrix[:, 0], np.full(5, 100.0))
 
 
+def test_get_budget_shifts_empty_by_default():
+    """No budget_shifts in YAML yields empty list."""
+    init_rng(0)
+    data = {
+        "run_identifier": "NoShifts",
+        "week_range": 2,
+        "channel_list": [
+            {
+                "channel": {
+                    "channel_name": "A",
+                    "spend_sampling_gamma_params": {"shape": 1.0, "scale": 100},
+                    "spend_range": [0, 10000],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            }
+        ],
+    }
+    config = InputConfigurations.from_yaml_dict(data)
+    assert config.get_budget_shifts() == []
+
+
+def test_budget_shifts_scale_single_week():
+    """scale multiplies all channels for weeks in [start_week, end_week] only (wide spend_range so clip does not undo scale)."""
+    seed = 1
+    common = {
+        "run_identifier": "ScaleShift",
+        "week_range": 3,
+        "seed": seed,
+        "channel_list": [
+            {
+                "channel": {
+                    "channel_name": "A",
+                    "spend_sampling_gamma_params": {"shape": 2.5, "scale": 1000},
+                    "spend_range": [0, 500000],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            },
+            {
+                "channel": {
+                    "channel_name": "B",
+                    "spend_sampling_gamma_params": {"shape": 2.5, "scale": 1000},
+                    "spend_range": [0, 500000],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            },
+        ],
+    }
+    init_rng(seed)
+    base = generate_spend(InputConfigurations.from_yaml_dict({**common, "budget_shifts": []}))
+    init_rng(seed)
+    scaled = generate_spend(
+        InputConfigurations.from_yaml_dict(
+            {
+                **common,
+                "budget_shifts": [{"type": "scale", "start_week": 2, "end_week": 2, "factor": 2.0}],
+            }
+        )
+    )
+    np.testing.assert_array_almost_equal(scaled[0, :], base[0, :])
+    np.testing.assert_array_almost_equal(scaled[1, :], base[1, :] * 2.0)
+    np.testing.assert_array_almost_equal(scaled[2, :], base[2, :])
+
+
+def test_budget_shifts_reallocate_preserves_row_totals():
+    """reallocate moves spend between channels without changing weekly total (before final clip)."""
+    seed = 2
+    common = {
+        "run_identifier": "Realloc",
+        "week_range": 4,
+        "seed": seed,
+        "channel_list": [
+            {
+                "channel": {
+                    "channel_name": "A",
+                    "spend_sampling_gamma_params": {"shape": 2.0, "scale": 800},
+                    "spend_range": [500, 50000],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            },
+            {
+                "channel": {
+                    "channel_name": "B",
+                    "spend_sampling_gamma_params": {"shape": 2.0, "scale": 800},
+                    "spend_range": [500, 50000],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            },
+        ],
+    }
+    init_rng(seed)
+    cfg_base = InputConfigurations.from_yaml_dict({**common, "budget_shifts": []})
+    init_rng(seed)
+    base = generate_spend(cfg_base)
+
+    init_rng(seed)
+    cfg_shift = InputConfigurations.from_yaml_dict(
+        {
+            **common,
+            "budget_shifts": [
+                {
+                    "type": "reallocate",
+                    "start_week": 1,
+                    "from_channel": "A",
+                    "to_channel": "B",
+                    "fraction": 0.25,
+                },
+            ],
+        }
+    )
+    init_rng(seed)
+    shifted = generate_spend(cfg_shift)
+
+    np.testing.assert_array_almost_equal(shifted.sum(axis=1), base.sum(axis=1))
+    assert np.all(shifted[:, 0] <= base[:, 0] + 1e-6)
+    assert np.all(shifted[:, 1] >= base[:, 1] - 1e-6)
+    assert (shifted[:, 0] < base[:, 0] - 1e-3).any() and (shifted[:, 1] > base[:, 1] + 1e-3).any()
+
+
+def test_budget_shifts_reallocate_unknown_channel_raises():
+    init_rng(0)
+    data = {
+        "run_identifier": "BadCh",
+        "week_range": 1,
+        "budget_shifts": [
+            {
+                "type": "reallocate",
+                "start_week": 1,
+                "from_channel": "A",
+                "to_channel": "DoesNotExist",
+                "fraction": 0.5,
+            },
+        ],
+        "channel_list": [
+            {
+                "channel": {
+                    "channel_name": "A",
+                    "spend_sampling_gamma_params": {"shape": 1.0, "scale": 100},
+                    "spend_range": [100, 100],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            },
+        ],
+    }
+    config = InputConfigurations.from_yaml_dict(data)
+    try:
+        generate_spend(config)
+    except ValueError as e:
+        assert "DoesNotExist" in str(e)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_generate_spend_single_week_single_channel():
     """Edge case: 1 week, 1 channel gives shape (1, 1)."""
     init_rng(0)
@@ -167,6 +343,10 @@ def main():
     test_generate_spend_non_negative_finite()
     test_generate_spend_default_gamma_params()
     test_generate_spend_clipping()
+    test_get_budget_shifts_empty_by_default()
+    test_budget_shifts_scale_single_week()
+    test_budget_shifts_reallocate_preserves_row_totals()
+    test_budget_shifts_reallocate_unknown_channel_raises()
     test_generate_spend_single_week_single_channel()
     print("Spend generation tests passed.")
 

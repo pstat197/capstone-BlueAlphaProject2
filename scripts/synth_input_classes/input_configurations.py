@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 from .channel import Channel
@@ -27,12 +27,48 @@ def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return {k: dict(v) if isinstance(v, dict) else v for k, v in _MINIMAL_CHANNEL_DEFAULTS.items()}
 
 
+def _normalize_budget_shifts(raw: Any) -> List[Dict[str, Any]]:
+    """Parse top-level budget_shifts from YAML. Week numbers are 1-based (same as CSV week column)."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise TypeError("budget_shifts must be a list")
+    out: List[Dict[str, Any]] = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise TypeError(f"budget_shifts[{i}] must be a mapping")
+        t = str(item.get("type", "")).strip().lower()
+        if t == "scale":
+            sw = int(item["start_week"])
+            factor = float(item["factor"])
+            ew = int(item.get("end_week", sw))
+            if ew < sw:
+                raise ValueError("budget_shifts scale: end_week must be >= start_week")
+            out.append({"type": "scale", "start_week": sw, "end_week": ew, "factor": factor})
+        elif t == "reallocate":
+            frac = float(item["fraction"])
+            frac = max(0.0, min(1.0, frac))
+            out.append(
+                {
+                    "type": "reallocate",
+                    "start_week": int(item["start_week"]),
+                    "from_channel": str(item["from_channel"]),
+                    "to_channel": str(item["to_channel"]),
+                    "fraction": frac,
+                }
+            )
+        else:
+            raise ValueError(f"budget_shifts: unknown type {item.get('type')!r}")
+    return out
+
+
 @dataclass
 class InputConfigurations:
     run_identifier: str
     week_range: int
     channel_list: List[Channel]
     seed: Optional[int] = None
+    budget_shifts: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_yaml_dict(
@@ -80,11 +116,13 @@ class InputConfigurations:
                     cpm=cpm,
                 )
             )
+        budget_shifts = _normalize_budget_shifts(data.get("budget_shifts"))
         return cls(
             run_identifier=str(data.get("run_identifier", "")),
             week_range=int(data.get("week_range", 0)),
             channel_list=channels,
             seed=seed,
+            budget_shifts=budget_shifts,
         )
 
     def get_run_identifier(self) -> str:
@@ -98,6 +136,9 @@ class InputConfigurations:
 
     def get_seed(self) -> Optional[int]:
         return self.seed
+
+    def get_budget_shifts(self) -> List[Dict[str, Any]]:
+        return self.budget_shifts
 
     def get_rng(self):  # -> np.random.Generator (avoid np import at module level)
         """Return the RNG for this config (same one used during load, seeded with get_seed() if set)."""

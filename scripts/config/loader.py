@@ -106,41 +106,31 @@ def _fill_channel_missing_fields(
     return out
 
 
-def load_config(user_yaml_path: str) -> InputConfigurations:
+def load_config_from_dict(user_data: Dict[str, Any]) -> InputConfigurations:
     """
-    Load user YAML and default.yaml; fill missing top-level and per-channel fields;
-    add channels up to number_of_channels with default+noise; build InputConfigurations.
+    Same as load_config but user config is provided as a dict (merged with default.yaml).
     """
     config_dir = Path(__file__).resolve().parent
     default_path = config_dir / "default.yaml"
     with open(default_path, "r") as f:
         default_data = yaml.safe_load(f) or {}
 
-    user_path = Path(user_yaml_path)
-    if not user_path.exists():
-        raise FileNotFoundError(f"Config file not found: {user_path}")
-    with open(user_path, "r") as f:
-        user_data = yaml.safe_load(f) or {}
-
-    # Merge user over default (deep)
+    user_data = user_data or {}
     merged = _deep_merge(user_data, default_data)
     default_channel = _default_channel_template(default_data)
 
-    # Seed: use from config if present for RNG; InputConfigurations will store it from merged
     seed = merged.get("seed")
     if seed is not None:
         init_rng(int(seed))
     else:
-        init_rng(None)  # random seed for this run
+        init_rng(None)
 
-    # Step 2: Fill missing top-level
     if not merged.get("run_identifier"):
         merged["run_identifier"] = "run_" + datetime.now().strftime("%Y%m%d_%H%M")
-    if "week_range" not in merged or merged.get("week_range") is None: # if week_range is also removed from default.yaml, we need to add it back
+    if "week_range" not in merged or merged.get("week_range") is None:
         merged["week_range"] = default_data.get("week_range") or default_data.get("weeks", 52)
     merged.pop("weeks", None)
 
-    # Step 3: Ensure enough channels (number_of_channels)
     num_channels_opt = merged.pop("number_of_channels", None)
     channel_list: List[Dict[str, Any]] = []
     raw_list = merged.get("channel_list") or []
@@ -154,13 +144,11 @@ def load_config(user_yaml_path: str) -> InputConfigurations:
     if target_count is not None and target_count > len(channel_list):
         for i in range(len(channel_list), target_count):
             noised = _add_noise_to_channel_template(default_channel)
-            # 1-based index among generated channels only
             noised["channel_name"] = f"Generated Channel {i - len(channel_list) + 1}"
             channel_list.append({"channel": noised})
 
     merged["channel_list"] = channel_list
 
-    # Step 4: Fill missing fields inside each channel
     filled = []
     for i, item in enumerate(channel_list):
         ch = item.get("channel") or item
@@ -187,3 +175,17 @@ def load_config(user_yaml_path: str) -> InputConfigurations:
 
     # Step 6: Build (inject default channel so builder uses default.yaml defaults for any missing keys)
     return InputConfigurations.from_yaml_dict(merged, default_channel_template=default_channel)
+
+
+def load_config(user_yaml_path: str) -> InputConfigurations:
+    """
+    Load user YAML and default.yaml; fill missing top-level and per-channel fields;
+    add channels up to number_of_channels with default+noise; build InputConfigurations.
+    """
+    user_path = Path(user_yaml_path)
+    if not user_path.exists():
+        raise FileNotFoundError(f"Config file not found: {user_path}")
+    with open(user_path, "r") as f:
+        user_data = yaml.safe_load(f) or {}
+
+    return load_config_from_dict(user_data)

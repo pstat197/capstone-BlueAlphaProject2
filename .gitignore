@@ -208,3 +208,6 @@ __marimo__/
 
 # Output files
 output/
+
+# Streamlit run cache (disk-backed simulation cache)
+app/.cache/

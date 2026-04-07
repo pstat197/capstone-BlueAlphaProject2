@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 
 from scripts.spend_simulation.spend_generation import generate_spend
+from scripts.spend_simulation.correlation_analysis import analyze_spend_correlations, print_correlation_report
 from scripts.impressions_simulation.impressions_generation import generate_impressions
 from scripts.revenue_simulation.revenue_generation import generate_revenue
 
@@ -77,6 +78,11 @@ def main(yaml_path):
 
     # generate spend
     # spend_matrix = generate_spend(config)
+
+    # correlation analysis (runs after spend, before impressions)
+    # if config.get_correlations():
+    #     corr_results = analyze_spend_correlations(config, spend_matrix)
+    #     print_correlation_report(corr_results)
 
     # generate impressions
     # impressions_matrix = generate_impressions(config, spend_matrix)

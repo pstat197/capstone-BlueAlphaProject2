@@ -88,24 +88,24 @@ def save_cache(config_hash: str, df: pd.DataFrame, run_identifier: str) -> None:
 
 def run_with_cache(
     user_data: Dict[str, Any],
-    runner: Callable[[Dict[str, Any]], Tuple[pd.DataFrame, str]],
-) -> Tuple[pd.DataFrame, str, bool, str]:
+    runner: Callable[[Dict[str, Any]], Tuple[pd.DataFrame, str, Optional[Dict]]],
+) -> Tuple[pd.DataFrame, str, bool, str, Optional[Dict]]:
     """
-    runner: callable taking user_data -> (DataFrame, run_identifier)
-    Returns (df, run_identifier, cache_hit, config_hash).
+    runner: callable taking user_data -> (DataFrame, run_identifier, corr_results)
+    Returns (df, run_identifier, cache_hit, config_hash, corr_results).
+    corr_results is None on cache hits (correlation analysis is cheap to skip).
     """
     h = canonical_config_hash(user_data)
     cached = try_load_cached(h)
     if cached is not None:
         df, meta = cached
         rid = meta.get("run_identifier") or ""
-        return df, rid, True, h
+        return df, rid, True, h, None
 
-    df, run_identifier = runner(user_data)
-    # Do not persist legacy-shaped frames (avoids poisoning cache for per-channel charts).
+    df, run_identifier, corr_results = runner(user_data)
     if cached_dataframe_schema_ok(df):
         save_cache(h, df, run_identifier)
-    return df, run_identifier, False, h
+    return df, run_identifier, False, h, corr_results
 
 
 def clear_run_cache() -> int:

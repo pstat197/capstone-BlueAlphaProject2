@@ -725,6 +725,210 @@ def _preview_table(df: pd.DataFrame) -> pd.DataFrame:
     return prev
 
 
+def _corr_cell_color(rho: float) -> str:
+    """Color bucket matching the dashboard mockup."""
+    if rho < 0:
+        return "#e74c3c"
+    if rho >= 0.8:
+        return "#27ae60"
+    if rho >= 0.5:
+        return "#3498db"
+    if rho >= 0.2:
+        return "#e67e22"
+    return "#95a5a6"
+
+
+def _make_correlation_heatmap(
+    corr: "np.ndarray",
+    names: List[str],
+    *,
+    night: bool = False,
+) -> go.Figure:
+    import numpy as np
+
+    C = len(names)
+    text = [[f"{corr[i, j]:.2f}" for j in range(C)] for i in range(C)]
+    colors = [[_corr_cell_color(corr[i, j]) for j in range(C)] for i in range(C)]
+
+    fig = go.Figure(data=go.Heatmap(
+        z=corr.tolist(),
+        x=names,
+        y=names,
+        text=text,
+        texttemplate="%{text}",
+        textfont=dict(size=14, color="white"),
+        colorscale=[
+            [0.0, "#e74c3c"],
+            [0.25, "#e67e22"],
+            [0.5, "#f1c40f"],
+            [0.75, "#3498db"],
+            [1.0, "#27ae60"],
+        ],
+        zmin=-1,
+        zmax=1,
+        showscale=True,
+        colorbar=dict(title="rho"),
+    ))
+    paper = "rgba(15,23,42,0.3)" if night else "rgba(255,255,255,0)"
+    plot_bg = "rgba(30,41,59,0.5)" if night else "rgba(248,250,252,0.9)"
+    title_color = "#e2e8f0" if night else "#0f172a"
+    fig.update_layout(
+        title=dict(text="Static Correlation Matrix", font=dict(color=title_color, size=14)),
+        height=380,
+        margin=dict(l=80, r=40, t=50, b=40),
+        paper_bgcolor=paper,
+        plot_bgcolor=plot_bg,
+        xaxis=dict(color=title_color, side="bottom"),
+        yaxis=dict(color=title_color, autorange="reversed"),
+    )
+    return fig
+
+
+def _make_rolling_correlation_chart(
+    rolling_corr: "np.ndarray",
+    names: List[str],
+    pair: List[str],
+    window: int,
+    *,
+    night: bool = False,
+) -> go.Figure:
+    import numpy as np
+
+    name_to_idx = {n: i for i, n in enumerate(names)}
+    i, j = name_to_idx[pair[0]], name_to_idx[pair[1]]
+    rho_series = rolling_corr[:, i, j]
+    weeks = [f"W{t + window}" for t in range(len(rho_series))]
+
+    paper = "rgba(15,23,42,0.3)" if night else "rgba(255,255,255,0)"
+    plot_bg = "rgba(30,41,59,0.5)" if night else "rgba(248,250,252,0.9)"
+    title_color = "#e2e8f0" if night else "#0f172a"
+    grid = "rgba(148,163,184,0.2)" if night else "rgba(15,23,42,0.08)"
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=weeks,
+        y=rho_series,
+        mode="lines",
+        fill="tozeroy",
+        line=dict(color=BLUE, width=2),
+        fillcolor="rgba(29,99,237,0.15)",
+        name=f"{pair[0]} / {pair[1]}",
+    ))
+    fig.update_layout(
+        title=dict(
+            text=f"Rolling Correlation: {pair[0]} / {pair[1]}",
+            font=dict(color=title_color, size=14),
+        ),
+        height=320,
+        margin=dict(l=48, r=24, t=50, b=48),
+        paper_bgcolor=paper,
+        plot_bgcolor=plot_bg,
+        xaxis=dict(gridcolor=grid, color=title_color, title="Week"),
+        yaxis=dict(
+            gridcolor=grid, color=title_color,
+            title="Pearson rho", range=[-1, 1],
+        ),
+        showlegend=False,
+    )
+    return fig
+
+
+def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
+    """Render the full correlation analysis section in the results panel."""
+    import numpy as np
+
+    night = st.session_state.get("night_mode", False)
+    names = corr_results["channel_names"]
+    static_corr = corr_results["static_corr"]
+    rolling_corr = corr_results["rolling_corr"]
+    window = corr_results["window"]
+    pairwise = corr_results["pairwise_summary"]
+
+    st.markdown("---")
+    st.markdown("### Channel Spend Correlation Analysis")
+
+    m1, m2, m3 = st.columns(3)
+    avg_rho = np.mean([v for v in corr_results["avg_abs_corr"].values()])
+    with m1:
+        st.metric("Avg pairwise |rho|", f"{avg_rho:.2f}", help="Across all channel pairs")
+    with m2:
+        st.metric(
+            "Most correlated channel",
+            corr_results["most_correlated_channel"],
+            help="Highest average absolute correlation",
+        )
+    with m3:
+        st.metric("Rolling window", f"{window} wks", help="Used for drift analysis")
+
+    col_heat, col_summary = st.columns([1, 1])
+
+    with col_heat:
+        st.plotly_chart(
+            _make_correlation_heatmap(static_corr, names, night=night),
+            use_container_width=True,
+        )
+
+    with col_summary:
+        st.markdown("**Pairwise Summary + Drift**")
+        for p in pairwise:
+            pair_label = f"{p['pair'][0]} / {p['pair'][1]}"
+            rho_val = p["observed_rho"]
+            drift_label = p["drift_label"]
+            color = _corr_cell_color(rho_val)
+            drift_color = "#27ae60" if drift_label == "stable" else (
+                "#e74c3c" if drift_label.startswith("-") else "#e67e22"
+            )
+            st.markdown(
+                f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem'>"
+                f"<span style='min-width:140px;font-weight:500'>{pair_label}</span>"
+                f"<span style='background:{color};color:white;padding:2px 10px;border-radius:4px;"
+                f"font-size:0.9rem;font-weight:600'>{rho_val:.2f}</span>"
+                f"<span style='color:{drift_color};font-size:0.85rem;font-weight:500'>{drift_label}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+        if not pairwise:
+            st.caption("No correlation pairs configured.")
+        st.caption("Drift = change in rolling rho from first 5 to last 5 windows.")
+
+    if rolling_corr is not None and rolling_corr.shape[0] > 0 and len(pairwise) > 0:
+        all_pairs = [p["pair"] for p in pairwise]
+        pair_labels = [f"{p[0]} / {p[1]}" for p in all_pairs]
+
+        if "corr_pair_select" not in st.session_state:
+            st.session_state.corr_pair_select = pair_labels[0]
+
+        selected_label = st.selectbox(
+            "Channel pair",
+            options=pair_labels,
+            key="corr_pair_select",
+        )
+        idx = pair_labels.index(selected_label)
+        selected_pair = all_pairs[idx]
+
+        st.plotly_chart(
+            _make_rolling_correlation_chart(
+                rolling_corr, names, selected_pair, window, night=night,
+            ),
+            use_container_width=True,
+        )
+
+    with st.expander("Per-channel avg absolute correlation (multicollinearity risk)", expanded=False):
+        for name, val in corr_results["avg_abs_corr"].items():
+            bar_pct = min(val * 100, 100)
+            color = _corr_cell_color(val)
+            st.markdown(
+                f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem'>"
+                f"<span style='min-width:120px'>{name}</span>"
+                f"<div style='flex:1;background:#e0e0e0;border-radius:4px;height:16px'>"
+                f"<div style='width:{bar_pct}%;background:{color};height:100%;border-radius:4px'></div>"
+                f"</div>"
+                f"<span style='font-weight:600;min-width:45px'>{val:.3f}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+
 def _render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
     night = st.session_state.get("night_mode", False)
     colorblind = bool(st.session_state.get("colorblind_charts", True))
@@ -818,6 +1022,10 @@ def _render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
         hide_index=True,
         height=320,
     )
+
+    corr_results = st.session_state.get("last_corr_results")
+    if corr_results is not None:
+        _render_correlation_panel(corr_results)
 
     with st.expander("Configuration (YAML snapshot)", expanded=False):
         st.caption("Last merged settings (same structure as Advanced YAML).")
@@ -1016,11 +1224,12 @@ def main() -> None:
                 st.warning(w)
             if not (merged.get("channel_list") or []):
                 raise ValueError("Add at least one channel before running.")
-            df_out, run_id, cache_hit, cfg_hash = run_with_cache(merged, run_pipeline)
+            df_out, run_id, cache_hit, cfg_hash, corr_results = run_with_cache(merged, run_pipeline)
             st.session_state["last_df"] = df_out
             st.session_state["last_run_id"] = run_id
             st.session_state["last_cache_hit"] = cache_hit
             st.session_state["last_hash"] = cfg_hash
+            st.session_state["last_corr_results"] = corr_results
             st.session_state["last_error"] = None
             st.session_state.sim_config = copy.deepcopy(merged)
             st.session_state["pending_yaml_dump"] = _yaml_dump(merged)

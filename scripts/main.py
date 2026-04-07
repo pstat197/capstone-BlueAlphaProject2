@@ -1,5 +1,8 @@
 import argparse
+import os
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 import pandas as pd
@@ -69,12 +72,23 @@ def construct_csv(
     return df
 
 
-def run_simulation(config: InputConfigurations) -> pd.DataFrame:
-    """Run spend → impressions → revenue and return the weekly DataFrame."""
+def run_simulation(
+    config: InputConfigurations,
+) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    """Run spend -> impressions -> revenue and return (DataFrame, correlation_results).
+
+    correlation_results is None when no correlations are configured.
+    """
     spend_matrix = generate_spend(config)
+
+    corr_results: Optional[Dict[str, Any]] = None
+    if config.get_correlations():
+        corr_results = analyze_spend_correlations(config, spend_matrix)
+
     impressions_matrix = generate_impressions(config, spend_matrix)
     revenue_by_channel = generate_revenue(config, impressions_matrix)
-    return construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel)
+    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel)
+    return df, corr_results
 
 
 def main(yaml_path):
@@ -89,7 +103,10 @@ def main(yaml_path):
 
     config = InputConfigurations.from_yaml_dict(data)
 
-    df = run_simulation(config)
+    df, corr_results = run_simulation(config)
+
+    if corr_results is not None:
+        print_correlation_report(corr_results)
 
     print(df.head())
     print("Columns:", ", ".join(map(str, df.columns)))

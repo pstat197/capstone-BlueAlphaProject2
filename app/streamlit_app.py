@@ -39,6 +39,50 @@ ACCENT2 = "#2563eb"
 # Wong-inspired palette: orange / blue / green — distinct for common color-vision deficiencies
 CHART_PAL_CVD = ("#E69F00", "#0072B2", "#009E73")
 
+# Full reference inside a collapsed expander under each channel’s Saturation / Adstock section.
+_SATURATION_TYPES_GUIDE_MD = """
+**Order in the simulator:** saturation runs **first** (impressions → effective media), then adstock, then ROI scaling.
+
+- **`linear`** — Pick for a **simple proportional** link: response grows in line with impressions (good baseline or teaching runs).  
+  **Formula:** `slope × impressions`. `slope = 1` is “no curve”; higher amplifies, lower dampens. There is **no** built-in ceiling.
+
+- **`hill`** — Pick when you want a **clear ceiling** and an S-shaped / saturating curve at high volume.  
+  **Formula:** `x^slope / (x^slope + K^slope)` (then multiplied by ROI later). **K** sets the **impression scale** where the curve bends (larger K → need more weekly impressions before flattening). **Slope** controls how **sharp** the transition is.
+
+- **`diminishing_returns`** — Pick for a smooth **concave** curve with one main shape parameter (no separate K like Hill).  
+  **Formula:** `impressions / (1 + β × impressions)`. Larger **β** → stronger diminishing returns sooner; **β = 0** → no saturation (raw impressions through).
+"""
+
+_ADSTOCK_TYPES_GUIDE_MD = """
+**Order in the simulator:** adstock runs **after** saturation; it **spreads** each week’s effective response over neighboring weeks (carry-over).
+
+- **`linear`** — Pick when memory should be a **flat** average over a fixed window.  
+  **Uniform** moving average over **lag + 1** weeks (this week + **lag** prior). **Lag 0** = no carry-over (this week only).
+
+- **`geometric`** and **`exponential`** — Same behavior in this app: weights `1, λ, λ², …` through **lag**, then convolved with the series.  
+  Pick for **exponential decay** of ad effects. **λ** closer to **1** → longer memory; closer to **0** → mostly immediate.
+
+- **`weighted`** — Pick when you need a **custom** lag shape (e.g. delayed peak).  
+  Enter **comma-separated** weights from **oldest** lag → **newest**; the simulator convolves that kernel with the saturated series.
+"""
+
+_NOISE_PARAMETERS_GUIDE_MD = """
+Both values are **non-negative**. **0** turns that noise off.
+
+**Impression noise** (applied right after spend → CPM → **base impressions** each week)
+
+- For each week, `base_impressions = (spend / CPM) × 1000`.
+- Random noise is Gaussian with **standard deviation = √(impression noise) × base_impressions** for that week.
+- So the number you enter controls how large random swings are **relative to that week’s expected impressions** — busy weeks get proportionally wider noise.
+- Impressions are clipped at **0** after noise.
+
+**Revenue noise** (applied **last** for the channel: after saturation, adstock, ROI, and baseline)
+
+- Let `R` be that week’s channel revenue **before** this noise step.
+- Random noise is Gaussian with **standard deviation = √(revenue noise) × |R|**.
+- So noise scales with **how big the channel’s contribution already is** that week; small `R` → small absolute noise, large `R` → larger absolute noise (same relative spread).
+"""
+
 
 def _load_ui_schema() -> Dict[str, Any]:
     with open(UI_SCHEMA_PATH, "r", encoding="utf-8") as f:
@@ -314,11 +358,12 @@ def _render_one_pc_field(
     )
 
 
-def _render_select_for_path(
+def _render_type_radio_for_path(
     i: int,
     item: Dict[str, Any],
     data: Dict[str, Any],
 ) -> None:
+    """Radio list for curve type (same session keys / YAML merge as former selectbox)."""
     path_suffix = item["path"]
     full_path = f"channel_list.{i}.{path_suffix}"
     parts = path_string_to_parts(full_path)
@@ -326,7 +371,7 @@ def _render_select_for_path(
     opts = list(item.get("options", []))
     key = _select_session_key(i, path_suffix)
     sel_idx = opts.index(cur) if cur in opts else 0
-    st.selectbox(
+    st.radio(
         item["label"],
         options=opts,
         index=sel_idx,
@@ -379,6 +424,11 @@ def _render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int
             )
 
             st.markdown("**Spend & ROI**")
+            st.caption(
+                "Spend range and gamma sampling drive weekly spend; CPM maps spend to impressions. "
+                "True ROI scales effective (saturated, adstocked) media into revenue. "
+                "Baseline revenue is added each week regardless of media."
+            )
             core = grouped.get("core", [])
             if len(core) >= 2:
                 c1, c2 = st.columns(2)
@@ -395,7 +445,17 @@ def _render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int
                 with c5:
                     _render_one_pc_field(i, core[4], data)
 
-            st.markdown("**Noise variances (simulation)**")
+            st.markdown("**Noise (simulation)**")
+            st.caption(
+                "Random variation in **impressions** (right after CPM) and in **revenue** (after all media math). "
+                "Both use √(your value) × a weekly level, so they scale with that week’s size — not fixed dollar noise."
+            )
+            with st.expander(
+                "How noise values work (click to open)",
+                expanded=False,
+                key=f"noise_ref_{i}",
+            ):
+                st.markdown(_NOISE_PARAMETERS_GUIDE_MD)
             noise = grouped.get("noise", [])
             if len(noise) >= 2:
                 n1, n2 = st.columns(2)
@@ -405,10 +465,19 @@ def _render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int
                     _render_one_pc_field(i, noise[1], data)
 
             st.markdown("##### Saturation")
-            st.caption("How impressions map to effective response before ROI (curve type + shape).")
+            st.caption(
+                "Step 1 in the revenue path: turns raw impressions into effective media. "
+                "Pick a type below, then adjust only the fields that appear."
+            )
+            with st.expander(
+                "Saturation types — reference (click to open)",
+                expanded=False,
+                key=f"sat_types_ref_{i}",
+            ):
+                st.markdown(_SATURATION_TYPES_GUIDE_MD)
             sat_opts = list(sat_select.get("options", [])) if sat_select else []
             if sat_select is not None:
-                _render_select_for_path(i, sat_select, data)
+                _render_type_radio_for_path(i, sat_select, data)
             eff_sat = _effective_curve_type(i, "channel.saturation_config.type", data, sat_opts)
             sat = [
                 it
@@ -418,10 +487,18 @@ def _render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int
             _render_pc_fields_flex(i, sat, data)
 
             st.markdown("##### Adstock")
-            st.caption("How past media carries into this week (type + decay parameters).")
+            st.caption(
+                "Step 2: spreads each week’s saturated response over neighboring weeks (carry-over / memory)."
+            )
+            with st.expander(
+                "Adstock types — reference (click to open)",
+                expanded=False,
+                key=f"ad_types_ref_{i}",
+            ):
+                st.markdown(_ADSTOCK_TYPES_GUIDE_MD)
             ad_opts = list(ad_select.get("options", [])) if ad_select else []
             if ad_select is not None:
-                _render_select_for_path(i, ad_select, data)
+                _render_type_radio_for_path(i, ad_select, data)
             eff_ad = _effective_curve_type(i, "channel.adstock_decay_config.type", data, ad_opts)
             ads = [
                 it
@@ -921,6 +998,10 @@ def main() -> None:
     st.caption("Configure the simulation below, then run.")
 
     st.markdown("##### Simulation settings")
+    st.caption(
+        "Length and labeling for each run. **Random seed** fixes sampling so the same settings reproduce "
+        "the same series and cache behavior."
+    )
     col_w, col_r, col_s = st.columns(3)
     with col_w:
         st.number_input(
@@ -952,6 +1033,10 @@ def main() -> None:
         )
 
     st.markdown("##### Channels")
+    st.caption(
+        "Each row is one media channel with its own spend, response curve, carry-over, and noise. "
+        "Open a channel; optional **reference** expanders under Noise, Saturation, and Adstock explain formulas and when to use each option."
+    )
     row_a, row_b = st.columns([4, 1])
     with row_a:
         new_nm = st.text_input(

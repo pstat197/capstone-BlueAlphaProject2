@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import copy
 import sys
+from pathlib import Path
 from typing import Optional
 
 import streamlit as st
 import yaml
 
-# Repository root on sys.path for `scripts` imports
-from app.paths import REPO_ROOT  # noqa: E402
-
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+# Repo root must be on sys.path before any `from app.*` (Streamlit Cloud cwd is not always the repo).
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from app.cache import clear_run_cache, run_with_cache  # noqa: E402
 from app.default_channel import default_channel_dict  # noqa: E402

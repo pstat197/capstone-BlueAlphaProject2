@@ -371,10 +371,3 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
             if eff_ad == "weighted":
                 _render_adstock_weights_field(i, data)
 
-
-# parse_weights_csv imported but only used in merge — remove unused import from channel_form
-</think>
-Removing the unused `parse_weights_csv` import from `ui_channel_form.py`.
-
-<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
-StrReplace

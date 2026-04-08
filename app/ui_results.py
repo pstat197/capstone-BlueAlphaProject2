@@ -235,41 +235,42 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
     if st.session_state.results_chart_scope not in scope_options:
         st.session_state.results_chart_scope = scope_options[0]
 
-    csel1, csel2 = st.columns([1, 1])
-    with csel1:
-        st.selectbox(
-            "Chart view",
-            options=scope_options,
-            key="results_chart_scope",
-            help="Totals across all channels, or one channel’s revenue, spend, and impressions.",
-        )
-    with csel2:
-        st.checkbox(
-            "Overlay series (min–max normalized on one chart)",
-            key="overlay_results_charts",
-        )
-
-    scope = str(st.session_state.results_chart_scope)
-    ch_view: Optional[str] = None if scope == scope_options[0] else scope
-
-    overlay = bool(st.session_state.overlay_results_charts)
-    st.plotly_chart(
-        make_charts(df, channel=ch_view, overlay=overlay, night=night, colorblind=colorblind),
-        use_container_width=True,
-    )
-
-    st.markdown("##### Data preview")
-    st.caption("First 25 rows · values rounded for readability.")
-    st.dataframe(
-        preview_table(df),
-        use_container_width=True,
-        hide_index=True,
-        height=320,
-    )
-
     with st.expander("Configuration (YAML snapshot)", expanded=False):
         st.caption("Last merged settings (same structure as Advanced YAML).")
         st.code(
             yaml_dump(st.session_state.get("sim_config") or {}),
             language="yaml",
+        )
+
+    tab_chart, tab_data = st.tabs(["Chart view", "Data preview"])
+    with tab_chart:
+        csel1, csel2 = st.columns([1, 1])
+        with csel1:
+            st.selectbox(
+                "Series scope",
+                options=scope_options,
+                key="results_chart_scope",
+                help="Totals across all channels, or one channel’s revenue, spend, and impressions.",
+            )
+        with csel2:
+            st.checkbox(
+                "Overlay series (min–max normalized on one chart)",
+                key="overlay_results_charts",
+            )
+
+        scope = str(st.session_state.results_chart_scope)
+        ch_view: Optional[str] = None if scope == scope_options[0] else scope
+        overlay = bool(st.session_state.overlay_results_charts)
+        st.plotly_chart(
+            make_charts(df, channel=ch_view, overlay=overlay, night=night, colorblind=colorblind),
+            use_container_width=True,
+        )
+
+    with tab_data:
+        st.caption("First 25 rows · values rounded for readability.")
+        st.dataframe(
+            preview_table(df),
+            use_container_width=True,
+            hide_index=True,
+            height=320,
         )

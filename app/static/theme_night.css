@@ -40,8 +40,7 @@ label,
 
 /* Streamlit top bar (Deploy, ⋮ menu): keep a light strip so default navy text/icons stay visible */
 [data-testid="stHeader"] {
-  background: #f8fafc !important;
-  border-bottom: 1px solid #334155 !important;
+  display: none !important;
 }
 
 [data-testid="stHeader"] a,

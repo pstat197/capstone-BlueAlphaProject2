@@ -352,6 +352,82 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
             )
 
 
+def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
+    """Fallback for cache hits: derive correlation results from spend columns + sim_config."""
+    cfg = st.session_state.get("sim_config") or {}
+    corr_cfg = cfg.get("correlations") or []
+    if not corr_cfg:
+        return None
+
+    channels = cfg.get("channel_list") or []
+    channel_names: List[str] = []
+    for item in channels:
+        ch = item.get("channel") if isinstance(item, dict) else item
+        if isinstance(ch, dict) and ch.get("channel_name"):
+            channel_names.append(str(ch["channel_name"]))
+    if not channel_names:
+        return None
+
+    spend_cols = [f"{name}_spend" for name in channel_names]
+    if not all(c in df.columns for c in spend_cols):
+        return None
+
+    spend = df[spend_cols].to_numpy(dtype=float)
+    t, c = spend.shape
+    static_corr = np.corrcoef(spend.T)
+
+    window = min(12, max(2, t - 1))
+    rolling_corr = np.empty((0, c, c))
+    drift = np.zeros((c, c))
+    if t > window:
+        rolling_corr = np.array([np.corrcoef(spend[i : i + window].T) for i in range(t - window)])
+        edge = min(5, rolling_corr.shape[0])
+        drift = rolling_corr[-edge:].mean(axis=0) - rolling_corr[:edge].mean(axis=0)
+
+    avg_abs_corr: Dict[str, float] = {}
+    for i, name in enumerate(channel_names):
+        off_diag = [abs(static_corr[i, j]) for j in range(c) if j != i]
+        avg_abs_corr[name] = float(np.mean(off_diag)) if off_diag else 0.0
+    avg_abs_corr = dict(sorted(avg_abs_corr.items(), key=lambda kv: kv[1], reverse=True))
+    most_corr = max(avg_abs_corr, key=avg_abs_corr.get) if avg_abs_corr else ""
+
+    name_to_idx = {n: i for i, n in enumerate(channel_names)}
+    pairwise_summary: List[Dict[str, Any]] = []
+    for entry in corr_cfg:
+        pair = list(entry.get("channels") or [])
+        if len(pair) != 2 or pair[0] not in name_to_idx or pair[1] not in name_to_idx:
+            continue
+        i, j = name_to_idx[pair[0]], name_to_idx[pair[1]]
+        observed_rho = float(static_corr[i, j])
+        pair_drift = float(drift[i, j]) if drift.size else 0.0
+        if abs(pair_drift) < 0.05:
+            drift_label = "stable"
+        elif pair_drift > 0:
+            drift_label = f"+{pair_drift:.2f}"
+        else:
+            drift_label = f"{pair_drift:.2f}"
+        pairwise_summary.append(
+            {
+                "pair": pair,
+                "configured_rho": float(entry.get("rho", 0.0)),
+                "observed_rho": observed_rho,
+                "drift": pair_drift,
+                "drift_label": drift_label,
+            }
+        )
+
+    return {
+        "channel_names": channel_names,
+        "static_corr": static_corr,
+        "rolling_corr": rolling_corr,
+        "drift": drift,
+        "avg_abs_corr": avg_abs_corr,
+        "most_correlated_channel": most_corr,
+        "pairwise_summary": pairwise_summary,
+        "window": window,
+    }
+
+
 def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
     night = st.session_state.get("night_mode", False)
     colorblind = bool(st.session_state.get("colorblind_charts", True))
@@ -421,7 +497,19 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
             language="yaml",
         )
 
-    tab_chart, tab_data = st.tabs(["Chart view", "Data preview"])
+    corr_results = st.session_state.get("last_corr_results")
+    if corr_results is None:
+        corr_results = _build_corr_results_from_cached_df(df)
+        if corr_results is not None:
+            st.session_state["last_corr_results"] = corr_results
+    if corr_results is not None:
+        tab_chart, tab_data, tab_corr = st.tabs(
+            ["Chart view", "Data preview", "Correlation analysis"]
+        )
+    else:
+        tab_chart, tab_data = st.tabs(["Chart view", "Data preview"])
+        tab_corr = None
+
     with tab_chart:
         csel1, csel2 = st.columns([1, 1])
         with csel1:
@@ -454,6 +542,6 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
             height=320,
         )
 
-    corr_results = st.session_state.get("last_corr_results")
-    if corr_results is not None:
-        _render_correlation_panel(corr_results)
+    if tab_corr is not None and corr_results is not None:
+        with tab_corr:
+            _render_correlation_panel(corr_results)

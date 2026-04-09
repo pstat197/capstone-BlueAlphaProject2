@@ -1,23 +1,13 @@
-/* BlueAlpha: vertical stripe gradient #1D63ED → #F39C59 / peach, pill CTAs */
+/* BlueAlpha: soft sky-blue field (pale corners, medium blue center, subtle radial glow) */
 
 .stApp {
-  background-color: #1d63ed;
-  background-image: repeating-linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 0px,
-    rgba(255, 255, 255, 0.04) 28px,
-    rgba(255, 255, 255, 0.01) 28px,
-    rgba(255, 255, 255, 0.01) 56px
-  ),
-    linear-gradient(
-      168deg,
-      #1d63ed 0%,
-      #2b7ae8 22%,
-      #5ba3f5 42%,
-      #e8b896 72%,
-      #f39c59 88%,
-      #ffb380 100%
-    );
+  background-color: #c5daf0;
+  background-image:
+    radial-gradient(ellipse 90% 70% at 58% 48%, rgba(120, 185, 245, 0.45) 0%, transparent 58%),
+    radial-gradient(ellipse 100% 80% at 72% 42%, rgba(100, 160, 230, 0.22) 0%, transparent 45%),
+    radial-gradient(ellipse 85% 65% at 12% 8%, rgba(255, 255, 255, 0.95) 0%, transparent 42%),
+    radial-gradient(circle at 68% 55%, rgba(147, 197, 253, 0.35) 0%, transparent 52%),
+    linear-gradient(168deg, #f4f9ff 0%, #e3f0fb 28%, #b8d4f0 55%, #9ebadf 82%, #8fa8cf 100%);
   background-attachment: fixed;
 }
 
@@ -38,9 +28,14 @@ h3 {
   color: #0f172a !important;
 }
 
-.stButton > button {
+/* Descendant: `help=` can wrap the native control so `> button` misses */
+.stButton button {
   border-radius: 999px !important;
   font-weight: 600 !important;
+}
+
+[data-testid="stSidebar"] button {
+  border-radius: 999px !important;
 }
 
 button[kind="primary"],

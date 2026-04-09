@@ -84,6 +84,7 @@ header[data-testid="stHeader"] * {
   color: #f8fafc !important;
   border: 1px solid #475569 !important;
   box-shadow: none !important;
+  border-radius: 999px !important;
 }
 
 [data-testid="stSidebar"] button:hover {

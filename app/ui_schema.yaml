@@ -7,7 +7,7 @@ per_channel_sliders:
   - path: channel.true_roi
     group: core
     label: "ROI †"
-    help: "Multiplies adstocked impressions to get revenue contribution (before noise)."
+    help: "Multiplies saturated, adstocked effective media into revenue contribution (before noise)."
     min: 0.0
     max: 15.0
     step: 0.1
@@ -43,15 +43,15 @@ per_channel_sliders:
     step: 500.0
   - path: channel.noise_variance.impression
     group: noise
-    label: "Noise variance (impressions)"
-    help: "Variance of Gaussian noise on weekly impressions (after CPM mapping)."
+    label: "Impression noise"
+    help: "Scales random wobble on weekly impressions. Std dev = √(this) × base impressions (base = spend/CPM×1000). 0 = no impression noise. Open the Noise reference expander for detail."
     min: 0.0
     max: 1.0
     step: 0.01
   - path: channel.noise_variance.revenue
     group: noise
-    label: "Noise variance (revenue)"
-    help: "Variance of Gaussian noise on weekly revenue for this channel."
+    label: "Revenue noise"
+    help: "Scales random wobble on weekly revenue after media math. Std dev = √(this) × |revenue before noise|. 0 = no revenue noise. Open the Noise reference expander for detail."
     min: 0.0
     max: 1.0
     step: 0.01
@@ -59,7 +59,7 @@ per_channel_sliders:
     group: saturation
     saturation_types: [linear, hill]
     label: "Slope"
-    help: "Linear: scales impressions. Hill: steepness of diminishing returns vs impressions."
+    help: "Linear: multiplier on impressions (1 = identity). Hill: power in x^slope/(x^slope+K^slope); higher = sharper bend."
     min: 0.1
     max: 5.0
     step: 0.1
@@ -67,7 +67,7 @@ per_channel_sliders:
     group: saturation
     saturation_types: [hill]
     label: "K"
-    help: "Hill curve half-saturation level (scale of impressions)."
+    help: "Hill only: impression scale where the curve bends (larger K = need more impressions before flattening)."
     min: 1.0
     max: 200000.0
     step: 1000.0
@@ -75,7 +75,7 @@ per_channel_sliders:
     group: saturation
     saturation_types: [diminishing_returns]
     label: "Beta"
-    help: "Diminishing-returns curve shape (x / (1 + beta * x))."
+    help: "Diminishing returns: x/(1+beta*x). Larger beta = stronger saturation at moderate impressions."
     min: 0.0
     max: 2.0
     step: 0.05
@@ -83,7 +83,7 @@ per_channel_sliders:
     group: adstock
     adstock_types: [geometric, exponential]
     label: "Lambda"
-    help: "Geometric/exponential decay rate for carry-over (0–1)."
+    help: "Geometric/exponential: weight per lag step (closer to 1 = longer memory, closer to 0 = fast fade)."
     min: 0.0
     max: 1.0
     step: 0.05
@@ -91,7 +91,7 @@ per_channel_sliders:
     group: adstock
     adstock_types: [linear, geometric, exponential]
     label: "Lag"
-    help: "Linear: length of uniform moving average (0 = none). Geometric/exponential: decay window."
+    help: "Linear: average over lag+1 weeks (0 = no carry-over). Geometric/exponential: how many decay terms in the kernel."
     min: 0
     max: 52
     step: 1
@@ -99,14 +99,14 @@ per_channel_sliders:
 per_channel_selects:
   - path: channel.saturation_config.type
     label: "Saturation type"
-    help: "linear: slope × impressions (slope=1 is identity); hill / diminishing_returns: nonlinear."
+    help: "linear = proportional scaling; hill = saturating S-curve (K + slope); diminishing_returns = smooth concave x/(1+bx). Open the reference expander in this section for details."
     options:
       - linear
       - hill
       - diminishing_returns
   - path: channel.adstock_decay_config.type
     label: "Adstock type"
-    help: "linear: uniform average over lag+1 weeks (lag 0 = none); geometric/exponential/weighted: decay kernels."
+    help: "linear = flat moving average; geometric/exponential = exponentially decaying weights; weighted = custom kernel. Open the reference expander in this section for details."
     options:
       - linear
       - geometric

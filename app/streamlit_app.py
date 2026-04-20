@@ -233,11 +233,12 @@ def main() -> None:
                 st.warning(w)
             if not (merged.get("channel_list") or []):
                 raise ValueError("Add at least one channel before running.")
-            df_out, run_id, cache_hit, cfg_hash = run_with_cache(merged, run_pipeline)
+            df_out, run_id, cache_hit, cfg_hash, corr_results = run_with_cache(merged, run_pipeline)
             st.session_state["last_df"] = df_out
             st.session_state["last_run_id"] = run_id
             st.session_state["last_cache_hit"] = cache_hit
             st.session_state["last_hash"] = cfg_hash
+            st.session_state["last_corr_results"] = corr_results
             st.session_state["last_error"] = None
             st.session_state.sim_config = copy.deepcopy(merged)
             st.session_state["pending_yaml_dump"] = yaml_dump(merged)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 import yaml
@@ -19,10 +19,10 @@ def parse_yaml_text(yaml_text: str) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def run_pipeline(user_data: Dict[str, Any]) -> Tuple[pd.DataFrame, str]:
-    """
-    Load config from merged user dict and return (DataFrame, run_identifier).
-    """
+def run_pipeline(
+    user_data: Dict[str, Any],
+) -> Tuple[pd.DataFrame, str, Optional[Dict[str, Any]]]:
+    """Load config from merged user dict and return (DataFrame, run_identifier, corr_results)."""
     config = load_config_from_dict(user_data)
-    df = run_simulation(config)
-    return df, config.get_run_identifier()
+    df, corr_results = run_simulation(config)
+    return df, config.get_run_identifier(), corr_results

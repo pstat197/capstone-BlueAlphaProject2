@@ -29,7 +29,10 @@ h3 {
 }
 
 /* Descendant: `help=` can wrap the native control so `> button` misses */
-.stButton button {
+.stButton button,
+.stDownloadButton button,
+[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-secondary"] {
   border-radius: 999px !important;
   font-weight: 600 !important;
 }
@@ -55,9 +58,7 @@ button[kind="secondary"],
 }
 
 [data-testid="stHeader"] {
-  background: rgba(255, 255, 255, 0.98);
-  border-radius: 0 0 16px 16px;
-  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+  display: none !important;
 }
 
 [data-testid="stSidebar"] {

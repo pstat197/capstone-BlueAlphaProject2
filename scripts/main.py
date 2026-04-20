@@ -1,14 +1,18 @@
 import argparse
 import os
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
+import yaml
 import pandas as pd
 import numpy as np
 
 from scripts.spend_simulation.spend_generation import generate_spend
+from scripts.spend_simulation.correlation_analysis import analyze_spend_correlations, print_correlation_report
 from scripts.impressions_simulation.impressions_generation import generate_impressions
 from scripts.revenue_simulation.revenue_generation import generate_revenue
-from scripts.config.loader import load_config
+
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 
@@ -68,20 +72,41 @@ def construct_csv(
     return df
 
 
-def run_simulation(config: InputConfigurations) -> pd.DataFrame:
-    """Run spend → impressions → revenue and return the weekly DataFrame."""
+def run_simulation(
+    config: InputConfigurations,
+) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    """Run spend -> impressions -> revenue and return (DataFrame, correlation_results).
+
+    correlation_results is None when no correlations are configured.
+    """
     spend_matrix = generate_spend(config)
+
+    corr_results: Optional[Dict[str, Any]] = None
+    if config.get_correlations():
+        corr_results = analyze_spend_correlations(config, spend_matrix)
+
     impressions_matrix = generate_impressions(config, spend_matrix)
     revenue_by_channel = generate_revenue(config, impressions_matrix)
-    return construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel)
+    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel)
+    return df, corr_results
 
 
 def main(yaml_path):
 
-    # load config (merges with config/default.yaml; supports number_of_channels)
-    config = load_config(yaml_path)
+    # load config
+    path = Path(yaml_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
 
-    df = run_simulation(config)
+    with open(path, "r") as f:
+        data = yaml.safe_load(f)
+
+    config = InputConfigurations.from_yaml_dict(data)
+
+    df, corr_results = run_simulation(config)
+
+    if corr_results is not None:
+        print_correlation_report(corr_results)
 
     print(df.head())
     print("Columns:", ", ".join(map(str, df.columns)))

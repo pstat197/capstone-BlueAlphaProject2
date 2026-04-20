@@ -43,6 +43,19 @@ from app.ui_results import render_results_panel  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
 
 
+def _resync_form_from_sim_config() -> None:
+    """Reset form widget state so it mirrors the current ``sim_config``.
+
+    Used by both **Edit configuration** (after a run) and **Apply YAML to form**
+    so the two entry points stay consistent.
+    """
+    clear_channel_widget_keys()
+    apply_correlations_to_session_rows(st.session_state.sim_config)
+    st.session_state["_sync_top_widgets_from_sim_config"] = True
+    st.session_state["pending_yaml_dump"] = yaml_dump(st.session_state.sim_config)
+    st.session_state["yaml_manual_edit"] = False
+
+
 def main() -> None:
     st.set_page_config(
         page_title="BlueAlpha Simulator",
@@ -78,6 +91,9 @@ def main() -> None:
         st.session_state.seed_input = int(s) if s is not None else 0
 
     ensure_corr_rows_initialized(st.session_state.sim_config)
+
+    if st.session_state.pop("_resync_form_from_sim_config", False):
+        _resync_form_from_sim_config()
 
     if st.session_state.pop("_sync_top_widgets_from_sim_config", False):
         st.session_state.week_range_num = int(st.session_state.sim_config.get("week_range", 52))
@@ -224,11 +240,7 @@ def main() -> None:
                 if not isinstance(parsed, dict):
                     raise ValueError("YAML must parse to a mapping (dict).")
                 st.session_state.sim_config = parsed
-                st.session_state.yaml_manual_edit = False
-                clear_channel_widget_keys()
-                apply_correlations_to_session_rows(parsed)
-                st.session_state["_sync_top_widgets_from_sim_config"] = True
-                st.session_state["pending_yaml_dump"] = yaml_dump(st.session_state.sim_config)
+                _resync_form_from_sim_config()
                 st.success("YAML applied.")
                 st.rerun()
             except Exception as e:

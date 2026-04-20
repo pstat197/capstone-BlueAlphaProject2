@@ -483,6 +483,7 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
     with tb1:
         if compact_toolbar and st.button("Edit configuration", type="primary", width="stretch"):
             st.session_state.config_collapsed = False
+            st.session_state["_resync_form_from_sim_config"] = True
             st.rerun()
     with tb2:
         csv_bytes = df.to_csv(index=False).encode("utf-8")

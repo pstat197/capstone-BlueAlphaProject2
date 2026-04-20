@@ -120,34 +120,6 @@ def merge_correlations_from_widgets(
 
     out = [{"channels": [k[0], k[1]], "rho": last_rho[k]} for k in ordered_keys]
 
-    # #region agent log
-    if not silent:
-        try:
-            from app.debug_ndlog import agent_dbg
-
-            row_snap = []
-            for row in rows:
-                rid = int(row["id"])
-                row_snap.append(
-                    {
-                        "id": rid,
-                        "a_widget": str(st.session_state.get(f"corr_a_{rid}", "")),
-                        "b_widget": str(st.session_state.get(f"corr_b_{rid}", "")),
-                        "rho_widget": st.session_state.get(f"corr_rho_{rid}", "__missing__"),
-                        "ch0_row": row.get("ch0"),
-                        "ch1_row": row.get("ch1"),
-                    }
-                )
-            agent_dbg(
-                "H1",
-                "ui_correlations.merge_correlations_from_widgets",
-                "exit",
-                {"n_rows": len(rows), "n_out": len(out), "out": out, "warns": warns, "row_snap": row_snap},
-            )
-        except Exception:
-            pass
-    # #endregion
-
     return out, warns
 
 
@@ -164,7 +136,8 @@ def render_correlations_section(cfg: Dict[str, Any], n_channels: int) -> None:
 
     st.markdown("##### Correlated channel spend")
     st.caption(
-        "Optional: joint weekly spend across pairs (Gaussian copula in log space). "
+        "Optional: joint weekly spend via a **Gaussian copula in log‑space** (then exponentiate and clip). "
+        "The slider is **correlation of log‑spend**, not of dollar spend in the CSV—results charts use spend‑level ρ. "
         "Leave empty for independent channels (default). "
         "If you list the same channel pair more than once, the **last** row’s ρ is what YAML and the run use."
     )
@@ -211,7 +184,7 @@ def render_correlations_section(cfg: Dict[str, Any], n_channels: int) -> None:
                 value=float(row.get("rho", 0.0)),
                 step=0.05,
                 key=f"corr_rho_{rid}",
-                help="Target Pearson correlation between the two channels' weekly spend.",
+                help="Correlation in the **log‑spend** Gaussian copula (−1…1). Dollar spend in the output will not match this ρ exactly.",
                 on_change=_yaml_sync_from_form,
             )
         with c4:

@@ -239,23 +239,6 @@ def main() -> None:
     if run_clicked:
         try:
             merged, warns = merge_ui_into_config(schema)
-            # #region agent log
-            try:
-                from app.debug_ndlog import agent_dbg
-
-                agent_dbg(
-                    "H2",
-                    "streamlit_app.run_clicked",
-                    "after_merge_ui_into_config",
-                    {
-                        "n_correlations": len(merged.get("correlations") or []),
-                        "correlations": merged.get("correlations"),
-                        "merge_warnings": warns,
-                    },
-                )
-            except Exception:
-                pass
-            # #endregion
             for w in warns:
                 st.warning(w)
             if not (merged.get("channel_list") or []):
@@ -271,23 +254,6 @@ def main() -> None:
             st.session_state["pending_yaml_dump"] = yaml_dump(merged)
             st.session_state.yaml_manual_edit = False
             st.session_state.config_collapsed = True
-            # #region agent log
-            try:
-                from app.debug_ndlog import agent_dbg
-
-                sc = st.session_state.get("sim_config") or {}
-                agent_dbg(
-                    "H3",
-                    "streamlit_app.run_clicked",
-                    "after_sim_config_assign",
-                    {
-                        "n_correlations": len(sc.get("correlations") or []),
-                        "correlations": sc.get("correlations"),
-                    },
-                )
-            except Exception:
-                pass
-            # #endregion
             st.rerun()
         except Exception as e:
             st.session_state["last_error"] = str(e)

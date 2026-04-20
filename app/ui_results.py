@@ -213,14 +213,17 @@ def _make_correlation_heatmap(
             zmin=-1,
             zmax=1,
             showscale=True,
-            colorbar=dict(title="rho"),
+            colorbar=dict(title="ρ spend"),
         )
     )
     paper = "rgba(15,23,42,0.3)" if night else "rgba(255,255,255,0)"
     plot_bg = "rgba(30,41,59,0.5)" if night else "rgba(248,250,252,0.9)"
     title_color = "#e2e8f0" if night else "#0f172a"
     fig.update_layout(
-        title=dict(text="Static Correlation Matrix", font=dict(color=title_color, size=14)),
+        title=dict(
+            text="Static correlation (weekly spend, levels)",
+            font=dict(color=title_color, size=14),
+        ),
         height=380,
         margin=dict(l=80, r=40, t=50, b=40),
         paper_bgcolor=paper,
@@ -263,7 +266,7 @@ def _make_rolling_correlation_chart(
     )
     fig.update_layout(
         title=dict(
-            text=f"Rolling Correlation: {pair[0]} / {pair[1]}",
+            text=f"Rolling Pearson ρ (spend): {pair[0]} / {pair[1]}",
             font=dict(color=title_color, size=14),
         ),
         height=320,
@@ -271,7 +274,7 @@ def _make_rolling_correlation_chart(
         paper_bgcolor=paper,
         plot_bgcolor=plot_bg,
         xaxis=dict(gridcolor=grid, color=title_color, title="Week"),
-        yaxis=dict(gridcolor=grid, color=title_color, title="Pearson rho", range=[-1, 1]),
+        yaxis=dict(gridcolor=grid, color=title_color, title="Pearson ρ (spend)", range=[-1, 1]),
         showlegend=False,
     )
     return fig
@@ -288,9 +291,10 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
     st.markdown("---")
     st.markdown("### Channel Spend Correlation Analysis")
     st.caption(
-        "Pearson **ρ** on weekly **spend** in the output table. **Heatmap:** all pairs. **Summary:** "
-        "every unordered pair; parentheses show copula target ρ only when that pair is under `correlations` in config; "
-        "trailing label = drift."
+        "**Heatmap & badges:** Pearson **ρ** on simulated **weekly spend** (dollar columns in the table). "
+        "**Parentheses:** the ρ from your `correlations` YAML — it drives a **Gaussian copula in log‑spend** before "
+        "`exp` and per‑channel clipping, so it is **not** the same quantity as spend‑level ρ and will often differ. "
+        "**Trailing value:** drift in **rolling** spend‑ρ (not “distance to target”)."
     )
     if not pairwise:
         st.caption("Need at least two channels for pairwise summaries and rolling charts.")
@@ -301,7 +305,7 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
         st.metric(
             "Avg pairwise |rho|",
             f"{avg_rho:.2f}",
-            help="Mean |ρ| over all unordered channel pairs in the static spend matrix.",
+            help="Mean |ρ| over all unordered pairs for **weekly spend** (same as heatmap), not log-spend copula ρ.",
         )
     with m2:
         st.metric(
@@ -313,15 +317,18 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
         st.metric(
             "Rolling window",
             f"{window} wks",
-            help="Window length in weeks for rolling ρ and for the drift comparison.",
+            help="Weeks per window for **rolling Pearson ρ on spend** and for the drift comparison (first vs last windows).",
         )
 
     col_heat, col_summary = st.columns([1, 1])
     with col_heat:
-        st.caption("**Static matrix:** full-run Pearson ρ of weekly spend. Symmetric; diagonal 1.")
+        st.caption("**Static matrix:** full-run Pearson ρ of **weekly spend** (levels). Symmetric; diagonal 1.")
         st.plotly_chart(_make_correlation_heatmap(static_corr, names, night=night), width="stretch")
     with col_summary:
         st.markdown("**Pairwise Summary + Drift**")
+        st.caption(
+            "Badge = ρ on **spend**. Gray text = configured **log‑space copula** ρ (if any); expect a gap after exp + clip."
+        )
         for p in pairwise:
             pair_label = f"{p['pair'][0]} / {p['pair'][1]}"
             rho_val = p["observed_rho"]
@@ -331,9 +338,9 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
             drift_color = "#27ae60" if drift_label == "stable" else ("#e74c3c" if drift_label.startswith("-") else "#e67e22")
             tgt_muted = "#94a3b8" if night else "#64748b"
             tgt_html = (
-                f"<span style='color:{tgt_muted};font-size:0.8rem'>(target ρ {float(rho_tgt):.2f})</span>"
+                f"<span style='color:{tgt_muted};font-size:0.8rem'>(config ρ on log‑spend: {float(rho_tgt):.2f})</span>"
                 if rho_tgt is not None
-                else f"<span style='color:{tgt_muted};font-size:0.8rem'>(no copula target)</span>"
+                else f"<span style='color:{tgt_muted};font-size:0.8rem'>(no `correlations` row for this pair)</span>"
             )
             st.markdown(
                 f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;flex-wrap:wrap'>"
@@ -345,8 +352,8 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
                 unsafe_allow_html=True,
             )
         st.caption(
-            "**Drift:** mean rolling ρ over the last five windows minus the first five. "
-            "Label **stable** when the absolute change stays under 0.05."
+            "**Drift:** change in **rolling spend‑ρ** (mean of last five windows minus first five). "
+            "**Stable** means the absolute change is under 0.05. This is unrelated to the gap between spend ρ and config log‑copula ρ."
         )
 
     if rolling_corr is not None and rolling_corr.shape[0] > 0 and len(pairwise) > 0:
@@ -367,12 +374,12 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
             all_pairs = raw_pairs
         if "corr_pair_select" not in st.session_state:
             st.session_state.corr_pair_select = pair_labels[0]
-        st.caption("**Rolling line:** Pearson ρ inside each sliding spend window along the timeline.")
+        st.caption("**Rolling line:** Pearson ρ on **spend** inside each sliding window (not log‑copula ρ).")
         selected_label = st.selectbox(
             "Channel pair (rolling chart)",
             options=pair_labels,
             key="corr_pair_select",
-            help="Selects the pair for the plot. Each point is ρ for one window; labels mark the window end week.",
+            help="Rolling Pearson ρ on **spend** for this pair; each point is one window (label ≈ window end week).",
         )
         idx = pair_labels.index(selected_label)
         selected_pair = all_pairs[idx]
@@ -519,23 +526,6 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
 
     with st.expander("Configuration (YAML snapshot)", expanded=False):
         st.caption("Last merged settings (same structure as Advanced YAML).")
-        # #region agent log
-        try:
-            from app.debug_ndlog import agent_dbg
-
-            sc = st.session_state.get("sim_config") or {}
-            agent_dbg(
-                "H5",
-                "ui_results.render_results_panel",
-                "yaml_snapshot_expander",
-                {
-                    "n_correlations": len(sc.get("correlations") or []),
-                    "correlations": sc.get("correlations"),
-                },
-            )
-        except Exception:
-            pass
-        # #endregion
         st.code(
             yaml_dump(st.session_state.get("sim_config") or {}),
             language="yaml",

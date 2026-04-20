@@ -183,13 +183,13 @@ def render_correlations_section(cfg: Dict[str, Any], n_channels: int) -> None:
             )
         with c4:
             st.write("")
-            if st.button("Remove", key=f"corr_rm_{rid}", use_container_width=True):
+            if st.button("Remove", key=f"corr_rm_{rid}", width="stretch"):
                 st.session_state.corr_ui_rows = [r for r in st.session_state.corr_ui_rows if r["id"] != rid]
                 for k in (f"corr_a_{rid}", f"corr_b_{rid}", f"corr_rho_{rid}", f"corr_rm_{rid}"):
                     st.session_state.pop(k, None)
                 st.rerun()
 
-    if st.button("Add correlated pair", use_container_width=False):
+    if st.button("Add correlated pair", width="content"):
         nid = int(st.session_state.get("corr_next_id", 1))
         st.session_state.corr_next_id = nid + 1
         st.session_state.corr_ui_rows = list(st.session_state.corr_ui_rows) + [

@@ -307,7 +307,7 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
 
     col_heat, col_summary = st.columns([1, 1])
     with col_heat:
-        st.plotly_chart(_make_correlation_heatmap(static_corr, names, night=night), use_container_width=True)
+        st.plotly_chart(_make_correlation_heatmap(static_corr, names, night=night), width="stretch")
     with col_summary:
         st.markdown("**Pairwise Summary + Drift**")
         for p in pairwise:
@@ -336,7 +336,7 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
         selected_pair = all_pairs[idx]
         st.plotly_chart(
             _make_rolling_correlation_chart(rolling_corr, names, selected_pair, window, night=night),
-            use_container_width=True,
+            width="stretch",
         )
 
     with st.expander("Per-channel avg absolute correlation (multicollinearity risk)", expanded=False):
@@ -448,7 +448,7 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
 
     tb1, tb2, tb3 = st.columns([1, 1, 2])
     with tb1:
-        if compact_toolbar and st.button("Edit configuration", type="primary", use_container_width=True):
+        if compact_toolbar and st.button("Edit configuration", type="primary", width="stretch"):
             st.session_state.config_collapsed = False
             st.rerun()
     with tb2:
@@ -459,7 +459,7 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
             file_name=f"{rid or 'simulation'}.csv",
             mime="text/csv",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
 
     st.caption(
@@ -528,7 +528,7 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
         overlay = bool(st.session_state.overlay_results_charts)
         st.plotly_chart(
             make_charts(df, channel=ch_view, overlay=overlay, night=night, colorblind=colorblind),
-            use_container_width=True,
+            width="stretch",
         )
 
     with tab_corr:
@@ -544,7 +544,7 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
         st.caption("First 25 rows · values rounded for readability.")
         st.dataframe(
             preview_table(df),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=320,
         )

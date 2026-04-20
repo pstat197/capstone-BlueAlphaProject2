@@ -107,7 +107,7 @@ def main() -> None:
         )
 
         st.divider()
-        if st.button("Reset to example.yaml", use_container_width=True):
+        if st.button("Reset to example.yaml", width="stretch"):
             st.session_state.sim_config = yaml.safe_load(load_example_text()) or {}
             st.session_state.config_collapsed = False
             clear_widget_keys()
@@ -121,7 +121,7 @@ def main() -> None:
             st.session_state.yaml_manual_edit = False
             st.rerun()
 
-        if st.button("Clear simulation cache", use_container_width=True, help="Remove cached runs on disk"):
+        if st.button("Clear simulation cache", width="stretch", help="Remove cached runs on disk"):
             n = clear_run_cache()
             st.caption(f"Cleared {n} cached file(s).")
 
@@ -188,7 +188,7 @@ def main() -> None:
         )
     with row_b:
         st.write("")
-        if st.button("Add channel", use_container_width=True):
+        if st.button("Add channel", width="stretch"):
             nm = (new_nm or "").strip() or "New channel"
             ch = default_channel_dict()
             ch["channel_name"] = nm
@@ -234,7 +234,7 @@ def main() -> None:
             except Exception as e:
                 st.error(f"Could not apply YAML: {e}")
 
-    run_clicked = st.button("Run simulation", type="primary", use_container_width=False)
+    run_clicked = st.button("Run simulation", type="primary", width="content")
 
     if run_clicked:
         try:

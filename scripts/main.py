@@ -77,12 +77,14 @@ def run_simulation(
 ) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
     """Run spend -> impressions -> revenue and return (DataFrame, correlation_results).
 
-    correlation_results is None when no correlations are configured.
+    correlation_results is always computed from simulated weekly spend (heatmap, rolling
+    analysis, etc.). The ``pairwise_summary`` entries are only populated for channels
+    explicitly linked in ``correlations`` in the config.
     """
     spend_matrix = generate_spend(config)
 
     corr_results: Optional[Dict[str, Any]] = None
-    if config.get_correlations():
+    if spend_matrix.size > 0 and spend_matrix.shape[1] >= 1:
         corr_results = analyze_spend_correlations(config, spend_matrix)
 
     impressions_matrix = generate_impressions(config, spend_matrix)

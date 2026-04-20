@@ -17,6 +17,7 @@ from app.ui_form_state import (
     saturation_slider_visible,
     select_session_key,
 )
+from app.ui_correlations import merge_correlations_from_widgets
 from app.ui_helpers import apply_overrides
 
 
@@ -107,7 +108,12 @@ def clear_widget_keys() -> None:
                 "del_ch_",
                 "adw_",
             )
-        ) or k in ("new_channel_name", "advanced_yaml"):
+        ) or k.startswith(("corr_a_", "corr_b_", "corr_rho_", "corr_rm_")) or k in (
+            "new_channel_name",
+            "advanced_yaml",
+            "corr_ui_rows",
+            "corr_next_id",
+        ):
             del st.session_state[k]
 
 
@@ -129,4 +135,9 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
                 ch = merged["channel_list"][i].get("channel") or merged["channel_list"][i]
                 if isinstance(ch, dict):
                     ch["channel_name"] = nm
+
+    corrs, corr_warns = merge_correlations_from_widgets(merged, silent=silent)
+    merged["correlations"] = corrs
+    warns.extend(corr_warns)
+
     return merged, ([] if silent else warns)

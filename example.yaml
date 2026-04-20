@@ -52,6 +52,7 @@ channel_list:
         weights: [0.7, 0.2, 0.1]
       cpm: 10
 
-correlations:
-  - channels: [TikTok, LinkedIn]
-    rho: 0.7
+# Optional spend correlations (pairs + rho in [-1, 1]); configure in the Streamlit UI or add here, e.g.:
+# correlations:
+#   - channels: [TikTok, LinkedIn]
+#     rho: 0.7

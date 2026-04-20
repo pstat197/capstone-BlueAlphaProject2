@@ -93,7 +93,8 @@ def run_with_cache(
     """
     runner: callable taking user_data -> (DataFrame, run_identifier, corr_results)
     Returns (df, run_identifier, cache_hit, config_hash, corr_results).
-    corr_results is None on cache hits (correlation analysis is cheap to skip).
+    corr_results is None on cache hits; the UI rebuilds correlation summaries from the
+    cached CSV and ``sim_config`` when you open results.
     """
     h = canonical_config_hash(user_data)
     cached = try_load_cached(h)

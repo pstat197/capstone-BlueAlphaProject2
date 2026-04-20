@@ -286,6 +286,11 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
 
     st.markdown("---")
     st.markdown("### Channel Spend Correlation Analysis")
+    if not pairwise:
+        st.caption(
+            "No spend-correlation pairs are configured in your simulation settings. "
+            "The heatmap and metrics below still reflect **observed** correlations in the simulated weekly spend."
+        )
 
     m1, m2, m3 = st.columns(3)
     avg_rho = float(np.mean([v for v in corr_results["avg_abs_corr"].values()]))
@@ -319,8 +324,6 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
                 f"</div>",
                 unsafe_allow_html=True,
             )
-        if not pairwise:
-            st.caption("No correlation pairs configured.")
         st.caption("Drift = change in rolling rho from first 5 to last 5 windows.")
 
     if rolling_corr is not None and rolling_corr.shape[0] > 0 and len(pairwise) > 0:
@@ -356,8 +359,6 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
     """Fallback for cache hits: derive correlation results from spend columns + sim_config."""
     cfg = st.session_state.get("sim_config") or {}
     corr_cfg = cfg.get("correlations") or []
-    if not corr_cfg:
-        return None
 
     channels = cfg.get("channel_list") or []
     channel_names: List[str] = []
@@ -502,13 +503,10 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
         corr_results = _build_corr_results_from_cached_df(df)
         if corr_results is not None:
             st.session_state["last_corr_results"] = corr_results
-    if corr_results is not None:
-        tab_chart, tab_data, tab_corr = st.tabs(
-            ["Chart view", "Data preview", "Correlation analysis"]
-        )
-    else:
-        tab_chart, tab_data = st.tabs(["Chart view", "Data preview"])
-        tab_corr = None
+
+    tab_chart, tab_corr, tab_data = st.tabs(
+        ["Chart view", "Correlation analysis", "Data preview"]
+    )
 
     with tab_chart:
         csel1, csel2 = st.columns([1, 1])
@@ -533,6 +531,15 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
             use_container_width=True,
         )
 
+    with tab_corr:
+        if corr_results is not None:
+            _render_correlation_panel(corr_results)
+        else:
+            st.info(
+                "Correlation analysis could not be built from this table (missing per-channel "
+                "**`*_spend`** columns or channel names in the saved configuration)."
+            )
+
     with tab_data:
         st.caption("First 25 rows · values rounded for readability.")
         st.dataframe(
@@ -541,7 +548,3 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
             hide_index=True,
             height=320,
         )
-
-    if tab_corr is not None and corr_results is not None:
-        with tab_corr:
-            _render_correlation_panel(corr_results)

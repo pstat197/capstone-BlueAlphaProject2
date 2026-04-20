@@ -34,6 +34,11 @@ from app.ui_config_merge import (  # noqa: E402
     clear_widget_keys,
     merge_ui_into_config,
 )
+from app.ui_correlations import (  # noqa: E402
+    apply_correlations_to_session_rows,
+    ensure_corr_rows_initialized,
+    render_correlations_section,
+)
 from app.ui_results import render_results_panel  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
 
@@ -71,6 +76,8 @@ def main() -> None:
     if "seed_input" not in st.session_state:
         s = st.session_state.sim_config.get("seed")
         st.session_state.seed_input = int(s) if s is not None else 0
+
+    ensure_corr_rows_initialized(st.session_state.sim_config)
 
     if st.session_state.pop("_sync_top_widgets_from_sim_config", False):
         st.session_state.week_range_num = int(st.session_state.sim_config.get("week_range", 52))
@@ -197,6 +204,8 @@ def main() -> None:
     else:
         st.info("Add at least one channel to run the simulation.")
 
+    render_correlations_section(user_dict, n_channels)
+
     with st.expander("Advanced: edit full YAML", expanded=False):
         st.caption(
             "Stays in sync with the form unless you edit here—then click **Apply YAML to form** to load it. "
@@ -217,6 +226,7 @@ def main() -> None:
                 st.session_state.sim_config = parsed
                 st.session_state.yaml_manual_edit = False
                 clear_channel_widget_keys()
+                apply_correlations_to_session_rows(parsed)
                 st.session_state["_sync_top_widgets_from_sim_config"] = True
                 st.session_state["pending_yaml_dump"] = yaml_dump(st.session_state.sim_config)
                 st.success("YAML applied.")

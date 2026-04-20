@@ -43,6 +43,30 @@ from app.ui_results import render_results_panel  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
 
 
+def _existing_channel_names(cfg: dict) -> list[str]:
+    """Channel names currently in ``cfg.channel_list`` (ignores blanks)."""
+    out: list[str] = []
+    for item in cfg.get("channel_list") or []:
+        ch = item.get("channel") if isinstance(item, dict) else None
+        if not isinstance(ch, dict):
+            ch = item if isinstance(item, dict) else {}
+        nm = ch.get("channel_name")
+        if isinstance(nm, str) and nm.strip():
+            out.append(nm.strip())
+    return out
+
+
+def _next_unique_channel_name(base: str, existing: list[str]) -> str:
+    """Return ``base`` if unused, else ``base 2``, ``base 3``, … (case-insensitive)."""
+    taken = {n.lower() for n in existing}
+    if base.lower() not in taken:
+        return base
+    i = 2
+    while f"{base} {i}".lower() in taken:
+        i += 1
+    return f"{base} {i}"
+
+
 def _resync_form_from_sim_config() -> None:
     """Reset form widget state so it mirrors the current ``sim_config``.
 
@@ -205,7 +229,9 @@ def main() -> None:
     with row_b:
         st.write("")
         if st.button("Add channel", width="stretch"):
-            nm = (new_nm or "").strip() or "New channel"
+            base = (new_nm or "").strip() or "New channel"
+            existing = _existing_channel_names(st.session_state.sim_config)
+            nm = _next_unique_channel_name(base, existing)
             ch = default_channel_dict()
             ch["channel_name"] = nm
             if "channel_list" not in st.session_state.sim_config:

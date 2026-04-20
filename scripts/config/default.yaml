@@ -1,0 +1,27 @@
+run_identifier: Default
+week_range: 52
+
+channel_list:
+  - channel:
+      channel_name: Channel 1
+      cpm: 10.0
+      cpm_sampling_range: [0.5, 50]
+      spend_sampling_gamma_params:
+        shape: 2.5
+        scale: 1000
+      noise_variance:
+        impression: 0.0225
+        revenue: 0.1
+      true_roi: 2.5
+      spend_range: [1000, 50000]
+      baseline_revenue: 5000
+      saturation_config:
+        type: linear
+        slope: 1.0
+        K: 50000.0
+        beta: 0.5
+      adstock_decay_config:
+        type: linear
+        lambda: 0.5
+        lag: 10
+        weights: [1.0]

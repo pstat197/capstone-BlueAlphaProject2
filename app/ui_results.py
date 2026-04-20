@@ -286,52 +286,74 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
 
     st.markdown("---")
     st.markdown("### Channel Spend Correlation Analysis")
+    st.caption(
+        "Pearson **ρ** on weekly **spend** in the output table. **Heatmap:** all pairs. **Summary column:** "
+        "only Correlated channel spend pairs; badge = observed ρ, parentheses = copula target, trailing label = drift."
+    )
     if not pairwise:
-        st.caption(
-            "No spend-correlation pairs are configured in your simulation settings. "
-            "The heatmap and metrics below still reflect **observed** correlations in the simulated weekly spend."
-        )
+        st.caption("No correlation pairs in config; heatmap and metrics still show all-pair observed ρ.")
 
     m1, m2, m3 = st.columns(3)
     avg_rho = float(np.mean([v for v in corr_results["avg_abs_corr"].values()]))
     with m1:
-        st.metric("Avg pairwise |rho|", f"{avg_rho:.2f}", help="Across all channel pairs")
+        st.metric(
+            "Avg pairwise |rho|",
+            f"{avg_rho:.2f}",
+            help="Mean |ρ| over all unordered channel pairs in the static spend matrix.",
+        )
     with m2:
         st.metric(
             "Most correlated channel",
             corr_results["most_correlated_channel"],
-            help="Highest average absolute correlation",
+            help="Channel with the largest mean |ρ| to every other channel.",
         )
     with m3:
-        st.metric("Rolling window", f"{window} wks", help="Used for drift analysis")
+        st.metric(
+            "Rolling window",
+            f"{window} wks",
+            help="Window length in weeks for rolling ρ and for the drift comparison.",
+        )
 
     col_heat, col_summary = st.columns([1, 1])
     with col_heat:
+        st.caption("**Static matrix:** full-run Pearson ρ of weekly spend. Symmetric; diagonal 1.")
         st.plotly_chart(_make_correlation_heatmap(static_corr, names, night=night), width="stretch")
     with col_summary:
         st.markdown("**Pairwise Summary + Drift**")
         for p in pairwise:
             pair_label = f"{p['pair'][0]} / {p['pair'][1]}"
             rho_val = p["observed_rho"]
+            rho_tgt = float(p.get("configured_rho", 0.0))
             drift_label = p["drift_label"]
             color = _corr_cell_color(rho_val)
             drift_color = "#27ae60" if drift_label == "stable" else ("#e74c3c" if drift_label.startswith("-") else "#e67e22")
+            tgt_muted = "#94a3b8" if night else "#64748b"
             st.markdown(
-                f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem'>"
+                f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;flex-wrap:wrap'>"
                 f"<span style='min-width:140px;font-weight:500'>{pair_label}</span>"
                 f"<span style='background:{color};color:white;padding:2px 10px;border-radius:4px;font-size:0.9rem;font-weight:600'>{rho_val:.2f}</span>"
+                f"<span style='color:{tgt_muted};font-size:0.8rem'>(target ρ {rho_tgt:.2f})</span>"
                 f"<span style='color:{drift_color};font-size:0.85rem;font-weight:500'>{drift_label}</span>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
-        st.caption("Drift = change in rolling rho from first 5 to last 5 windows.")
+        st.caption(
+            "**Drift:** mean rolling ρ over the last five windows minus the first five. "
+            "Label **stable** when the absolute change stays under 0.05."
+        )
 
     if rolling_corr is not None and rolling_corr.shape[0] > 0 and len(pairwise) > 0:
         all_pairs = [p["pair"] for p in pairwise]
         pair_labels = [f"{p[0]} / {p[1]}" for p in all_pairs]
         if "corr_pair_select" not in st.session_state:
             st.session_state.corr_pair_select = pair_labels[0]
-        selected_label = st.selectbox("Channel pair", options=pair_labels, key="corr_pair_select")
+        st.caption("**Rolling line:** Pearson ρ inside each sliding spend window along the timeline.")
+        selected_label = st.selectbox(
+            "Channel pair (rolling chart)",
+            options=pair_labels,
+            key="corr_pair_select",
+            help="Selects the pair for the plot. Each point is ρ for one window; labels mark the window end week.",
+        )
         idx = pair_labels.index(selected_label)
         selected_pair = all_pairs[idx]
         st.plotly_chart(
@@ -340,6 +362,9 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
         )
 
     with st.expander("Per-channel avg absolute correlation (multicollinearity risk)", expanded=False):
+        st.caption(
+            "Per channel: mean |ρ| to all **other** channels. Higher bars flag stronger joint movement with the rest of the mix."
+        )
         for name, val in corr_results["avg_abs_corr"].items():
             bar_pct = min(val * 100, 100)
             color = _corr_cell_color(val)
@@ -536,8 +561,7 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
             _render_correlation_panel(corr_results)
         else:
             st.info(
-                "Correlation analysis could not be built from this table (missing per-channel "
-                "**`*_spend`** columns or channel names in the saved configuration)."
+                "Needs per-channel **`*_spend`** columns and channel names in the saved configuration to build this tab."
             )
 
     with tab_data:

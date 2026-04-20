@@ -78,8 +78,8 @@ def run_simulation(
     """Run spend -> impressions -> revenue and return (DataFrame, correlation_results).
 
     correlation_results is always computed from simulated weekly spend (heatmap, rolling
-    analysis, etc.). The ``pairwise_summary`` entries are only populated for channels
-    explicitly linked in ``correlations`` in the config.
+    analysis, etc.). The ``pairwise_summary`` lists every unordered channel pair; each
+    row includes ``configured_rho`` only when that pair appears under ``correlations``.
     """
     spend_matrix = generate_spend(config)
 

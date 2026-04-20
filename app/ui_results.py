@@ -13,6 +13,7 @@ from plotly.subplots import make_subplots
 from app.cache import cached_dataframe_schema_ok
 from app.ui_chart_constants import ACCENT2, BLUE, CHART_PAL_CVD, ORANGE
 from app.ui_yaml_io import yaml_dump
+from scripts.spend_simulation.pairwise_summary import build_pairwise_summary
 
 
 def _norm_series(s: pd.Series) -> pd.Series:
@@ -287,11 +288,12 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
     st.markdown("---")
     st.markdown("### Channel Spend Correlation Analysis")
     st.caption(
-        "Pearson **ρ** on weekly **spend** in the output table. **Heatmap:** all pairs. **Summary column:** "
-        "only Correlated channel spend pairs; badge = observed ρ, parentheses = copula target, trailing label = drift."
+        "Pearson **ρ** on weekly **spend** in the output table. **Heatmap:** all pairs. **Summary:** "
+        "every unordered pair; parentheses show copula target ρ only when that pair is under `correlations` in config; "
+        "trailing label = drift."
     )
     if not pairwise:
-        st.caption("No correlation pairs in config; heatmap and metrics still show all-pair observed ρ.")
+        st.caption("Need at least two channels for pairwise summaries and rolling charts.")
 
     m1, m2, m3 = st.columns(3)
     avg_rho = float(np.mean([v for v in corr_results["avg_abs_corr"].values()]))
@@ -323,16 +325,21 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
         for p in pairwise:
             pair_label = f"{p['pair'][0]} / {p['pair'][1]}"
             rho_val = p["observed_rho"]
-            rho_tgt = float(p.get("configured_rho", 0.0))
+            rho_tgt = p.get("configured_rho")
             drift_label = p["drift_label"]
             color = _corr_cell_color(rho_val)
             drift_color = "#27ae60" if drift_label == "stable" else ("#e74c3c" if drift_label.startswith("-") else "#e67e22")
             tgt_muted = "#94a3b8" if night else "#64748b"
+            tgt_html = (
+                f"<span style='color:{tgt_muted};font-size:0.8rem'>(target ρ {float(rho_tgt):.2f})</span>"
+                if rho_tgt is not None
+                else f"<span style='color:{tgt_muted};font-size:0.8rem'>(no copula target)</span>"
+            )
             st.markdown(
                 f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;flex-wrap:wrap'>"
                 f"<span style='min-width:140px;font-weight:500'>{pair_label}</span>"
                 f"<span style='background:{color};color:white;padding:2px 10px;border-radius:4px;font-size:0.9rem;font-weight:600'>{rho_val:.2f}</span>"
-                f"<span style='color:{tgt_muted};font-size:0.8rem'>(target ρ {rho_tgt:.2f})</span>"
+                f"{tgt_html}"
                 f"<span style='color:{drift_color};font-size:0.85rem;font-weight:500'>{drift_label}</span>"
                 f"</div>",
                 unsafe_allow_html=True,
@@ -343,8 +350,21 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
         )
 
     if rolling_corr is not None and rolling_corr.shape[0] > 0 and len(pairwise) > 0:
-        all_pairs = [p["pair"] for p in pairwise]
-        pair_labels = [f"{p[0]} / {p[1]}" for p in all_pairs]
+        raw_pairs = [list(p["pair"]) for p in pairwise]
+        raw_labels = [f"{p[0]} / {p[1]}" for p in raw_pairs]
+        all_pairs: List[List[str]] = []
+        pair_labels: List[str] = []
+        seen_unordered: set[tuple[str, ...]] = set()
+        for lbl, pr in zip(raw_labels, raw_pairs):
+            key = tuple(sorted(pr))
+            if key in seen_unordered:
+                continue
+            seen_unordered.add(key)
+            pair_labels.append(lbl)
+            all_pairs.append(pr)
+        if not pair_labels:
+            pair_labels = raw_labels
+            all_pairs = raw_pairs
         if "corr_pair_select" not in st.session_state:
             st.session_state.corr_pair_select = pair_labels[0]
         st.caption("**Rolling line:** Pearson ρ inside each sliding spend window along the timeline.")
@@ -402,11 +422,15 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
     t, c = spend.shape
     static_corr = np.corrcoef(spend.T)
 
-    window = min(12, max(2, t - 1))
+    # Match scripts.spend_simulation.correlation_analysis.analyze_spend_correlations (default window=12).
+    roll_window = 12
+    effective_window = min(roll_window, t)
     rolling_corr = np.empty((0, c, c))
     drift = np.zeros((c, c))
-    if t > window:
-        rolling_corr = np.array([np.corrcoef(spend[i : i + window].T) for i in range(t - window)])
+    if effective_window < t:
+        rolling_corr = np.array(
+            [np.corrcoef(spend[i : i + effective_window].T) for i in range(t - effective_window)]
+        )
         edge = min(5, rolling_corr.shape[0])
         drift = rolling_corr[-edge:].mean(axis=0) - rolling_corr[:edge].mean(axis=0)
 
@@ -417,30 +441,7 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
     avg_abs_corr = dict(sorted(avg_abs_corr.items(), key=lambda kv: kv[1], reverse=True))
     most_corr = max(avg_abs_corr, key=avg_abs_corr.get) if avg_abs_corr else ""
 
-    name_to_idx = {n: i for i, n in enumerate(channel_names)}
-    pairwise_summary: List[Dict[str, Any]] = []
-    for entry in corr_cfg:
-        pair = list(entry.get("channels") or [])
-        if len(pair) != 2 or pair[0] not in name_to_idx or pair[1] not in name_to_idx:
-            continue
-        i, j = name_to_idx[pair[0]], name_to_idx[pair[1]]
-        observed_rho = float(static_corr[i, j])
-        pair_drift = float(drift[i, j]) if drift.size else 0.0
-        if abs(pair_drift) < 0.05:
-            drift_label = "stable"
-        elif pair_drift > 0:
-            drift_label = f"+{pair_drift:.2f}"
-        else:
-            drift_label = f"{pair_drift:.2f}"
-        pairwise_summary.append(
-            {
-                "pair": pair,
-                "configured_rho": float(entry.get("rho", 0.0)),
-                "observed_rho": observed_rho,
-                "drift": pair_drift,
-                "drift_label": drift_label,
-            }
-        )
+    pairwise_summary = build_pairwise_summary(channel_names, static_corr, drift, list(corr_cfg))
 
     return {
         "channel_names": channel_names,
@@ -450,7 +451,7 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
         "avg_abs_corr": avg_abs_corr,
         "most_correlated_channel": most_corr,
         "pairwise_summary": pairwise_summary,
-        "window": window,
+        "window": effective_window,
     }
 
 
@@ -523,11 +524,15 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
             language="yaml",
         )
 
-    corr_results = st.session_state.get("last_corr_results")
-    if corr_results is None:
-        corr_results = _build_corr_results_from_cached_df(df)
-        if corr_results is not None:
-            st.session_state["last_corr_results"] = corr_results
+    # Always prefer recomputing from the saved CSV + current sim_config so pairwise lists stay
+    # complete after code updates and never stay stale vs. the heatmap (session can hold old
+    # last_corr_results from a previous app version or partial dict).
+    rebuilt = _build_corr_results_from_cached_df(df)
+    if rebuilt is not None:
+        st.session_state["last_corr_results"] = rebuilt
+        corr_results = rebuilt
+    else:
+        corr_results = st.session_state.get("last_corr_results")
 
     tab_chart, tab_corr, tab_data = st.tabs(
         ["Chart view", "Correlation analysis", "Data preview"]

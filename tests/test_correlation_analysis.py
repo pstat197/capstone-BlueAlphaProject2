@@ -141,15 +141,22 @@ def test_analyze_returns_all_keys():
     assert set(results.keys()) == expected_keys
 
 
-def test_analyze_pairwise_summary_matches_config():
-    """Pairwise summary has one entry per configured correlation pair."""
+def test_analyze_pairwise_summary_covers_all_pairs():
+    """Pairwise summary lists every unordered pair; YAML fills configured_rho when set."""
     config = _make_config(num_weeks=100)
     spend = generate_spend(config)
     results = analyze_spend_correlations(config, spend)
-    assert len(results["pairwise_summary"]) == 2
+    assert len(results["pairwise_summary"]) == 3
     pairs = [tuple(p["pair"]) for p in results["pairwise_summary"]]
     assert ("Search", "Social") in pairs
     assert ("Search", "Display") in pairs
+    assert ("Display", "Social") in pairs or ("Social", "Display") in pairs
+    by_pair = {tuple(p["pair"]): p for p in results["pairwise_summary"]}
+    assert by_pair[("Search", "Social")]["configured_rho"] is not None
+    assert by_pair[("Search", "Display")]["configured_rho"] is not None
+    social_display = by_pair.get(("Social", "Display")) or by_pair.get(("Display", "Social"))
+    assert social_display is not None
+    assert social_display["configured_rho"] is None
 
 
 def test_analyze_correlated_rho_close_to_configured():
@@ -195,7 +202,9 @@ def test_analyze_no_correlations():
     config = InputConfigurations.from_yaml_dict(data)
     spend = generate_spend(config)
     results = analyze_spend_correlations(config, spend)
-    assert results["pairwise_summary"] == []
+    assert len(results["pairwise_summary"]) == 1
+    assert results["pairwise_summary"][0]["pair"] == ["A", "B"]
+    assert results["pairwise_summary"][0]["configured_rho"] is None
     assert results["static_corr"].shape == (2, 2)
 
 
@@ -219,7 +228,7 @@ def main():
     test_avg_abs_correlation()
     test_most_correlated_channel()
     test_analyze_returns_all_keys()
-    test_analyze_pairwise_summary_matches_config()
+    test_analyze_pairwise_summary_covers_all_pairs()
     test_analyze_correlated_rho_close_to_configured()
     test_analyze_no_correlations()
     test_print_report_runs_without_error()

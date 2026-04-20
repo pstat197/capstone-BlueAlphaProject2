@@ -83,9 +83,9 @@ def merge_correlations_from_widgets(
     warns: List[str] = []
     n = len(merged.get("channel_list") or [])
     names_set = set(effective_channel_names(merged, n))
-    out: List[Dict[str, Any]] = []
     rows: List[Dict[str, Any]] = list(st.session_state.get("corr_ui_rows") or [])
-    seen_pairs: set[Tuple[str, str]] = set()
+    ordered_keys: List[Tuple[str, str]] = []
+    last_rho: Dict[Tuple[str, str], float] = {}
 
     for row in rows:
         rid = row["id"]
@@ -104,17 +104,49 @@ def merge_correlations_from_widgets(
             if not silent:
                 warns.append(f"Correlation {a} / {b}: unknown channel name; skipped.")
             continue
-        pair = tuple(sorted((a, b)))
-        if pair in seen_pairs:
-            if not silent:
-                warns.append(f"Duplicate correlation pair {a} / {b}; skipped duplicate.")
-            continue
-        seen_pairs.add(pair)
         if not (-1.0 <= rho <= 1.0):
             if not silent:
                 warns.append(f"Correlation {a} / {b}: rho clipped to [-1, 1].")
             rho = max(-1.0, min(1.0, rho))
-        out.append({"channels": [a, b], "rho": rho})
+        pair_key = tuple(sorted((a, b)))
+        if pair_key not in last_rho:
+            ordered_keys.append(pair_key)
+        elif not silent and abs(last_rho[pair_key] - rho) > 1e-12:
+            warns.append(
+                f"Duplicate pair {pair_key[0]} / {pair_key[1]}: using ρ={rho:.2f} from the lower row "
+                f"(replaces earlier ρ={last_rho[pair_key]:.2f})."
+            )
+        last_rho[pair_key] = rho
+
+    out = [{"channels": [k[0], k[1]], "rho": last_rho[k]} for k in ordered_keys]
+
+    # #region agent log
+    if not silent:
+        try:
+            from app.debug_ndlog import agent_dbg
+
+            row_snap = []
+            for row in rows:
+                rid = int(row["id"])
+                row_snap.append(
+                    {
+                        "id": rid,
+                        "a_widget": str(st.session_state.get(f"corr_a_{rid}", "")),
+                        "b_widget": str(st.session_state.get(f"corr_b_{rid}", "")),
+                        "rho_widget": st.session_state.get(f"corr_rho_{rid}", "__missing__"),
+                        "ch0_row": row.get("ch0"),
+                        "ch1_row": row.get("ch1"),
+                    }
+                )
+            agent_dbg(
+                "H1",
+                "ui_correlations.merge_correlations_from_widgets",
+                "exit",
+                {"n_rows": len(rows), "n_out": len(out), "out": out, "warns": warns, "row_snap": row_snap},
+            )
+        except Exception:
+            pass
+    # #endregion
 
     return out, warns
 
@@ -133,7 +165,8 @@ def render_correlations_section(cfg: Dict[str, Any], n_channels: int) -> None:
     st.markdown("##### Correlated channel spend")
     st.caption(
         "Optional: joint weekly spend across pairs (Gaussian copula in log space). "
-        "Leave empty for independent channels (default)."
+        "Leave empty for independent channels (default). "
+        "If you list the same channel pair more than once, the **last** row’s ρ is what YAML and the run use."
     )
 
     names = effective_channel_names(cfg, n_channels)

@@ -519,6 +519,23 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
 
     with st.expander("Configuration (YAML snapshot)", expanded=False):
         st.caption("Last merged settings (same structure as Advanced YAML).")
+        # #region agent log
+        try:
+            from app.debug_ndlog import agent_dbg
+
+            sc = st.session_state.get("sim_config") or {}
+            agent_dbg(
+                "H5",
+                "ui_results.render_results_panel",
+                "yaml_snapshot_expander",
+                {
+                    "n_correlations": len(sc.get("correlations") or []),
+                    "correlations": sc.get("correlations"),
+                },
+            )
+        except Exception:
+            pass
+        # #endregion
         st.code(
             yaml_dump(st.session_state.get("sim_config") or {}),
             language="yaml",

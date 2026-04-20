@@ -54,7 +54,7 @@ def _rows_from_cfg_correlations(cfg: Dict[str, Any]) -> Tuple[List[Dict[str, Any
             }
         )
         next_id += 1
-    return rows, next_id
+    return _dedupe_corr_rows(rows)
 
 
 def ensure_corr_rows_initialized(cfg: Dict[str, Any]) -> None:
@@ -72,6 +72,123 @@ def clear_correlation_keys() -> None:
     for k in ("corr_ui_rows", "corr_next_id"):
         if k in st.session_state:
             del st.session_state[k]
+
+
+def _max_distinct_pairs(n_channels: int) -> int:
+    return n_channels * (n_channels - 1) // 2 if n_channels >= 2 else 0
+
+
+def _pair_key(a: str, b: str) -> Tuple[str, str]:
+    return tuple(sorted((a, b)))
+
+
+def _row_channel_ab(row: Dict[str, Any], names: List[str]) -> Tuple[str, str]:
+    rid = int(row["id"])
+    a = str(st.session_state.get(f"corr_a_{rid}", row.get("ch0", ""))).strip()
+    b = str(st.session_state.get(f"corr_b_{rid}", row.get("ch1", ""))).strip()
+    if a not in names:
+        a = names[0]
+    if b not in names:
+        b = names[min(1, len(names) - 1)]
+    return a, b
+
+
+def _distinct_pairs_in_rows(rows: List[Dict[str, Any]], names: List[str]) -> set[Tuple[str, str]]:
+    keys: set[Tuple[str, str]] = set()
+    for r in rows:
+        a, b = _row_channel_ab(r, names)
+        if a and b and a != b:
+            keys.add(_pair_key(a, b))
+    return keys
+
+
+def _other_row_pair_keys(
+    rows: List[Dict[str, Any]], names: List[str], skip_rid: int
+) -> set[Tuple[str, str]]:
+    keys: set[Tuple[str, str]] = set()
+    for r in rows:
+        rid = int(r["id"])
+        if rid == skip_rid:
+            continue
+        a, b = _row_channel_ab(r, names)
+        if a and b and a != b:
+            keys.add(_pair_key(a, b))
+    return keys
+
+
+def _dedupe_corr_rows(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+    """One UI row per unordered pair; last row wins on ρ (matches merge)."""
+    last: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for row in rows:
+        a = str(row.get("ch0", "")).strip()
+        b = str(row.get("ch1", "")).strip()
+        if not a or not b or a == b:
+            continue
+        last[_pair_key(a, b)] = row
+    out: List[Dict[str, Any]] = []
+    nid = 1
+    for pk in sorted(last.keys()):
+        r = last[pk]
+        out.append(
+            {
+                "id": nid,
+                "ch0": pk[0],
+                "ch1": pk[1],
+                "rho": float(r.get("rho", 0.0)),
+            }
+        )
+        nid += 1
+    return out, nid
+
+
+def _reconcile_corr_row_choices(
+    row: Dict[str, Any], names: List[str], other_keys: set[Tuple[str, str]]
+) -> Tuple[List[str], List[str], str, str]:
+    """Clamp widget state so (A,B) is not used on another row; returns (opts_a, opts_b, a, b)."""
+    rid = int(row["id"])
+    for _ in range(8):
+        a_now, b_now = _row_channel_ab(row, names)
+        opts_b = [m for m in names if m != a_now and _pair_key(a_now, m) not in other_keys]
+        if not opts_b:
+            moved = False
+            for a_try in names:
+                cand = [m for m in names if m != a_try and _pair_key(a_try, m) not in other_keys]
+                if cand:
+                    st.session_state[f"corr_a_{rid}"] = a_try
+                    st.session_state[f"corr_b_{rid}"] = cand[0]
+                    moved = True
+                    break
+            if moved:
+                continue
+            opts_b = [m for m in names if m != a_now]
+        if b_now not in opts_b:
+            st.session_state[f"corr_b_{rid}"] = opts_b[0]
+            continue
+        opts_a = [n for n in names if n != b_now and _pair_key(n, b_now) not in other_keys]
+        if not opts_a:
+            moved = False
+            for b_try in names:
+                cand = [n for n in names if n != b_try and _pair_key(n, b_try) not in other_keys]
+                if cand:
+                    st.session_state[f"corr_b_{rid}"] = b_try
+                    st.session_state[f"corr_a_{rid}"] = cand[0]
+                    moved = True
+                    break
+            if moved:
+                continue
+            opts_a = [n for n in names if n != b_now]
+        if a_now not in opts_a:
+            st.session_state[f"corr_a_{rid}"] = opts_a[0]
+            continue
+        return opts_a, opts_b, a_now, b_now
+    a_now, b_now = _row_channel_ab(row, names)
+    opts_b = [m for m in names if m != a_now and _pair_key(a_now, m) not in other_keys] or [
+        m for m in names if m != a_now
+    ]
+    opts_a = [n for n in names if n != b_now and _pair_key(n, b_now) not in other_keys] or [
+        n for n in names if n != b_now
+    ]
+    return opts_a, opts_b, a_now, b_now
 
 
 def merge_correlations_from_widgets(
@@ -139,7 +256,7 @@ def render_correlations_section(cfg: Dict[str, Any], n_channels: int) -> None:
         "Optional: joint weekly spend via a **Gaussian copula in log‑space** (then exponentiate and clip). "
         "The slider is **correlation of log‑spend**, not of dollar spend in the CSV—results charts use spend‑level ρ. "
         "Leave empty for independent channels (default). "
-        "If you list the same channel pair more than once, the **last** row’s ρ is what YAML and the run use."
+        "Each channel pair may appear **once**; duplicate entries in pasted YAML are collapsed to a single row (last ρ kept)."
     )
 
     names = effective_channel_names(cfg, n_channels)
@@ -157,22 +274,25 @@ def render_correlations_section(cfg: Dict[str, Any], n_channels: int) -> None:
 
     for row in list(rows):
         rid = int(row["id"])
+        other_keys = _other_row_pair_keys(rows, names, rid)
+        opts_a, opts_b, a_now, b_now = _reconcile_corr_row_choices(row, names, other_keys)
+
         c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
         with c1:
             st.selectbox(
                 "Channel A",
-                options=names,
+                options=opts_a,
                 key=f"corr_a_{rid}",
-                index=names.index(row["ch0"]) if row["ch0"] in names else 0,
+                index=opts_a.index(a_now) if a_now in opts_a else 0,
                 label_visibility="collapsed",
                 on_change=_yaml_sync_from_form,
             )
         with c2:
             st.selectbox(
                 "Channel B",
-                options=names,
+                options=opts_b,
                 key=f"corr_b_{rid}",
-                index=names.index(row["ch1"]) if row["ch1"] in names else min(1, len(names) - 1),
+                index=opts_b.index(b_now) if b_now in opts_b else 0,
                 label_visibility="collapsed",
                 on_change=_yaml_sync_from_form,
             )
@@ -195,7 +315,9 @@ def render_correlations_section(cfg: Dict[str, Any], n_channels: int) -> None:
                     st.session_state.pop(k, None)
                 st.rerun()
 
-    if st.button("Add correlated pair", width="content"):
+    max_pairs = _max_distinct_pairs(n_channels)
+    distinct_pairs = _distinct_pairs_in_rows(rows, names)
+    if len(distinct_pairs) < max_pairs and st.button("Add correlated pair", width="content"):
         nid = int(st.session_state.get("corr_next_id", 1))
         st.session_state.corr_next_id = nid + 1
         st.session_state.corr_ui_rows = list(st.session_state.corr_ui_rows) + [

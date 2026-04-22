@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 import numpy as np
 from scripts.synth_input_classes.input_configurations import InputConfigurations
@@ -23,6 +23,15 @@ def _build_correlation_matrix(
         corr[i, j] = rho
         corr[j, i] = rho
     return corr
+
+
+def _clip_spend_to_ranges(spend: np.ndarray, channels: List[Any]) -> None:
+    """In-place clip each channel column to that channel's spend_range."""
+    for c, ch in enumerate(channels):
+        spend_range = ch.get_spend_range()
+        low = spend_range[0] if len(spend_range) >= 1 else 0.0
+        high = spend_range[1] if len(spend_range) >= 2 else np.inf
+        spend[:, c] = np.clip(spend[:, c], low, high)
 
 
 def _generate_correlated_spend(config: InputConfigurations) -> np.ndarray:
@@ -52,13 +61,7 @@ def _generate_correlated_spend(config: InputConfigurations) -> np.ndarray:
 
     log_spend = rng.multivariate_normal(mu, cov, size=num_weeks)
     spend = np.exp(log_spend)
-
-    for c, ch in enumerate(channels):
-        spend_range = ch.get_spend_range()
-        low = spend_range[0] if len(spend_range) >= 1 else 0.0
-        high = spend_range[1] if len(spend_range) >= 2 else np.inf
-        spend[:, c] = np.clip(spend[:, c], low, high)
-
+    _clip_spend_to_ranges(spend, channels)
     return spend
 
 
@@ -81,6 +84,55 @@ def _generate_independent_spend(config: InputConfigurations) -> np.ndarray:
             out[w, c] = rng.gamma(shape, scale)
             out[w, c] = np.clip(out[w, c], low, high)
     return out
+
+
+def _apply_budget_shifts(spend: np.ndarray, config: InputConfigurations) -> None:
+    """Apply optional budget rules in order (after base draw). Mutates spend in place; clips at end."""
+    shifts = config.get_budget_shifts()
+    if not shifts:
+        return
+
+    channels = config.get_channel_list()
+    num_weeks = spend.shape[0]
+    names = [ch.get_channel_name() for ch in channels]
+    name_to_idx = {n: i for i, n in enumerate(names)}
+
+    for rule in shifts:
+        t = rule["type"]
+        if t == "scale":
+            start_w = int(rule["start_week"])
+            end_w = int(rule["end_week"])
+            factor = float(rule["factor"])
+            for w in range(num_weeks):
+                week_1based = w + 1
+                if start_w <= week_1based <= end_w:
+                    spend[w, :] *= factor
+        elif t == "reallocate":
+            start_w = int(rule["start_week"])
+            f_name = rule["from_channel"]
+            t_name = rule["to_channel"]
+            fraction = float(rule["fraction"])
+            if f_name not in name_to_idx or t_name not in name_to_idx:
+                raise ValueError(
+                    f"budget_shifts reallocate: unknown channel "
+                    f"(from_channel={f_name!r}, to_channel={t_name!r}); "
+                    f"known: {names}"
+                )
+            fi = name_to_idx[f_name]
+            ti = name_to_idx[t_name]
+            if fi == ti:
+                continue
+            for w in range(num_weeks):
+                if w + 1 < start_w:
+                    continue
+                move_amt = spend[w, fi] * fraction
+                spend[w, fi] -= move_amt
+                spend[w, ti] += move_amt
+        else:
+            raise ValueError(f"unsupported budget_shifts type: {t!r}")
+
+    _clip_spend_to_ranges(spend, channels)
+    spend[:] = np.maximum(spend, 0.0)
 
 
 def _apply_channel_toggles(config: InputConfigurations, spend: np.ndarray) -> np.ndarray:
@@ -114,4 +166,5 @@ def generate_spend(config: InputConfigurations) -> np.ndarray:
         spend = _generate_correlated_spend(config)
     else:
         spend = _generate_independent_spend(config)
+    _apply_budget_shifts(spend, config)
     return _apply_channel_toggles(config, spend)

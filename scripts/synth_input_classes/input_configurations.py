@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .channel import Channel, StickyPauseRange, WeekOffRange
 
@@ -160,6 +160,41 @@ def _parse_channel_toggles(
     return enabled, off_ranges, adstock_enabled, saturation_enabled
 
 
+def _normalize_budget_shifts(raw: Any) -> List[Dict[str, Any]]:
+    """Parse top-level budget_shifts from YAML. Week numbers are 1-based (same as CSV week column)."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise TypeError("budget_shifts must be a list")
+    out: List[Dict[str, Any]] = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise TypeError(f"budget_shifts[{i}] must be a mapping")
+        t = str(item.get("type", "")).strip().lower()
+        if t == "scale":
+            sw = int(item["start_week"])
+            factor = float(item["factor"])
+            ew = int(item.get("end_week", sw))
+            if ew < sw:
+                raise ValueError("budget_shifts scale: end_week must be >= start_week")
+            out.append({"type": "scale", "start_week": sw, "end_week": ew, "factor": factor})
+        elif t == "reallocate":
+            frac = float(item["fraction"])
+            frac = max(0.0, min(1.0, frac))
+            out.append(
+                {
+                    "type": "reallocate",
+                    "start_week": int(item["start_week"]),
+                    "from_channel": str(item["from_channel"]),
+                    "to_channel": str(item["to_channel"]),
+                    "fraction": frac,
+                }
+            )
+        else:
+            raise ValueError(f"budget_shifts: unknown type {item.get('type')!r}")
+    return out
+
+
 @dataclass
 class InputConfigurations:
     run_identifier: str
@@ -170,6 +205,7 @@ class InputConfigurations:
     # Global kill-switches for modeling effects. Fail-open defaults: everything on.
     adstock_global: bool = True
     saturation_global: bool = True
+    budget_shifts: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_yaml_dict(
@@ -253,6 +289,7 @@ class InputConfigurations:
             default=True,
         )
 
+        budget_shifts = _normalize_budget_shifts(data.get("budget_shifts"))
         return cls(
             run_identifier=str(data.get("run_identifier", "")),
             week_range=int(data.get("week_range", 0)),
@@ -261,6 +298,7 @@ class InputConfigurations:
             correlations=correlations,
             adstock_global=adstock_global,
             saturation_global=saturation_global,
+            budget_shifts=budget_shifts,
         )
 
     def get_run_identifier(self) -> str:
@@ -283,6 +321,9 @@ class InputConfigurations:
 
     def get_saturation_global(self) -> bool:
         return self.saturation_global
+
+    def get_budget_shifts(self) -> List[Dict[str, Any]]:
+        return self.budget_shifts
 
     def get_rng(self):  # -> np.random.Generator (avoid np import at module level)
         """Return the RNG for this config (same one used during load, seeded with get_seed() if set)."""

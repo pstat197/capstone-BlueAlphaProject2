@@ -1,6 +1,9 @@
 run_identifier: Default
 week_range: 52
 
+# Optional: time-based spend adjustments (see example.yaml). Empty = no extra rules.
+budget_shifts: []
+
 channel_list:
   - channel:
       channel_name: Channel 1

@@ -7,19 +7,24 @@ Covers the YAML surface added by the channel toggle feature:
 - `adstock_enabled`: bool (per channel)
 - `saturation_enabled`: bool (per channel)
 
-Global modeling switches (top-level `adstock.global` / `saturation.global`)
-are rendered in ``streamlit_app.py`` and merged in ``ui_config_merge``.
-
 All toggles are fail-open: if the user leaves defaults untouched, nothing is
 emitted to YAML (channel stays fully on with adstock + saturation active).
 
+The adstock / saturation enable checkboxes are rendered by
+``render_channel_adstock_enable_checkbox`` / ``render_channel_saturation_enable_checkbox``
+so they can be co-located with their curve configuration blocks in
+``ui_channel_form``. ``render_channel_toggles_block`` renders only the
+Availability section (Channel active + pause windows, with inline
+start/end validation).
+
 Week ranges are clamped to the current simulation `Week range`; invalid
-rows produce warnings on merge and are skipped rather than raising.
+rows produce warnings inline AND on merge, and are skipped rather than
+raising.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import streamlit as st
 
@@ -59,14 +64,6 @@ def ch_off_end_key(i: int, rid: int) -> str:
 
 def ch_off_remove_key(i: int, rid: int) -> str:
     return f"tog_offrm_{i}_{rid}"
-
-
-def global_adstock_key() -> str:
-    return "tog_global_adstock"
-
-
-def global_saturation_key() -> str:
-    return "tog_global_saturation"
 
 
 # ---------------------------------------------------------------------------
@@ -162,29 +159,59 @@ def ensure_channel_toggle_state_initialized(
         st.session_state[sat_key] = bool(v) if isinstance(v, bool) else True
 
 
-def ensure_global_toggle_state_initialized(cfg: Dict[str, Any]) -> None:
-    """Populate the top-level global adstock/saturation switches if missing."""
-    if global_adstock_key() not in st.session_state:
-        adstock_section = cfg.get("adstock") if isinstance(cfg.get("adstock"), dict) else {}
-        v = adstock_section.get("global", True) if adstock_section else True
-        st.session_state[global_adstock_key()] = bool(v) if isinstance(v, bool) else True
-
-    if global_saturation_key() not in st.session_state:
-        sat_section = cfg.get("saturation") if isinstance(cfg.get("saturation"), dict) else {}
-        v = sat_section.get("global", True) if sat_section else True
-        st.session_state[global_saturation_key()] = bool(v) if isinstance(v, bool) else True
-
-
 def clear_toggle_widget_keys() -> None:
-    """Remove all per-channel and global toggle widget keys."""
+    """Remove all per-channel toggle widget keys."""
     for k in list(st.session_state.keys()):
         if isinstance(k, str) and k.startswith(
             ("tog_enabled_", "tog_ads_", "tog_sat_", "tog_offrows_", "tog_offnext_",
              "tog_offstart_", "tog_offend_", "tog_offrm_")
         ):
             del st.session_state[k]
-    for k in (global_adstock_key(), global_saturation_key()):
-        st.session_state.pop(k, None)
+
+
+# ---------------------------------------------------------------------------
+# Status summary (for collapsed channel expander title)
+# ---------------------------------------------------------------------------
+
+
+def channel_status_summary(i: int, cfg: Dict[str, Any]) -> str:
+    """Build a one-line status summary for the collapsed channel expander.
+
+    Reads from session state when available (so unsaved UI edits reflect),
+    falling back to the YAML config. Returns a string like
+    ``"active · adstock on · saturation off · 2 pauses"``.
+    """
+    ch = _channel_at(cfg, i)
+
+    enabled = st.session_state.get(ch_enabled_key(i))
+    if enabled is None:
+        enabled, _ = _parse_enabled_from_yaml(ch.get("enabled"))
+    enabled = bool(enabled)
+
+    rows = st.session_state.get(ch_off_rows_key(i))
+    if rows is None:
+        _, off_ranges = _parse_enabled_from_yaml(ch.get("enabled"))
+        n_pauses = len(off_ranges)
+    else:
+        n_pauses = len(rows)
+
+    ads = st.session_state.get(ch_adstock_enabled_key(i))
+    if ads is None:
+        v = ch.get("adstock_enabled", True)
+        ads = bool(v) if isinstance(v, bool) else True
+    sat = st.session_state.get(ch_saturation_enabled_key(i))
+    if sat is None:
+        v = ch.get("saturation_enabled", True)
+        sat = bool(v) if isinstance(v, bool) else True
+
+    parts: List[str] = []
+    parts.append("active" if enabled else "inactive")
+    if enabled:
+        parts.append("adstock " + ("on" if ads else "off"))
+        parts.append("saturation " + ("on" if sat else "off"))
+        if n_pauses:
+            parts.append(f"{n_pauses} pause{'s' if n_pauses != 1 else ''}")
+    return " · ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -192,55 +219,65 @@ def clear_toggle_widget_keys() -> None:
 # ---------------------------------------------------------------------------
 
 
+def render_channel_adstock_enable_checkbox(i: int) -> None:
+    """Per-channel adstock enable checkbox, intended to live at the top of the Adstock section."""
+    st.checkbox(
+        "Apply adstock to this channel",
+        key=ch_adstock_enabled_key(i),
+        help=(
+            "When unchecked, this channel's adstock carry-over step is skipped "
+            "(saturation and ROI still run). The curve parameters below are "
+            "preserved so you can re-enable without reconfiguring."
+        ),
+        on_change=_yaml_sync_from_form,
+    )
+
+
+def render_channel_saturation_enable_checkbox(i: int) -> None:
+    """Per-channel saturation enable checkbox, intended to live at the top of the Saturation section."""
+    st.checkbox(
+        "Apply saturation to this channel",
+        key=ch_saturation_enabled_key(i),
+        help=(
+            "When unchecked, impressions pass straight into ROI scaling with no "
+            "saturation curve. The curve parameters below are preserved so you "
+            "can re-enable without reconfiguring."
+        ),
+        on_change=_yaml_sync_from_form,
+    )
+
+
 def render_channel_toggles_block(
     i: int,
     cfg: Dict[str, Any],
     week_range: int,
 ) -> None:
-    """Render the Availability / on-off section inside a channel expander."""
+    """Render the Availability section (channel active + pause windows).
+
+    The per-channel adstock / saturation enable checkboxes are rendered
+    separately inside their respective sections in ``ui_channel_form`` via
+    ``render_channel_adstock_enable_checkbox`` /
+    ``render_channel_saturation_enable_checkbox``.
+    """
     ensure_channel_toggle_state_initialized(cfg, i, week_range)
 
     st.markdown("##### Availability")
     st.caption(
-        "Controls when this channel contributes to the simulation. **Channel active** "
-        "turns media spend and impressions on or off; pause windows zero out spend and "
-        "impressions for the selected week range while letting existing adstock decay "
-        "flow through into revenue (soft off). Disabling adstock or saturation here "
-        "skips that effect for this channel only."
+        "Controls when this channel contributes. **Channel active** toggles the "
+        "whole channel; pause windows zero out spend and impressions for specific "
+        "weeks while letting prior adstock decay flow through into revenue (soft off)."
     )
 
-    top_l, top_m, top_r = st.columns([2, 2, 2])
-    with top_l:
-        st.checkbox(
-            "Channel active",
-            key=ch_enabled_key(i),
-            help=(
-                "Uncheck to fully disable this channel for the whole run. "
-                "A fully disabled channel contributes zero spend, impressions, "
-                "and revenue (no baseline, no noise, no adstock echo)."
-            ),
-            on_change=_yaml_sync_from_form,
-        )
-    with top_m:
-        st.checkbox(
-            "Adstock enabled",
-            key=ch_adstock_enabled_key(i),
-            help=(
-                "Apply this channel's adstock carry-over. Uncheck to skip adstock "
-                "for this channel only; saturation still runs if enabled."
-            ),
-            on_change=_yaml_sync_from_form,
-        )
-    with top_r:
-        st.checkbox(
-            "Saturation enabled",
-            key=ch_saturation_enabled_key(i),
-            help=(
-                "Apply this channel's saturation curve. Uncheck to pass raw "
-                "impressions straight to ROI scaling for this channel only."
-            ),
-            on_change=_yaml_sync_from_form,
-        )
+    st.checkbox(
+        "Channel active",
+        key=ch_enabled_key(i),
+        help=(
+            "Uncheck to fully disable this channel for the whole run. "
+            "A fully disabled channel contributes zero spend, impressions, "
+            "and revenue (no baseline, no noise, no adstock echo)."
+        ),
+        on_change=_yaml_sync_from_form,
+    )
 
     channel_active = bool(st.session_state.get(ch_enabled_key(i), True))
 
@@ -328,6 +365,34 @@ def render_channel_toggles_block(
                 _yaml_sync_from_form()
                 st.rerun()
 
+        # Inline validation: start must be <= end. Clamping to range is enforced
+        # by the number_input min/max bounds, but start/end ordering is not.
+        try:
+            s_val = int(st.session_state[start_key])
+            e_val = int(st.session_state[end_key])
+        except (KeyError, TypeError, ValueError):
+            s_val = e_val = None
+        if s_val is not None and e_val is not None and s_val > e_val:
+            st.warning(
+                f"Pause window #{rid}: start week ({s_val}) is after end week "
+                f"({e_val}). Values will be swapped when the simulation runs."
+            )
+
+    # Inline duplicate detection — soft warning only.
+    finalized: List[Tuple[int, int]] = []
+    for row in rows:
+        rid = int(row["id"])
+        try:
+            s = int(st.session_state.get(ch_off_start_key(i, rid), row.get("start", 1)))
+            e = int(st.session_state.get(ch_off_end_key(i, rid), row.get("end", 1)))
+        except (TypeError, ValueError):
+            continue
+        if s > e:
+            s, e = e, s
+        finalized.append((s, e))
+    if len(finalized) != len(set(finalized)):
+        st.caption("ℹ️ Duplicate pause windows will be deduplicated on run.")
+
     add_disabled = int(week_range) < 1
     if st.button(
         "Add pause window",
@@ -343,37 +408,6 @@ def render_channel_toggles_block(
         st.rerun()
 
 
-def render_global_effect_switches() -> None:
-    """Render top-level adstock/saturation global kill-switches."""
-    st.markdown("##### Modeling effects (global)")
-    st.caption(
-        "Top-level kill-switches for the media-effect transforms. When turned off, "
-        "the corresponding step is skipped for **every** channel regardless of each "
-        "channel's own flag. Leave on for typical MMM runs."
-    )
-    col_a, col_s = st.columns(2)
-    with col_a:
-        st.checkbox(
-            "Adstock globally enabled",
-            key=global_adstock_key(),
-            help=(
-                "If off, disables adstock carry-over for all channels. "
-                "Useful for isolating instantaneous (same-week) media effects."
-            ),
-            on_change=_yaml_sync_from_form,
-        )
-    with col_s:
-        st.checkbox(
-            "Saturation globally enabled",
-            key=global_saturation_key(),
-            help=(
-                "If off, disables the saturation step for all channels so impressions "
-                "flow directly into ROI scaling (pre-adstock)."
-            ),
-            on_change=_yaml_sync_from_form,
-        )
-
-
 # ---------------------------------------------------------------------------
 # Merge helpers (UI -> YAML)
 # ---------------------------------------------------------------------------
@@ -387,8 +421,7 @@ def _collect_channel_toggle(
     Build the YAML overrides (as a patch dict) for channel ``i``'s toggles.
 
     Returns (patch, warnings). The patch is applied directly onto the merged
-    channel dict. Keys are omitted (or set to ``True``) when equivalent to the
-    fail-open default so the YAML stays clean for simple cases.
+    channel dict.
     """
     warns: List[str] = []
     patch: Dict[str, Any] = {}
@@ -454,14 +487,20 @@ def merge_channel_toggles_into_config(
     silent: bool = False,
 ) -> List[str]:
     """
-    Apply per-channel toggle widgets + global effect switches onto ``merged``.
+    Apply per-channel toggle widgets onto ``merged``.
 
     Mutates ``merged`` in place. Returns a list of user-facing warnings
     (empty if silent or if nothing needed flagging).
+
+    Top-level ``adstock.global`` / ``saturation.global`` flags from the
+    loaded YAML are preserved unchanged — this function never reads or
+    writes them. The per-channel ``adstock_enabled`` / ``saturation_enabled``
+    flags are the single source of UI truth.
     """
     warns: List[str] = []
     week_range = int(merged.get("week_range") or 0)
     channel_list = merged.get("channel_list") or []
+
     for i, item in enumerate(channel_list):
         if not isinstance(item, dict):
             continue
@@ -472,25 +511,6 @@ def merge_channel_toggles_into_config(
         if not silent:
             warns.extend(per_warns)
         ch.update(patch)
-
-    ads_on = bool(st.session_state.get(global_adstock_key(), True))
-    sat_on = bool(st.session_state.get(global_saturation_key(), True))
-
-    adstock_section = merged.get("adstock")
-    if isinstance(adstock_section, dict):
-        adstock_section["global"] = ads_on
-    elif not ads_on:
-        merged["adstock"] = {"global": False}
-    else:
-        merged.pop("adstock", None)
-
-    saturation_section = merged.get("saturation")
-    if isinstance(saturation_section, dict):
-        saturation_section["global"] = sat_on
-    elif not sat_on:
-        merged["saturation"] = {"global": False}
-    else:
-        merged.pop("saturation", None)
 
     return [] if silent else warns
 

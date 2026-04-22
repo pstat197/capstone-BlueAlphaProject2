@@ -29,10 +29,6 @@ from app.ui_channel_form import (  # noqa: E402
     yaml_mark_dirty,
     yaml_sync_from_form,
 )
-from app.ui_channel_toggles import (  # noqa: E402
-    ensure_global_toggle_state_initialized,
-    render_global_effect_switches,
-)
 from app.ui_config_merge import (  # noqa: E402
     clear_channel_widget_keys,
     clear_widget_keys,
@@ -119,7 +115,6 @@ def main() -> None:
         st.session_state.seed_input = int(s) if s is not None else 0
 
     ensure_corr_rows_initialized(st.session_state.sim_config)
-    ensure_global_toggle_state_initialized(st.session_state.sim_config)
 
     if st.session_state.pop("_resync_form_from_sim_config", False):
         _resync_form_from_sim_config()
@@ -142,17 +137,39 @@ def main() -> None:
     elif "advanced_yaml" not in st.session_state:
         st.session_state.advanced_yaml = yaml_dump(st.session_state.sim_config)
 
-    with st.sidebar:
-        st.header("Settings")
-        st.checkbox("Night mode", key="night_mode")
+    def _render_settings_controls(*, prefix: str) -> None:
+        """Render the Night / colorblind / reset / clear-cache controls.
+
+        Keys are prefixed so the same controls can appear both in the sidebar
+        and in the main-page popover without Streamlit duplicate-key errors.
+        ``night_mode`` and ``colorblind_charts`` stay canonical; local widget
+        state is mirrored into them via ``on_change`` callbacks.
+        """
+
+        def _mirror_night() -> None:
+            st.session_state["night_mode"] = bool(st.session_state[f"{prefix}_night_mode"])
+
+        def _mirror_cb() -> None:
+            st.session_state["colorblind_charts"] = bool(
+                st.session_state[f"{prefix}_colorblind_charts"]
+            )
+
+        st.checkbox(
+            "Night mode",
+            key=f"{prefix}_night_mode",
+            value=bool(st.session_state.get("night_mode", False)),
+            on_change=_mirror_night,
+        )
         st.checkbox(
             "Colorblind-safe chart colors",
-            key="colorblind_charts",
+            key=f"{prefix}_colorblind_charts",
+            value=bool(st.session_state.get("colorblind_charts", True)),
+            on_change=_mirror_cb,
             help="Uses orange / blue / green lines (Wong-style) so series are easier to distinguish.",
         )
 
         st.divider()
-        if st.button("Reset to example.yaml", width="stretch"):
+        if st.button("Reset to example.yaml", width="stretch", key=f"{prefix}_reset_btn"):
             st.session_state.sim_config = yaml.safe_load(load_example_text()) or {}
             st.session_state.config_collapsed = False
             clear_widget_keys()
@@ -166,9 +183,18 @@ def main() -> None:
             st.session_state.yaml_manual_edit = False
             st.rerun()
 
-        if st.button("Clear simulation cache", width="stretch", help="Remove cached runs on disk"):
+        if st.button(
+            "Clear simulation cache",
+            width="stretch",
+            help="Remove cached runs on disk",
+            key=f"{prefix}_clear_cache_btn",
+        ):
             n = clear_run_cache()
             st.caption(f"Cleared {n} cached file(s).")
+
+    with st.sidebar:
+        st.header("Settings")
+        _render_settings_controls(prefix="sb")
 
     user_dict = st.session_state.sim_config
     n_channels = len(user_dict.get("channel_list") or [])
@@ -180,8 +206,14 @@ def main() -> None:
         render_results_panel(df, compact_toolbar=True)
         return
 
-    st.title("Marketing mix simulator")
-    st.caption("Configure the simulation below, then run.")
+    title_col, settings_col = st.columns([6, 1])
+    with title_col:
+        st.title("Marketing mix simulator")
+        st.caption("Configure the simulation below, then run.")
+    with settings_col:
+        st.write("")
+        with st.popover("Settings", width="stretch"):
+            _render_settings_controls(prefix="pop")
 
     st.markdown("##### Simulation settings")
     st.caption(
@@ -218,51 +250,53 @@ def main() -> None:
             on_change=yaml_sync_from_form,
         )
 
-    st.markdown("##### Channels")
-    st.caption(
-        "Each row is one media channel with its own spend, response curve, carry-over, and noise. "
-        "Open a channel; optional **reference** expanders under Noise, Saturation, and Adstock explain formulas and when to use each option."
-    )
-    row_a, row_b = st.columns([4, 1])
-    with row_a:
-        new_nm = st.text_input(
-            "Name for new channel",
-            key="new_channel_name",
-            placeholder="e.g. TikTok",
-            on_change=yaml_sync_from_form,
-        )
-    with row_b:
-        st.write("")
-        if st.button("Add channel", width="stretch"):
-            base = (new_nm or "").strip() or "New channel"
-            existing = _existing_channel_names(st.session_state.sim_config)
-            nm = _next_unique_channel_name(base, existing)
-            ch = default_channel_dict()
-            ch["channel_name"] = nm
-            if "channel_list" not in st.session_state.sim_config:
-                st.session_state.sim_config["channel_list"] = []
-            st.session_state.sim_config["channel_list"].append({"channel": ch})
-            st.session_state["yaml_manual_edit"] = False
-            clear_channel_widget_keys()
-            st.rerun()
+    tab_channels, tab_corr, tab_adv = st.tabs(["Channels", "Correlations", "Advanced"])
 
-    if n_channels > 0:
-        render_channel_widgets(schema, user_dict, n_channels)
-    else:
-        st.info("Add at least one channel to run the simulation.")
-
-    render_global_effect_switches()
-
-    render_correlations_section(user_dict, n_channels)
-
-    with st.expander("Advanced: edit full YAML", expanded=False):
+    with tab_channels:
         st.caption(
-            "Stays in sync with the form unless you edit here—then click **Apply YAML to form** to load it. "
-            "Editing the form updates this panel on the next run."
+            "Each row is one media channel with its own spend, response curve, carry-over, and noise. "
+            "Open a channel; optional **reference** expanders under Noise, Saturation, and Adstock explain formulas and when to use each option."
+        )
+        row_a, row_b = st.columns([4, 1])
+        with row_a:
+            new_nm = st.text_input(
+                "Name for new channel",
+                key="new_channel_name",
+                placeholder="e.g. TikTok",
+                on_change=yaml_sync_from_form,
+            )
+        with row_b:
+            st.write("")
+            if st.button("Add channel", width="stretch"):
+                base = (new_nm or "").strip() or "New channel"
+                existing = _existing_channel_names(st.session_state.sim_config)
+                nm = _next_unique_channel_name(base, existing)
+                ch = default_channel_dict()
+                ch["channel_name"] = nm
+                if "channel_list" not in st.session_state.sim_config:
+                    st.session_state.sim_config["channel_list"] = []
+                st.session_state.sim_config["channel_list"].append({"channel": ch})
+                st.session_state["yaml_manual_edit"] = False
+                clear_channel_widget_keys()
+                st.rerun()
+
+        if n_channels > 0:
+            render_channel_widgets(schema, user_dict, n_channels)
+        else:
+            st.info("Add at least one channel to run the simulation.")
+
+    with tab_corr:
+        render_correlations_section(user_dict, n_channels)
+
+    with tab_adv:
+        st.caption(
+            "Edit the full YAML directly. Stays in sync with the form unless you edit here—"
+            "then click **Apply YAML to form** to load it. Editing any field in the other "
+            "tabs updates this panel on the next run."
         )
         st.text_area(
             "YAML",
-            height=280,
+            height=320,
             key="advanced_yaml",
             label_visibility="collapsed",
             on_change=yaml_mark_dirty,
@@ -279,6 +313,7 @@ def main() -> None:
             except Exception as e:
                 st.error(f"Could not apply YAML: {e}")
 
+    st.divider()
     run_clicked = st.button("Run simulation", type="primary", width="content")
 
     if run_clicked:

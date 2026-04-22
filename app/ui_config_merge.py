@@ -94,7 +94,7 @@ def collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Dic
 
 def clear_channel_widget_keys() -> None:
     for k in list(st.session_state.keys()):
-        if k.startswith(("pc_", "sel_", "ch_name_", "del_ch_", "adw_")):
+        if k.startswith(("pc_", "sel_", "ch_name_", "del_ch_", "adw_", "ch_exp_")):
             del st.session_state[k]
     clear_toggle_widget_keys()
 
@@ -112,6 +112,7 @@ def clear_widget_keys() -> None:
                 "seed_input",
                 "del_ch_",
                 "adw_",
+                "ch_exp_",
             )
         ) or k.startswith(("corr_a_", "corr_b_", "corr_rho_", "corr_rm_")) or k in (
             "new_channel_name",

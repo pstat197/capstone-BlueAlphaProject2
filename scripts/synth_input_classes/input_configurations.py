@@ -2,11 +2,17 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 from .channel import Channel
-from scripts.config.defaults import get_default_channel_template
+
 
 def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Resolve per-channel config defaults from injected template or default.yaml."""
-    resolved_template = template or get_default_channel_template()
+    if template is None:
+        # Lazy import avoids circular import: config.loader -> InputConfigurations -> defaults
+        from scripts.config.defaults import get_default_channel_template
+
+        resolved_template = get_default_channel_template()
+    else:
+        resolved_template = template
     return {
         "saturation_config": dict(resolved_template.get("saturation_config") or {}),
         "adstock_decay_config": dict(resolved_template.get("adstock_decay_config") or {}),

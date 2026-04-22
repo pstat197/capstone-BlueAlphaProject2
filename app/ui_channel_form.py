@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 import streamlit as st
 
 from app.default_channel import default_channel_dict
+from app.ui_channel_toggles import render_channel_toggles_block
 from app.ui_config_merge import clear_channel_widget_keys
 from app.ui_form_state import (
     adstock_slider_visible,
@@ -285,7 +286,15 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
                 "auto-filled from defaults."
             )
 
-            st.markdown("**Spend & ROI**")
+            week_range_for_ranges = int(
+                st.session_state.get(
+                    "week_range_num",
+                    data.get("week_range", 52),
+                )
+            )
+            render_channel_toggles_block(i, data, week_range_for_ranges)
+
+            st.markdown("##### Spend & ROI")
             st.caption(
                 "Spend range and gamma sampling drive weekly spend; CPM maps spend to impressions. "
                 "True ROI scales effective (saturated, adstocked) media into revenue. "
@@ -307,7 +316,7 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
                 with c5:
                     _render_one_pc_field(i, core[4], data)
 
-            st.markdown("**Noise (simulation)**")
+            st.markdown("##### Noise (simulation)")
             st.caption(
                 "Random variation in **impressions** (right after CPM) and in **revenue** (after all media math). "
                 "Both use √(your value) × a weekly level, so they scale with that week’s size — not fixed dollar noise."

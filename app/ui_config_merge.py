@@ -7,6 +7,10 @@ from typing import Any, Dict, List, Tuple
 
 import streamlit as st
 
+from app.ui_channel_toggles import (
+    clear_toggle_widget_keys,
+    merge_channel_toggles_into_config,
+)
 from app.ui_form_state import (
     adstock_slider_visible,
     adstock_weights_key,
@@ -92,6 +96,7 @@ def clear_channel_widget_keys() -> None:
     for k in list(st.session_state.keys()):
         if k.startswith(("pc_", "sel_", "ch_name_", "del_ch_", "adw_")):
             del st.session_state[k]
+    clear_toggle_widget_keys()
 
 
 def clear_widget_keys() -> None:
@@ -115,6 +120,7 @@ def clear_widget_keys() -> None:
             "corr_next_id",
         ):
             del st.session_state[k]
+    clear_toggle_widget_keys()
 
 
 def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tuple[Dict[str, Any], List[str]]:
@@ -139,5 +145,8 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
     corrs, corr_warns = merge_correlations_from_widgets(merged, silent=silent)
     merged["correlations"] = corrs
     warns.extend(corr_warns)
+
+    toggle_warns = merge_channel_toggles_into_config(merged, silent=silent)
+    warns.extend(toggle_warns)
 
     return merged, ([] if silent else warns)

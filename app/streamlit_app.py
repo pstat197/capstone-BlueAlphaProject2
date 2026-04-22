@@ -29,6 +29,10 @@ from app.ui_channel_form import (  # noqa: E402
     yaml_mark_dirty,
     yaml_sync_from_form,
 )
+from app.ui_channel_toggles import (  # noqa: E402
+    ensure_global_toggle_state_initialized,
+    render_global_effect_switches,
+)
 from app.ui_config_merge import (  # noqa: E402
     clear_channel_widget_keys,
     clear_widget_keys,
@@ -115,6 +119,7 @@ def main() -> None:
         st.session_state.seed_input = int(s) if s is not None else 0
 
     ensure_corr_rows_initialized(st.session_state.sim_config)
+    ensure_global_toggle_state_initialized(st.session_state.sim_config)
 
     if st.session_state.pop("_resync_form_from_sim_config", False):
         _resync_form_from_sim_config()
@@ -245,6 +250,8 @@ def main() -> None:
         render_channel_widgets(schema, user_dict, n_channels)
     else:
         st.info("Add at least one channel to run the simulation.")
+
+    render_global_effect_switches()
 
     render_correlations_section(user_dict, n_channels)
 

@@ -46,6 +46,7 @@ Requirements (declared in `pyproject.toml` / `requirements.txt`): `numpy`, `pand
 - [3. Impressions simulation](#3-impressions-simulation)
 - [4. Revenue simulation](#4-revenue-simulation)
 - [5. CSV output & full pipeline](#5-csv-output--full-pipeline)
+- [6. Channel on/off toggles](#6-channel-onoff-toggles)
 
 ---
 
@@ -152,10 +153,11 @@ Entry point: `scripts.main` (see [Running the pipeline](#running-the-pipeline)).
 **Code:** `scripts/revenue_simulation/revenue_generation.py`
 
 - **What it does:** Maps impressions to total weekly revenue across all channels:
-  - Applies the channel’s `saturation_config` (e.g. linear = `slope` × impressions with default slope 1, hill, diminishing_returns) to impressions.
-  - Applies the channel’s `adstock_decay_config` (geometric/exponential, weighted, or linear = uniform moving average over `lag`+1 weeks when `lag` > 0) to model carry‑over of effects across weeks.
+  - Applies the channel’s `saturation_config` (e.g. linear = `slope` × impressions with default slope 1, hill, diminishing_returns) to impressions. Skipped when `saturation_enabled: false` (per-channel) or `saturation.global: false`.
+  - Applies the channel’s `adstock_decay_config` (geometric/exponential, weighted, or linear = uniform moving average over `lag`+1 weeks when `lag` > 0) to model carry‑over of effects across weeks. Skipped when `adstock_enabled: false` (per-channel) or `adstock.global: false`.
   - Scales by `true_roi` and adds `baseline_revenue`.
   - Adds Gaussian revenue noise controlled by `noise_variance["revenue"]` for each channel.
+  - Channels with `enabled: false` short-circuit to zero for the full run (no baseline, no noise, no adstock echo). See [Channel on/off toggles](#6-channel-onoff-toggles).
 - **Input:** `InputConfigurations`, `impressions_matrix` (weeks × channels).
 - **Output:** 1D `np.ndarray` of length `num_weeks` (one total revenue value per week).
 
@@ -167,4 +169,92 @@ Entry point: `scripts.main` (see [Running the pipeline](#running-the-pipeline)).
 
 - **What it does:** Builds a pandas DataFrame with columns: `week`, total `revenue`, then for **each channel** (in order) `{channel}_impressions`, `{channel}_spend`, and `{channel}_revenue`, then `total_impressions` and `total_spend`. Saves to `output/{run_identifier}_{timestamp}.csv`.
 - **Full pipeline:** Load config → generate spend → generate impressions → generate revenue → construct CSV → write file.
+
+---
+
+## 6. Channel on/off toggles
+
+**Code:** per-channel toggle fields on `scripts/synth_input_classes/channel.py` (`Channel`), global switches on `scripts/synth_input_classes/input_configurations.py` (`InputConfigurations`), and masking applied inside the spend / impressions / revenue generators.
+
+Channels can be turned off entirely or for specific week ranges, and the two modeling effects (adstock carry-over and saturation curves) can be disabled per-channel or globally. All toggles are **fail-open**: any field left unset keeps the channel and its effects fully on, so existing configs continue to run unchanged.
+
+### YAML schema
+
+Each entry under `channel_list` may include optional toggle keys. Everything is optional — omit any of them to stay fully on.
+
+```yaml
+channel_list:
+  - channel:
+      channel_name: TikTok
+      # ... the usual fields (cpm, spend_range, saturation_config, etc.) ...
+
+      # Option 1: simple on/off for the whole run.
+      # enabled: false
+
+      # Option 2: always on, except during the listed inclusive week ranges.
+      enabled:
+        default: true
+        off_ranges:
+          - start_week: 10
+            end_week: 12
+          - start_week: 30
+            end_week: 35
+
+      # Per-channel effect gates (default true).
+      adstock_enabled: true
+      saturation_enabled: true
+
+# Optional global kill-switches for modeling effects.
+adstock:
+  global: true      # set false to disable adstock for every channel
+saturation:
+  global: true      # set false to disable saturation for every channel
+```
+
+Rules:
+
+- Weeks are **1-indexed**, and `off_ranges` entries are **inclusive** (`start_week <= end_week`).
+- `enabled` accepts either a boolean or a `{default, off_ranges}` mapping.
+- Fully disabled channels (`enabled: false`) contribute **zero** revenue across the full run — no spend, no impressions, no adstock echo, no baseline, no noise.
+- Globals take precedence: `adstock.global: false` turns off adstock for every channel even if their per-channel flag is true.
+
+### Off-week semantics
+
+During weeks inside an `off_ranges` entry for an otherwise-enabled channel:
+
+- `spend` is masked to 0 (inside `generate_spend`).
+- `impressions` are masked to 0 (inside `generate_impressions`).
+- `revenue` is **not** zeroed — adstock carry-over from prior active weeks flows through, and `baseline_revenue` + revenue noise still apply. This simulates the realistic "we stopped spending, but past campaigns still echo in the market" behavior.
+
+This means an off-week row can show non-zero `{channel}_revenue` even though `{channel}_spend` and `{channel}_impressions` are zero — that is expected and reflects the decaying tail of earlier spend.
+
+### Minimal example
+
+```yaml
+channel_list:
+  - channel:
+      channel_name: TikTok
+      enabled:
+        default: true
+        off_ranges:
+          - start_week: 10
+            end_week: 12
+      cpm: 25
+      # ... rest unchanged ...
+  - channel:
+      channel_name: LegacyRadio
+      enabled: false          # fully off for the whole run
+      cpm: 8
+      # ... rest unchanged ...
+```
+
+### Where masking is applied
+
+| Stage                          | Behavior                                                                                  |
+| ------------------------------ | ----------------------------------------------------------------------------------------- |
+| `generate_spend`               | Zeros spend for fully-disabled channels; zeros off-week cells for partially-off channels. |
+| `generate_impressions`         | Inherits zeros from spend; also applies a safety-net mask for off weeks.                  |
+| `generate_revenue`             | Short-circuits fully-disabled channels to zero. Applies `adstock_enabled` / `saturation_enabled` gates (combined with global switches). Preserves adstock echo on off weeks (Policy A). |
+| `construct_csv`                | No extra masking needed — matrices are already truthful; totals sum the masked columns.   |
+
 

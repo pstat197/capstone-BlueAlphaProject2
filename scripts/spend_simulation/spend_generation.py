@@ -83,7 +83,34 @@ def _generate_independent_spend(config: InputConfigurations) -> np.ndarray:
     return out
 
 
+def _apply_channel_toggles(config: InputConfigurations, spend: np.ndarray) -> np.ndarray:
+    """
+    Zero out spend for channels that are fully disabled or in per-week off ranges.
+
+    Masking happens at the end of spend generation so that downstream stages
+    (correlation analysis, CPM -> impressions, revenue) all see a spend matrix
+    that is already consistent with the channel on/off schedule. Channels with
+    no toggles configured stay fully on (fail-open).
+    """
+    if spend.size == 0:
+        return spend
+
+    num_weeks = spend.shape[0]
+    out = spend.astype(float, copy=True)
+    for c, ch in enumerate(config.get_channel_list()):
+        if ch.is_fully_disabled():
+            out[:, c] = 0.0
+            continue
+        if not ch.off_ranges:
+            continue
+        mask = ch.on_vector(num_weeks)
+        out[~mask, c] = 0.0
+    return out
+
+
 def generate_spend(config: InputConfigurations) -> np.ndarray:
     if config.get_correlations():
-        return _generate_correlated_spend(config)
-    return _generate_independent_spend(config)
+        spend = _generate_correlated_spend(config)
+    else:
+        spend = _generate_independent_spend(config)
+    return _apply_channel_toggles(config, spend)

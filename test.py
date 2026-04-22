@@ -102,6 +102,7 @@ def main():
     from tests import test_impressions_simulation
     from tests import test_revenue_simulation
     from tests import test_pipeline
+    from tests import test_channel_toggles
 
     test_config.main()
     test_spend_generation.main()
@@ -109,6 +110,7 @@ def main():
     test_impressions_simulation.main()
     test_revenue_simulation.main()
     test_pipeline.main()
+    test_channel_toggles.main()
 
     print("\nAll tests passed.")
 

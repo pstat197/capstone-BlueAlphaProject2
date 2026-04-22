@@ -56,3 +56,21 @@ channel_list:
 # correlations:
 #   - channels: [TikTok, LinkedIn]
 #     rho: 0.7
+
+# Optional per-channel on/off toggles (see README section "Channel on/off toggles").
+# All fields below are optional; omitting them keeps channels and effects fully on.
+# Example forms:
+#   enabled: false                            # fully disable a channel for the whole run
+#   enabled:                                  # enabled, except for inclusive off week ranges
+#     default: true
+#     off_ranges:
+#       - start_week: 10
+#         end_week: 12
+#   adstock_enabled: false                    # disable adstock for this channel only
+#   saturation_enabled: false                 # disable saturation for this channel only
+#
+# Optional global kill-switches (turn off effect for every channel):
+# adstock:
+#   global: false
+# saturation:
+#   global: false

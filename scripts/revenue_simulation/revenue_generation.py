@@ -82,20 +82,37 @@ def _channel_revenue(
     channel: Channel,
     impressions: np.ndarray,
     rng: np.random.Generator,
+    *,
+    adstock_global: bool = True,
+    saturation_global: bool = True,
 ) -> np.ndarray:
     """
     Compute weekly revenue contribution for a single channel.
 
     Pipeline:
       impressions
-        → saturation (diminishing returns)
-        → adstock (carry-over effects)
+        → saturation (optional per-channel / global toggle)
+        → adstock (optional per-channel / global toggle)
         → ROI scaling (true_roi)
         → + baseline_revenue
         → + Gaussian noise (variance from noise_variance['revenue'])
+
+    On/off semantics (Policy A - "soft off"):
+      - Fully disabled channels (`enabled=False`) contribute zero across the
+        entire run: no baseline, no noise, no adstock echo.
+      - Channels with per-week off ranges have impressions of zero on off
+        weeks (masked upstream). Adstock carry-over from prior active weeks
+        is intentionally preserved, so off-week rows may still show revenue
+        from the decaying tail plus baseline + noise.
     """
-    saturated = _saturation_fn(impressions, channel.saturation_config)
-    transformed_imp = _adstock_decay(saturated, channel.adstock_decay_config)
+    if channel.is_fully_disabled():
+        return np.zeros_like(impressions, dtype=float)
+
+    saturation_on = saturation_global and channel.saturation_enabled
+    adstock_on = adstock_global and channel.adstock_enabled
+
+    x = _saturation_fn(impressions, channel.saturation_config) if saturation_on else impressions.astype(float, copy=True)
+    transformed_imp = _adstock_decay(x, channel.adstock_decay_config) if adstock_on else x
 
     revenue = transformed_imp * float(channel.true_roi)
     revenue += float(channel.baseline_revenue)
@@ -144,10 +161,18 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
         )
 
     rng = config.get_rng()
+    adstock_global = config.get_adstock_global()
+    saturation_global = config.get_saturation_global()
     out = np.zeros((num_weeks, num_channels), dtype=float)
 
     for c, channel in enumerate(channels):
         channel_impressions = impressions_matrix[:, c].astype(float)
-        out[:, c] = _channel_revenue(channel, channel_impressions, rng)
+        out[:, c] = _channel_revenue(
+            channel,
+            channel_impressions,
+            rng,
+            adstock_global=adstock_global,
+            saturation_global=saturation_global,
+        )
 
     return out

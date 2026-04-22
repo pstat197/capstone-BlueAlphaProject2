@@ -24,6 +24,11 @@ NO_NOISE_KEYS = {
     "noise_variance",
     "channel_name",
     "cpm_sampling_range",  # used only to sample cpm when cpm is missing
+    # On/off toggle fields are copied verbatim (never noised): they are
+    # boolean/structured config, not sampled numerics.
+    "enabled",
+    "adstock_enabled",
+    "saturation_enabled",
 }
 
 

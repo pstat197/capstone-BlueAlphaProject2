@@ -24,7 +24,7 @@ from scripts.impressions_simulation.impressions_generation import generate_impre
 from scripts.main import construct_csv
 from scripts.revenue_simulation.revenue_generation import generate_revenue
 from scripts.spend_simulation.spend_generation import generate_spend
-from scripts.synth_input_classes.channel import Channel
+from scripts.synth_input_classes.channel import Channel, StickyPauseRange
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 
@@ -48,6 +48,7 @@ def _make_channel_dict(
     revenue_noise: float = 0.0,
     saturation=None,
     adstock=None,
+    sticky_pause_ranges=None,
 ) -> dict:
     """Build a raw channel dict for load_config_from_dict, with optional toggles."""
     ch = {
@@ -67,6 +68,8 @@ def _make_channel_dict(
         ch["adstock_enabled"] = adstock_enabled
     if saturation_enabled is not None:
         ch["saturation_enabled"] = saturation_enabled
+    if sticky_pause_ranges is not None:
+        ch["sticky_pause_ranges"] = sticky_pause_ranges
     return {"channel": ch}
 
 
@@ -114,6 +117,7 @@ def test_channel_toggle_defaults_fail_open():
     assert ch.off_ranges == ()
     assert ch.adstock_enabled is True
     assert ch.saturation_enabled is True
+    assert ch.sticky_pause_ranges == ()
     assert ch.is_fully_disabled() is False
     assert ch.is_on(1) is True
     assert ch.is_on(1000) is True
@@ -176,6 +180,88 @@ def test_channel_on_vector_rejects_negative_num_weeks():
         ch.on_vector(-1)
 
 
+def test_spend_allowed_mask_reproducible():
+    ch = Channel(
+        channel_name="X",
+        true_roi=1.0,
+        spend_range=[0, 1],
+        baseline_revenue=0.0,
+        saturation_config={},
+        adstock_decay_config={"lag": 0},
+        spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
+        noise_variance={"impression": 0.0, "revenue": 0.0},
+        cpm=10.0,
+        sticky_pause_ranges=(
+            StickyPauseRange(1, 10, 0.25, 0.75),
+        ),
+    )
+    m1 = ch.spend_allowed_mask(10, channel_index=0, config_seed=123)
+    m2 = ch.spend_allowed_mask(10, channel_index=0, config_seed=123)
+    np.testing.assert_array_equal(m1, m2)
+
+
+def test_spend_allowed_mask_all_sticky_when_always_continue():
+    ch = Channel(
+        channel_name="X",
+        true_roi=1.0,
+        spend_range=[0, 1],
+        baseline_revenue=0.0,
+        saturation_config={},
+        adstock_decay_config={"lag": 0},
+        spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
+        noise_variance={"impression": 0.0, "revenue": 0.0},
+        cpm=10.0,
+        sticky_pause_ranges=(
+            StickyPauseRange(1, 4, 1.0, 1.0),
+        ),
+    )
+    m = ch.spend_allowed_mask(8, channel_index=0, config_seed=7)
+    np.testing.assert_array_equal(m[:4], np.array([False] * 4))
+    np.testing.assert_array_equal(m[4:], np.array([True] * 4))
+
+
+def test_sticky_markov_alternating_when_continue_is_zero():
+    ch = Channel(
+        channel_name="X",
+        true_roi=1.0,
+        spend_range=[0, 1],
+        baseline_revenue=0.0,
+        saturation_config={},
+        adstock_decay_config={"lag": 0},
+        spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
+        noise_variance={"impression": 0.0, "revenue": 0.0},
+        cpm=10.0,
+        sticky_pause_ranges=(
+            StickyPauseRange(1, 5, 1.0, 0.0),
+        ),
+    )
+    m = ch.spend_allowed_mask(5, channel_index=0, config_seed=99)
+    expected = np.array([False, True, False, True, False])
+    np.testing.assert_array_equal(m, expected)
+
+
+def test_sticky_freezes_markov_state_across_deterministic_off_week():
+    ch = Channel(
+        channel_name="X",
+        true_roi=1.0,
+        spend_range=[0, 1],
+        baseline_revenue=0.0,
+        saturation_config={},
+        adstock_decay_config={"lag": 0},
+        spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
+        noise_variance={"impression": 0.0, "revenue": 0.0},
+        cpm=10.0,
+        off_ranges=((3, 3),),
+        sticky_pause_ranges=(
+            StickyPauseRange(2, 4, 1.0, 1.0),
+        ),
+    )
+    m = ch.spend_allowed_mask(5, channel_index=0, config_seed=1)
+    # Week 2 sticky off; week 3 hard off (skip sticky draw, prev stays True); week 4 uses continue 1 -> off
+    expected = np.array([True, False, False, False, True])
+    np.testing.assert_array_equal(m, expected)
+
+
 # ---------------------------------------------------------------------------
 # Loader / InputConfigurations parsing
 # ---------------------------------------------------------------------------
@@ -204,6 +290,28 @@ def test_parse_enabled_mapping_with_ranges():
     ch = cfg.get_channel_list()[0]
     assert ch.enabled is True
     assert ch.off_ranges == ((3, 5), (9, 9))
+
+
+def test_parse_sticky_pause_ranges():
+    cfg = _make_config([
+        _make_channel_dict(
+            "A",
+            sticky_pause_ranges=[
+                {
+                    "start_week": 2,
+                    "end_week": 5,
+                    "start_probability": 0.1,
+                    "continue_probability": 0.9,
+                },
+            ],
+        )
+    ])
+    specs = cfg.get_channel_list()[0].sticky_pause_ranges
+    assert len(specs) == 1
+    assert specs[0].start_week == 2
+    assert specs[0].end_week == 5
+    assert specs[0].start_probability == 0.1
+    assert specs[0].continue_probability == 0.9
 
 
 def test_parse_enabled_mapping_default_false_disables_channel():
@@ -519,6 +627,71 @@ def test_construct_csv_totals_reflect_masked_matrices():
     )
 
 
+def test_invalid_sticky_pause_probability_raises():
+    with pytest.raises(ValueError):
+        _make_config([
+            _make_channel_dict(
+                "A",
+                sticky_pause_ranges=[
+                    {
+                        "start_week": 1,
+                        "end_week": 2,
+                        "start_probability": 1.5,
+                        "continue_probability": 0.5,
+                    },
+                ],
+            )
+        ])
+
+
+def test_generate_spend_respects_sticky_always_pause_window():
+    cfg = _make_config(
+        [
+            _make_channel_dict(
+                "A",
+                sticky_pause_ranges=[
+                    {
+                        "start_week": 1,
+                        "end_week": 3,
+                        "start_probability": 1.0,
+                        "continue_probability": 1.0,
+                    },
+                ],
+            )
+        ],
+        week_range=6,
+        seed=500,
+    )
+    spend = generate_spend(cfg)
+    assert (spend[:3, 0] == 0).all()
+    assert (spend[3:, 0] > 0).all()
+
+
+def test_generate_impressions_matches_sticky_spend_mask():
+    cfg = _make_config(
+        [
+            _make_channel_dict(
+                "A",
+                sticky_pause_ranges=[
+                    {
+                        "start_week": 1,
+                        "end_week": 2,
+                        "start_probability": 1.0,
+                        "continue_probability": 1.0,
+                    },
+                ],
+                impression_noise=0.0,
+            )
+        ],
+        week_range=5,
+        seed=501,
+    )
+    spend = generate_spend(cfg)
+    imp = generate_impressions(cfg, spend)
+    assert (imp[:2, 0] == 0).all()
+    assert (imp[2:, 0] > 0).all()
+
+
 def test_backward_compat_no_toggle_fields_identical_output():
     """
     A config with no toggle fields anywhere is a no-op at the masking layer.
@@ -566,10 +739,15 @@ def main():
         test_channel_on_vector_rejects_negative_num_weeks()
     except Exception as e:
         raise AssertionError(f"negative num_weeks test failed: {e}")
+    test_spend_allowed_mask_reproducible()
+    test_spend_allowed_mask_all_sticky_when_always_continue()
+    test_sticky_markov_alternating_when_continue_is_zero()
+    test_sticky_freezes_markov_state_across_deterministic_off_week()
 
     # Loader parsing
     test_parse_enabled_bool_false()
     test_parse_enabled_mapping_with_ranges()
+    test_parse_sticky_pause_ranges()
     test_parse_enabled_mapping_default_false_disables_channel()
     test_parse_per_channel_effect_toggles()
     test_parse_global_effect_switches()
@@ -586,6 +764,10 @@ def main():
         test_invalid_off_ranges_missing_keys_raises()
     except Exception as e:
         raise AssertionError(f"missing off_ranges keys test failed: {e}")
+    try:
+        test_invalid_sticky_pause_probability_raises()
+    except Exception as e:
+        raise AssertionError(f"invalid sticky probability test failed: {e}")
 
     # Spend / impressions
     test_generate_spend_zeros_fully_disabled_channel()
@@ -593,6 +775,8 @@ def main():
     test_generate_spend_preserves_output_when_no_toggles()
     test_generate_impressions_zeros_off_week_rows()
     test_generate_impressions_zeros_fully_disabled_channel()
+    test_generate_spend_respects_sticky_always_pause_window()
+    test_generate_impressions_matches_sticky_spend_mask()
 
     # Revenue
     test_revenue_fully_disabled_channel_is_zero_everywhere()

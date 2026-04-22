@@ -200,6 +200,13 @@ channel_list:
           - start_week: 30
             end_week: 35
 
+      # Optional: sticky (Markov) random pauses — spend/impressions only; same Policy A echo.
+      # sticky_pause_ranges:
+      #   - start_week: 10
+      #     end_week: 40
+      #     start_probability: 0.15
+      #     continue_probability: 0.85
+
       # Per-channel effect gates (default true).
       adstock_enabled: true
       saturation_enabled: true
@@ -248,12 +255,21 @@ channel_list:
       # ... rest unchanged ...
 ```
 
+### Sticky random pauses (optional)
+
+Per channel, optional `sticky_pause_ranges` (list of objects) adds **Markov (sticky)** random spend/impression pauses inside inclusive week windows. Each entry requires `start_week`, `end_week`, `start_probability`, and `continue_probability` in `[0, 1]`:
+
+- **start_probability** — probability of pausing this week if the previous week was *not* sticky-paused (only evaluated on weeks that are not already deterministic off-weeks).
+- **continue_probability** — probability of pausing this week if the previous week *was* sticky-paused.
+
+Hard **pause windows** (`off_ranges`) are applied first; on a deterministic off week the sticky chain does not advance (state is frozen). Sticky draws use a dedicated RNG branch from `(seed, channel_index)` so the mask is reproducible and identical when recomputed for spend vs impressions. Multiple windows each run their own chain; a week is off if **any** window’s chain pauses that week (OR).
+
 ### Where masking is applied
 
 | Stage                          | Behavior                                                                                  |
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
-| `generate_spend`               | Zeros spend for fully-disabled channels; zeros off-week cells for partially-off channels. |
-| `generate_impressions`         | Inherits zeros from spend; also applies a safety-net mask for off weeks.                  |
+| `generate_spend`               | Zeros spend for fully-disabled channels; zeros cells where deterministic or sticky rules disallow spend. |
+| `generate_impressions`         | Inherits zeros from spend; also applies the same spend-allowed mask as a safety net.      |
 | `generate_revenue`             | Short-circuits fully-disabled channels to zero. Applies `adstock_enabled` / `saturation_enabled` gates (combined with global switches). Preserves adstock echo on off weeks (Policy A). |
 | `construct_csv`                | No extra masking needed — matrices are already truthful; totals sum the masked columns.   |
 

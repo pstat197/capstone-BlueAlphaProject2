@@ -1,7 +1,8 @@
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .channel import Channel, WeekOffRange
+from .channel import Channel, StickyPauseRange, WeekOffRange
 
 
 def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -50,6 +51,67 @@ def _parse_off_ranges(value: Any, *, context: str) -> Tuple[WeekOffRange, ...]:
         if start > end:
             raise ValueError(f"{item_ctx} has start_week ({start}) > end_week ({end})")
         out.append((start, end))
+    return tuple(out)
+
+
+def _parse_probability(value: Any, *, context: str) -> float:
+    if value is None:
+        raise ValueError(f"{context} is required")
+    if isinstance(value, bool):
+        raise ValueError(f"{context} must be a number, not boolean")
+    try:
+        p = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{context} must be a finite number in [0, 1]") from exc
+    if not math.isfinite(p):
+        raise ValueError(f"{context} must be finite, got {p}")
+    if p < 0.0 or p > 1.0:
+        raise ValueError(f"{context} must be in [0, 1], got {p}")
+    return p
+
+
+def _parse_sticky_pause_ranges(value: Any, *, context: str) -> Tuple[StickyPauseRange, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(
+            f"{context} must be a list of {{start_week, end_week, start_probability, continue_probability}} entries if provided"
+        )
+    out: List[StickyPauseRange] = []
+    for i, item in enumerate(value):
+        item_ctx = f"{context}[{i}]"
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{item_ctx} must be a mapping")
+        for key in ("start_week", "end_week", "start_probability", "continue_probability"):
+            if key not in item:
+                raise ValueError(f"{item_ctx} must contain {key}")
+        start_raw = item["start_week"]
+        end_raw = item["end_week"]
+        if isinstance(start_raw, bool) or isinstance(end_raw, bool):
+            raise ValueError(f"{item_ctx} start_week/end_week must be integers")
+        try:
+            start = int(start_raw)
+            end = int(end_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{item_ctx} start_week/end_week must be integers") from exc
+        if start > end:
+            raise ValueError(f"{item_ctx} has start_week ({start}) > end_week ({end})")
+        p_start = _parse_probability(
+            item["start_probability"],
+            context=f"{item_ctx}.start_probability",
+        )
+        p_cont = _parse_probability(
+            item["continue_probability"],
+            context=f"{item_ctx}.continue_probability",
+        )
+        out.append(
+            StickyPauseRange(
+                start_week=start,
+                end_week=end,
+                start_probability=p_start,
+                continue_probability=p_cont,
+            )
+        )
     return tuple(out)
 
 
@@ -147,6 +209,10 @@ class InputConfigurations:
             enabled, off_ranges, adstock_enabled, saturation_enabled = _parse_channel_toggles(
                 ch, context=ctx
             )
+            sticky_pause_ranges = _parse_sticky_pause_ranges(
+                ch.get("sticky_pause_ranges"),
+                context=f"{ctx}.sticky_pause_ranges",
+            )
 
             channels.append(
                 Channel(
@@ -161,6 +227,7 @@ class InputConfigurations:
                     cpm=cpm,
                     enabled=enabled,
                     off_ranges=off_ranges,
+                    sticky_pause_ranges=sticky_pause_ranges,
                     adstock_enabled=adstock_enabled,
                     saturation_enabled=saturation_enabled,
                 )

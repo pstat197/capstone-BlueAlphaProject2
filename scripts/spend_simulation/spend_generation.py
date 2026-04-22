@@ -97,13 +97,14 @@ def _apply_channel_toggles(config: InputConfigurations, spend: np.ndarray) -> np
 
     num_weeks = spend.shape[0]
     out = spend.astype(float, copy=True)
+    seed = config.get_seed()
     for c, ch in enumerate(config.get_channel_list()):
         if ch.is_fully_disabled():
             out[:, c] = 0.0
             continue
-        if not ch.off_ranges:
+        mask = ch.spend_allowed_mask(num_weeks, channel_index=c, config_seed=seed)
+        if bool(np.all(mask)):
             continue
-        mask = ch.on_vector(num_weeks)
         out[~mask, c] = 0.0
     return out
 

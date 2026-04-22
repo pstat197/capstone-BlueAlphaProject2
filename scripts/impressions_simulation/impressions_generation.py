@@ -66,13 +66,14 @@ def generate_impressions(config: InputConfigurations, spend_matrix: np.ndarray) 
     # base_impressions is zero on off weeks, but noise with scale=0 still draws
     # from N(0, 0)=0 and should be fine. This guards against any future change
     # where noise is not proportional to base impressions.
+    seed = config.get_seed()
     for c, ch in enumerate(channels):
         if ch.is_fully_disabled():
             impressions[:, c] = 0.0
             continue
-        if not ch.off_ranges:
+        mask = ch.spend_allowed_mask(num_weeks, channel_index=c, config_seed=seed)
+        if bool(np.all(mask)):
             continue
-        mask = ch.on_vector(num_weeks)
         impressions[~mask, c] = 0.0
 
     return impressions

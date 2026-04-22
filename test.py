@@ -2,13 +2,8 @@
 Run all test modules: config, spend generation, impressions, revenue, pipeline.
 Run from project root: python test.py
 """
-import sys
 from pathlib import Path
 
-# Ensure project root is on path
-_root = Path(__file__).resolve().parent
-if str(_root) not in sys.path:
-    sys.path.insert(0, str(_root))
 import yaml
 
 # Import via scripts package so stdlib 'dataclasses' is not shadowed
@@ -47,13 +42,18 @@ def test_channel_tiktok(config: InputConfigurations):
     assert tiktok.get_true_roi() == 3.1
     assert tiktok.get_spend_range() == [1500, 40000]
     assert tiktok.get_baseline_revenue() == 6000
-    assert tiktok.get_saturation_function() == "log(x+1)"
+    saturation = tiktok.get_saturation_config()
+    assert saturation["type"] == "linear"
+    assert saturation["slope"] == 1.0
+    assert saturation["K"] == 50000.0
+    assert saturation["beta"] == 0.5
     gamma = tiktok.get_spend_sampling_gamma_params()
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
     noise = tiktok.get_noise_variance()
-    assert noise["impression"] == 0.2
+    assert noise["impression"] == 0.1
     assert noise["revenue"] == 0.15
+    assert tiktok.get_cpm() == 25.0
 
 
 def test_channel_linkedin(config: InputConfigurations):
@@ -63,13 +63,18 @@ def test_channel_linkedin(config: InputConfigurations):
     assert linkedin.get_true_roi() == 2.2
     assert linkedin.get_spend_range() == [3000, 60000]
     assert linkedin.get_baseline_revenue() == 9500
-    assert linkedin.get_saturation_function() == "sqrt(x)"
+    saturation = linkedin.get_saturation_config()
+    assert saturation["type"] == "linear"
+    assert saturation["slope"] == 0.8
+    assert saturation["K"] == 60000.0
+    assert saturation["beta"] == 0.65
     gamma = linkedin.get_spend_sampling_gamma_params()
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
     noise = linkedin.get_noise_variance()
-    assert noise["impression"] == 0.2
+    assert noise["impression"] == 0.0025
     assert noise["revenue"] == 0.15
+    assert linkedin.get_cpm() == 10.0
 
 
 def test_load_default_yaml():

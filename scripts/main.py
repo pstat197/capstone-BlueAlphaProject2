@@ -1,16 +1,15 @@
 import argparse
-from pathlib import Path
+import os
+from datetime import datetime
 
 import pandas as pd
 import numpy as np
-import datetime
 
 from scripts.spend_simulation.spend_generation import generate_spend
 from scripts.impressions_simulation.impressions_generation import generate_impressions
 from scripts.revenue_simulation.revenue_generation import generate_revenue
 from scripts.config.loader import load_config
-
-from synth_input_classes.input_configurations import InputConfigurations
+from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 
 def construct_csv(
@@ -83,8 +82,11 @@ def main(yaml_path):
 
     print(df.head())
 
-    df.to_csv(f"output/{config.get_run_identifier()}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", index=False)
-    print(f"Saved to: output/{config.get_run_identifier()}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv")
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+    os.makedirs("output", exist_ok=True)
+    output_path = f"output/{config.get_run_identifier()}_{timestamp}.csv"
+    df.to_csv(output_path, index=False)
+    print(f"Saved to: {output_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run with a YAML config (e.g. example.yaml)")

@@ -136,10 +136,8 @@ def load_config(user_yaml_path: str) -> InputConfigurations:
     # Step 2: Fill missing top-level
     if not merged.get("run_identifier"):
         merged["run_identifier"] = "run_" + datetime.now().strftime("%Y%m%d_%H%M")
-    if "week_range" not in merged or merged.get("week_range") is None:
+    if "week_range" not in merged or merged.get("week_range") is None: # if week_range is also removed from default.yaml, we need to add it back
         merged["week_range"] = default_data.get("week_range") or default_data.get("weeks", 52)
-    if "weeks" in merged and "week_range" not in merged:
-        merged["week_range"] = merged.get("weeks")
     merged.pop("weeks", None)
 
     # Step 3: Ensure enough channels (number_of_channels)

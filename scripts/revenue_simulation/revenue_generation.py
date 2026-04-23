@@ -70,6 +70,121 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
         'Expected one of: "geometric", "exponential", "weighted", "linear".'
     )
 
+# seasonality functions
+def _fourier_seasonality(t, period, K=1, scale=0.1, seed=None):
+    '''
+    t: time index array (np.ndarray)
+    period: seasonality period (e.g. 52 for weekly data with yearly seasonality)
+    K: number of Fourier harmonics (higher K = more complex patterns)
+    scale: overall amplitude of seasonality
+    seed: random seed for reproducibility (optional)
+    '''
+    rng = np.random.default_rng(seed)
+    s = np.zeros_like(t, dtype=float)
+
+    for k in range(1, K + 1):
+        a_k = rng.normal(0, scale / k)
+        b_k = rng.normal(0, scale / k)
+        s += a_k * np.sin(2 * np.pi * k * t / period)
+        s += b_k * np.cos(2 * np.pi * k * t / period)
+
+    return s
+
+# 'categorical': discrete repeating pattern (e.g., weekly effects); assigns fixed multipliers per period index (t % period);
+def _categorical_seasonality(t, pattern):
+    pattern = np.array(pattern, dtype=float)
+    return pattern[t % len(pattern)] - 1.0  # convert to deviation
+
+# 'spikes': sparse, non-periodic multiplicative shocks; simulates irregular events (promotions, outages, viral bursts)
+def _event_spikes(t, prob=0.02, magnitude=(0.5, 1.5), seed=None):
+    rng = np.random.default_rng(seed)
+    spikes = np.zeros_like(t, dtype=float)
+    mask = rng.random(len(t)) < prob
+    spikes[mask] = rng.uniform(*magnitude, size=mask.sum())
+    return spikes
+
+
+def _seasonality(t: np.ndarray, seasonality_config: Dict) -> np.ndarray:
+    """
+    Flexible seasonality generator.
+
+    Supported types:
+      - 'sin': basic sinusoidal
+      - 'fourier': multi-harmonic smooth seasonality
+      - 'categorical': discrete pattern (e.g. weekly)
+      - 'hybrid': combination of components
+    """
+
+    if not seasonality_config:
+        return np.ones_like(t, dtype=float)
+
+    stype = seasonality_config.get("type", "sin")
+
+    if stype == "sin":
+        amplitude = seasonality_config.get("amplitude", 0.2)
+        period = seasonality_config.get("period", 52)
+        phase = seasonality_config.get("phase", 0)
+
+        return 1 + amplitude * np.sin(2 * np.pi * (t + phase) / period)
+
+    if stype == "fourier":
+        period = seasonality_config["period"]
+        K = seasonality_config.get("K", 2)
+        scale = seasonality_config.get("scale", 0.1)
+
+        s = _fourier_seasonality(t, period, K, scale)
+        return 1 + s
+
+    if stype == "categorical":
+        pattern = seasonality_config["pattern"]
+
+        s = _categorical_seasonality(t, pattern)
+        return 1 + s
+
+    if stype == "hybrid":
+        components = seasonality_config.get("components", [])
+        s = np.ones_like(t, dtype=float)
+
+        for comp in components:
+            ctype = comp["type"]
+
+            if ctype == "fourier":
+                val = _fourier_seasonality(
+                    t,
+                    comp["period"],
+                    comp.get("K", 1),
+                    comp.get("scale", 0.1),
+                    comp.get("seed", None)
+                )
+                s *= (1 + val)
+
+            elif ctype == "categorical":
+                pattern = comp["pattern"]
+                val = np.array(pattern)[t % len(pattern)]
+                s *= val
+
+            elif ctype == "spikes":
+                val = _event_spikes(
+                    t,
+                    prob=comp.get("prob", 0.02),
+                    magnitude=comp.get("magnitude", (0.5, 1.5)),
+                    seed=comp.get("seed", None)
+                )
+                s *= (1 + val)
+
+            else:
+                raise ValueError(f"Unknown hybrid component type: {ctype}")
+
+        return s
+
+    raise ValueError(f'Unknown seasonality type "{stype}"')
+
+def _generate_baseline_revenue(week_range, base_revenue, trend_slope, seasonality_config):
+    t = np.arange(week_range)
+    baseline = base_revenue + trend_slope * t
+    if seasonality_config:
+        baseline *= _seasonality(t, seasonality_config)
+    return baseline
 
 def _calculate_channel_revenue(
     channel: Channel,
@@ -99,7 +214,7 @@ def _calculate_channel_revenue(
 
     beta = channel.true_roi * spend / expected_transformed_imp
     revenue = transformed_imp * beta
-    revenue += float(channel.baseline_revenue)
+    revenue += _generate_baseline_revenue(len(spend), channel.baseline_revenue, channel.trend_slope, channel.seasonality_config)
 
     noise_cfg = channel.noise_variance or {}
     var_rev = float(noise_cfg.get("revenue", 0.0))
@@ -135,8 +250,8 @@ def generate_revenue(config: InputConfigurations, spend_matrix: np.ndarray, impr
         Weekly revenue across all channels, appended with total revenue in the last column.
     """
     num_weeks, num_channels = impressions_matrix.shape
-    expected_weeks = config.get_week_range()
-    channels = config.get_channel_list()
+    expected_weeks = config.week_range()
+    channels = config.channel_list()
 
     if num_weeks != expected_weeks:
         raise ValueError(
@@ -147,13 +262,13 @@ def generate_revenue(config: InputConfigurations, spend_matrix: np.ndarray, impr
             f"impressions_matrix has {num_channels} channels, config has {len(channels)}."
         )
 
-    rng = config.get_rng()
+    rng = config.rng()
     weekly_revenue = np.zeros(num_weeks, dtype=float)
 
     for c, channel in enumerate(channels):
         channel_spend = spend_matrix[:, c].astype(float)
         channel_impressions = impressions_matrix[:, c].astype(float)
-        weekly_revenue[:, c] = _calculate_channel_revenue(channel, channel_spend, channel_impressions, np.random.default_rng(), cpm_list[c])
+        weekly_revenue[:, c] = _calculate_channel_revenue(channel, channel_spend, channel_impressions, rng, cpm_list[c])
 
     total_revenue = np.sum(weekly_revenue, axis=1)
     weekly_revenue = np.concatenate((weekly_revenue, total_revenue.reshape(-1, 1)), axis=1)

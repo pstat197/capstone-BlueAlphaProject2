@@ -2,6 +2,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
+from scripts.revenue_simulation.seasonality_fit import normalize_seasonality_config
+
 from .channel import Channel, StickyPauseRange, WeekOffRange
 
 
@@ -241,6 +243,7 @@ class InputConfigurations:
             seasonality_config = (
                 dict(seasonality_cfg) if isinstance(seasonality_cfg, dict) else dict(defaults["seasonality_config"])
             )
+            seasonality_config = normalize_seasonality_config(seasonality_config)
             trend_slope = float(ch.get("trend_slope", defaults["trend_slope"]))
             # Ensure numeric types for adstock_decay_config
             if "lag" in adstock_decay_config:

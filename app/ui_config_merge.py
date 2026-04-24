@@ -23,6 +23,11 @@ from app.ui_form_state import (
 )
 from app.ui_correlations import merge_correlations_from_widgets
 from app.ui_helpers import apply_overrides
+from app.ui_seasonality_panel import _read_basic_cycle_multipliers, warm_basic_cycle_editor_if_needed
+from scripts.revenue_simulation.seasonality_fit import (
+    fit_pattern_multipliers_to_fourier,
+    sin_to_deterministic_fourier,
+)
 
 
 def _parse_float_or_default(raw: Any, default: float) -> float:
@@ -57,19 +62,30 @@ def _parse_pattern_csv(raw: Any, default: List[float]) -> List[float]:
 
 def _collect_seasonality_overrides(n_channels: int) -> List[Dict[str, Any]]:
     overrides: List[Dict[str, Any]] = []
+    # Use .get so tests that monkeypatch session_state with a plain dict still work.
+    base_cfg = st.session_state.get("sim_config", {})
     for i in range(n_channels):
         sea_type = str(st.session_state.get(f"sea_type_{i}", "none")).strip().lower()
         if sea_type in ("", "none"):
             overrides.append({"path": f"channel_list.{i}.channel.seasonality_config", "value": {}})
             continue
 
+        if sea_type == "cycle":
+            warm_basic_cycle_editor_if_needed(i, base_cfg)
+            mults = _read_basic_cycle_multipliers(i)
+            cfg = fit_pattern_multipliers_to_fourier(mults)
+            overrides.append({"path": f"channel_list.{i}.channel.seasonality_config", "value": cfg or {}})
+            continue
+
         if sea_type == "sin":
-            cfg = {
-                "type": "sin",
-                "amplitude": _parse_float_or_default(st.session_state.get(f"sea_amp_{i}"), 0.2),
-                "period": _parse_int_or_default(st.session_state.get(f"sea_period_{i}"), 52),
-                "phase": _parse_float_or_default(st.session_state.get(f"sea_phase_{i}"), 0.0),
-            }
+            cfg = sin_to_deterministic_fourier(
+                {
+                    "type": "sin",
+                    "amplitude": _parse_float_or_default(st.session_state.get(f"sea_amp_{i}"), 0.2),
+                    "period": _parse_int_or_default(st.session_state.get(f"sea_period_{i}"), 52),
+                    "phase": _parse_float_or_default(st.session_state.get(f"sea_phase_{i}"), 0.0),
+                }
+            )
         elif sea_type == "fourier":
             cfg = {
                 "type": "fourier",
@@ -78,10 +94,12 @@ def _collect_seasonality_overrides(n_channels: int) -> List[Dict[str, Any]]:
                 "scale": _parse_float_or_default(st.session_state.get(f"sea_scale_{i}"), 0.1),
             }
         elif sea_type == "categorical":
-            cfg = {
-                "type": "categorical",
-                "pattern": _parse_pattern_csv(st.session_state.get(f"sea_pattern_{i}"), [1.0, 1.0, 1.0, 1.0]),
-            }
+            pattern = _parse_pattern_csv(
+                st.session_state.get(f"sea_pattern_{i}"), [1.0, 1.0, 1.0, 1.0]
+            )
+            cfg = fit_pattern_multipliers_to_fourier(pattern)
+            if not cfg:
+                cfg = {}
         else:
             cfg = {}
         overrides.append({"path": f"channel_list.{i}.channel.seasonality_config", "value": cfg})
@@ -194,6 +212,10 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
     merged["week_range"] = int(st.session_state.get("week_range_num", 52))
     merged["run_identifier"] = str(st.session_state.get("run_identifier_input", "run")).strip() or "run"
     merged["seed"] = int(st.session_state.get("seed_input", 0))
+
+    from app.ui_seasonality_panel import ensure_seasonality_widgets_warmed
+
+    ensure_seasonality_widgets_warmed(merged)
 
     n_channels = len(merged.get("channel_list") or [])
     overrides, warns = collect_overrides(schema, n_channels)

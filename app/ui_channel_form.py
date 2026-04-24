@@ -30,6 +30,7 @@ from app.ui_help_markdown import (
     NOISE_PARAMETERS_GUIDE_MD,
     SATURATION_TYPES_GUIDE_MD,
 )
+from app.ui_seasonality_panel import render_seasonality_block
 from app.ui_helpers import get_at, path_string_to_parts
 
 
@@ -125,29 +126,6 @@ def _channel_adstock_weights_from_data(data: Dict[str, Any], i: int) -> List[flo
 
 def _fmt_weights_placeholder(weights: List[float]) -> str:
     return ", ".join(_fmt_default(x) for x in weights)
-
-
-def _current_seasonality_dict(data: Dict[str, Any], i: int) -> Dict[str, Any]:
-    parts = path_string_to_parts(f"channel_list.{i}.channel.seasonality_config")
-    raw = get_at(data, parts)
-    return dict(raw) if isinstance(raw, dict) else {}
-
-
-def _init_seasonality_state(i: int, data: Dict[str, Any]) -> None:
-    sea = _current_seasonality_dict(data, i)
-    sea_type = str(sea.get("type", "none")).strip().lower() if sea else "none"
-    if sea_type not in {"none", "sin", "fourier", "categorical"}:
-        sea_type = "none"
-    st.session_state.setdefault(f"sea_type_{i}", sea_type)
-    st.session_state.setdefault(f"sea_amp_{i}", float(sea.get("amplitude", 0.2)))
-    st.session_state.setdefault(f"sea_period_{i}", int(sea.get("period", 52)))
-    st.session_state.setdefault(f"sea_phase_{i}", float(sea.get("phase", 0.0)))
-    st.session_state.setdefault(f"sea_k_{i}", int(sea.get("K", 2)))
-    st.session_state.setdefault(f"sea_scale_{i}", float(sea.get("scale", 0.1)))
-    pattern = sea.get("pattern", [1.0, 1.0, 1.0, 1.0])
-    if not isinstance(pattern, list):
-        pattern = [1.0, 1.0, 1.0, 1.0]
-    st.session_state.setdefault(f"sea_pattern_{i}", ", ".join(_fmt_default(float(x)) for x in pattern))
 
 
 def _render_pc_fields_flex(i: int, fields: List[Dict[str, Any]], data: Dict[str, Any]) -> None:
@@ -404,7 +382,6 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
         # so toggling a checkbox or adding a pause window no longer snaps the
         # expander shut. With `key` set, `expanded` is only the initial state.
         with st.expander(header, expanded=False, key=f"ch_exp_{i}"):
-            _init_seasonality_state(i, data)
             head_l, head_r = st.columns([5, 1])
             with head_l:
                 st.text_input(
@@ -459,84 +436,11 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
             if len(core) >= 6:
                 _render_one_pc_field(i, core[5], data)
 
-            st.markdown("##### Baseline trend & seasonality")
             st.caption(
                 "Trend modifies baseline linearly over time. Seasonality multiplies the baseline "
                 "before media contribution and noise are added."
             )
-            st.selectbox(
-                "Seasonality type",
-                options=["none", "sin", "fourier", "categorical"],
-                key=f"sea_type_{i}",
-                help="none disables seasonality. Other options map directly to seasonality_config.type.",
-                on_change=yaml_sync_from_form,
-            )
-            sea_type = str(st.session_state.get(f"sea_type_{i}", "none"))
-            if sea_type == "sin":
-                a, b, c = st.columns(3)
-                with a:
-                    st.number_input(
-                        "Amplitude",
-                        min_value=0.0,
-                        max_value=2.0,
-                        step=0.01,
-                        key=f"sea_amp_{i}",
-                        on_change=yaml_sync_from_form,
-                    )
-                with b:
-                    st.number_input(
-                        "Period",
-                        min_value=1,
-                        max_value=520,
-                        step=1,
-                        key=f"sea_period_{i}",
-                        on_change=yaml_sync_from_form,
-                    )
-                with c:
-                    st.number_input(
-                        "Phase",
-                        min_value=-520.0,
-                        max_value=520.0,
-                        step=1.0,
-                        key=f"sea_phase_{i}",
-                        on_change=yaml_sync_from_form,
-                    )
-            elif sea_type == "fourier":
-                a, b, c = st.columns(3)
-                with a:
-                    st.number_input(
-                        "Period",
-                        min_value=1,
-                        max_value=520,
-                        step=1,
-                        key=f"sea_period_{i}",
-                        on_change=yaml_sync_from_form,
-                    )
-                with b:
-                    st.number_input(
-                        "Harmonics (K)",
-                        min_value=1,
-                        max_value=20,
-                        step=1,
-                        key=f"sea_k_{i}",
-                        on_change=yaml_sync_from_form,
-                    )
-                with c:
-                    st.number_input(
-                        "Scale",
-                        min_value=0.0,
-                        max_value=2.0,
-                        step=0.01,
-                        key=f"sea_scale_{i}",
-                        on_change=yaml_sync_from_form,
-                    )
-            elif sea_type == "categorical":
-                st.text_input(
-                    "Pattern multipliers (comma-separated)",
-                    key=f"sea_pattern_{i}",
-                    help="Repeating multiplicative factors, e.g. 1.0, 1.1, 0.9, 1.0",
-                    on_change=yaml_sync_from_form,
-                )
+            render_seasonality_block(i, data, week_range_for_ranges)
 
             st.markdown("##### Noise (simulation)")
             st.caption(

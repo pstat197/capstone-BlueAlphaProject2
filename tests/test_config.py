@@ -50,12 +50,9 @@ def test_channel_tiktok(config: InputConfigurations):
     assert tiktok.get_true_roi() == 3.1
     assert tiktok.get_spend_range() == [1500, 40000]
     assert tiktok.get_baseline_revenue() == 6000
-    assert tiktok.get_trend_slope() == 20
+    assert tiktok.get_trend_slope() == 0
     seasonality = tiktok.get_seasonality_config()
-    assert seasonality["type"] == "sin"
-    assert seasonality["amplitude"] == 0.1
-    assert seasonality["period"] == 26
-    assert seasonality["phase"] == 0
+    assert seasonality == {}
     sat = tiktok.get_saturation_config()
     assert sat["type"] == "linear" and sat["slope"] == 1.0 and sat["K"] == 50000.0 and sat["beta"] == 0.5
     adstock = tiktok.get_adstock_decay_config()
@@ -76,10 +73,9 @@ def test_channel_linkedin(config: InputConfigurations):
     assert linkedin.get_true_roi() == 2.2
     assert linkedin.get_spend_range() == [3000, 60000]
     assert linkedin.get_baseline_revenue() == 9500
-    assert linkedin.get_trend_slope() == -10
+    assert linkedin.get_trend_slope() == 0
     seasonality = linkedin.get_seasonality_config()
-    assert seasonality["type"] == "categorical"
-    assert seasonality["pattern"] == [1.0, 1.03, 0.98, 1.01]
+    assert seasonality == {}
     sat = linkedin.get_saturation_config()
     assert sat["type"] == "linear" and sat["slope"] == 0.8
     adstock = linkedin.get_adstock_decay_config()

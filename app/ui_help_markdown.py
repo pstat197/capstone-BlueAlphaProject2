@@ -42,3 +42,21 @@ Both values are **non-negative**. **0** turns that noise off.
 - Random noise is Gaussian with **standard deviation = √(revenue noise) × |R|**.
 - So noise scales with **how big the channel’s contribution already is** that week; small `R` → small absolute noise, large `R` → larger absolute noise (same relative spread).
 """
+
+SEASONALITY_OVERVIEW_MD = """
+**How it fits in:** Seasonality multiplies **baseline revenue** each week (after optional linear **trend**). It does **not** change spend or impressions.
+"""
+
+SEASONALITY_TYPES_GUIDE_MD = """
+- **`none`** — No seasonal multiplier (baseline stays trend-only).
+
+- **`Repeating cycle`** — You set a **cycle length** and a **table** of baseline multipliers (one row per week in the cycle). A line chart previews the shape. The merged YAML stores a **fitted deterministic Fourier** (smooth, reproducible), not the raw table. Edit multipliers in the table (native point-drag on the chart is not available in Streamlit).
+
+- **`sin`** — Single smooth wave (intuitive knobs). When merged, this becomes an equivalent **deterministic Fourier** (one harmonic) so runs stay reproducible.
+
+- **`fourier`** — Either:
+  - **Random Fourier** (no saved `coefficients`): `period`, `K`, `scale` (+ optional `seed`) — smooth seasonal deviation drawn each run.
+  - **Fitted** (deterministic): `period`, `K`, `intercept`, `coefficients` — least-squares seasonal shape (what **repeating cycle** and **comma pattern** save as).
+
+- **`categorical` (comma pattern)** — You enter repeating multipliers as **comma-separated** values; the app **fits a smoothed Fourier** and stores **only** that `fourier` block. Shorter patterns use fewer harmonics for a smoother curve.
+"""

@@ -1,6 +1,11 @@
 from typing import Dict
 import numpy as np
 
+from scripts.revenue_simulation.seasonality_fit import (
+    evaluate_deterministic_fourier,
+    fit_pattern_multipliers_to_fourier,
+    normalize_seasonality_config,
+)
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 from scripts.synth_input_classes.channel import Channel
 
@@ -97,11 +102,6 @@ def _fourier_seasonality(t, period, K=1, scale=0.1, seed=None):
 
     return s
 
-# 'categorical': discrete repeating pattern (e.g., weekly effects); assigns fixed multipliers per period index (t % period);
-def _categorical_seasonality(t, pattern):
-    pattern = np.array(pattern, dtype=float)
-    return pattern[t % len(pattern)] - 1.0  # convert to deviation
-
 # 'spikes': sparse, non-periodic multiplicative shocks; simulates irregular events (promotions, outages, viral bursts)
 def _event_spikes(t, prob=0.02, magnitude=(0.5, 1.5), seed=None):
     rng = np.random.default_rng(seed)
@@ -116,36 +116,30 @@ def _seasonality(t: np.ndarray, seasonality_config: Dict) -> np.ndarray:
     Flexible seasonality generator.
 
     Supported types:
-      - 'sin': basic sinusoidal
-      - 'fourier': multi-harmonic smooth seasonality
-      - 'categorical': discrete pattern (e.g. weekly)
+      - 'sin' / 'categorical': normalized to deterministic ``fourier`` (same as load path; supports raw YAML)
+      - 'fourier': random multi-harmonic (scale/K) or deterministic (coefficients + intercept)
       - 'hybrid': combination of components
     """
 
     if not seasonality_config:
         return np.ones_like(t, dtype=float)
 
-    stype = seasonality_config.get("type", "sin")
+    stype = str(seasonality_config.get("type", "sin")).strip().lower()
 
-    if stype == "sin":
-        amplitude = seasonality_config.get("amplitude", 0.2)
-        period = seasonality_config.get("period", 52)
-        phase = seasonality_config.get("phase", 0)
-
-        return 1 + amplitude * np.sin(2 * np.pi * (t + phase) / period)
+    if stype in ("sin", "categorical"):
+        normalized = normalize_seasonality_config(seasonality_config)
+        if not normalized:
+            return np.ones_like(t, dtype=float)
+        return _seasonality(t, normalized)
 
     if stype == "fourier":
-        period = seasonality_config["period"]
+        period = int(seasonality_config["period"])
+        if seasonality_config.get("coefficients") is not None:
+            return evaluate_deterministic_fourier(t, seasonality_config)
         K = seasonality_config.get("K", 2)
         scale = seasonality_config.get("scale", 0.1)
-
-        s = _fourier_seasonality(t, period, K, scale)
-        return 1 + s
-
-    if stype == "categorical":
-        pattern = seasonality_config["pattern"]
-
-        s = _categorical_seasonality(t, pattern)
+        seed = seasonality_config.get("seed", None)
+        s = _fourier_seasonality(t, period, K, scale, seed)
         return 1 + s
 
     if stype == "hybrid":
@@ -156,19 +150,30 @@ def _seasonality(t: np.ndarray, seasonality_config: Dict) -> np.ndarray:
             ctype = comp["type"]
 
             if ctype == "fourier":
-                val = _fourier_seasonality(
-                    t,
-                    comp["period"],
-                    comp.get("K", 1),
-                    comp.get("scale", 0.1),
-                    comp.get("seed", None)
-                )
-                s *= (1 + val)
+                if comp.get("coefficients") is not None:
+                    mult = evaluate_deterministic_fourier(t, comp)
+                    s *= mult
+                else:
+                    val = _fourier_seasonality(
+                        t,
+                        comp["period"],
+                        comp.get("K", 1),
+                        comp.get("scale", 0.1),
+                        comp.get("seed", None),
+                    )
+                    s *= (1 + val)
 
             elif ctype == "categorical":
-                pattern = comp["pattern"]
-                val = np.array(pattern)[t % len(pattern)]
-                s *= val
+                raw_pat = comp.get("pattern") or []
+                try:
+                    plist = [float(x) for x in raw_pat]
+                except (TypeError, ValueError):
+                    plist = [1.0, 1.0]
+                cfg_f = fit_pattern_multipliers_to_fourier(plist)
+                if cfg_f:
+                    s *= evaluate_deterministic_fourier(t, cfg_f)
+                else:
+                    s *= 1.0
 
             elif ctype == "spikes":
                 val = _event_spikes(

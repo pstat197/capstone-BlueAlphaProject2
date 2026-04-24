@@ -25,6 +25,69 @@ from app.ui_correlations import merge_correlations_from_widgets
 from app.ui_helpers import apply_overrides
 
 
+def _parse_float_or_default(raw: Any, default: float) -> float:
+    val, ok = parse_optional_num(raw, as_int=False)
+    if not ok or val is None:
+        return float(default)
+    return float(val)
+
+
+def _parse_int_or_default(raw: Any, default: int) -> int:
+    val, ok = parse_optional_num(raw, as_int=True)
+    if not ok or val is None:
+        return int(default)
+    return int(val)
+
+
+def _parse_pattern_csv(raw: Any, default: List[float]) -> List[float]:
+    if raw is None:
+        return list(default)
+    s = str(raw).strip()
+    if not s:
+        return list(default)
+    parts = [p.strip() for p in s.replace(";", ",").split(",") if p.strip()]
+    out: List[float] = []
+    for p in parts:
+        try:
+            out.append(float(p))
+        except ValueError:
+            return list(default)
+    return out if out else list(default)
+
+
+def _collect_seasonality_overrides(n_channels: int) -> List[Dict[str, Any]]:
+    overrides: List[Dict[str, Any]] = []
+    for i in range(n_channels):
+        sea_type = str(st.session_state.get(f"sea_type_{i}", "none")).strip().lower()
+        if sea_type in ("", "none"):
+            overrides.append({"path": f"channel_list.{i}.channel.seasonality_config", "value": {}})
+            continue
+
+        if sea_type == "sin":
+            cfg = {
+                "type": "sin",
+                "amplitude": _parse_float_or_default(st.session_state.get(f"sea_amp_{i}"), 0.2),
+                "period": _parse_int_or_default(st.session_state.get(f"sea_period_{i}"), 52),
+                "phase": _parse_float_or_default(st.session_state.get(f"sea_phase_{i}"), 0.0),
+            }
+        elif sea_type == "fourier":
+            cfg = {
+                "type": "fourier",
+                "period": _parse_int_or_default(st.session_state.get(f"sea_period_{i}"), 52),
+                "K": _parse_int_or_default(st.session_state.get(f"sea_k_{i}"), 2),
+                "scale": _parse_float_or_default(st.session_state.get(f"sea_scale_{i}"), 0.1),
+            }
+        elif sea_type == "categorical":
+            cfg = {
+                "type": "categorical",
+                "pattern": _parse_pattern_csv(st.session_state.get(f"sea_pattern_{i}"), [1.0, 1.0, 1.0, 1.0]),
+            }
+        else:
+            cfg = {}
+        overrides.append({"path": f"channel_list.{i}.channel.seasonality_config", "value": cfg})
+    return overrides
+
+
 def collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Dict[str, Any]], List[str]]:
     overrides: List[Dict[str, Any]] = []
     warnings: List[str] = []
@@ -89,12 +152,13 @@ def collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Dic
             full_path = f"channel_list.{i}.{path_suffix}"
             overrides.append({"path": full_path, "value": st.session_state[key]})
 
+    overrides.extend(_collect_seasonality_overrides(n_channels))
     return overrides, warnings
 
 
 def clear_channel_widget_keys() -> None:
     for k in list(st.session_state.keys()):
-        if k.startswith(("pc_", "sel_", "ch_name_", "del_ch_", "adw_", "ch_exp_")):
+        if k.startswith(("pc_", "sel_", "ch_name_", "del_ch_", "adw_", "ch_exp_", "sea_")):
             del st.session_state[k]
     clear_toggle_widget_keys()
 
@@ -113,6 +177,7 @@ def clear_widget_keys() -> None:
                 "del_ch_",
                 "adw_",
                 "ch_exp_",
+                "sea_",
             )
         ) or k.startswith(("corr_a_", "corr_b_", "corr_rho_", "corr_rm_")) or k in (
             "new_channel_name",

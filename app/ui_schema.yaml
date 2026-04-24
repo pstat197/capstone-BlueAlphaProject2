@@ -18,6 +18,13 @@ per_channel_sliders:
     min: 0.0
     max: 100000.0
     step: 100.0
+  - path: channel.trend_slope
+    group: core
+    label: "Baseline trend / week †"
+    help: "Linear slope added to baseline each week before seasonality multiplier."
+    min: -5000.0
+    max: 5000.0
+    step: 10.0
   - path: channel.cpm
     group: core
     label: "CPM †"

@@ -20,8 +20,10 @@ from .noise import add_noise_to_value, get_default_rng, init_rng
 NO_NOISE_KEYS = {
     "saturation_config",
     "adstock_decay_config",
+    "seasonality_config",
     "spend_sampling_gamma_params",
     "noise_variance",
+    "trend_slope",
     "channel_name",
     "cpm_sampling_range",  # used only to sample cpm when cpm is missing
     # On/off toggle fields are copied verbatim (never noised): they are
@@ -88,7 +90,7 @@ def _fill_channel_missing_fields(
         if key not in out or out[key] is None or out[key] == "":
             if key == "channel_name":
                 out[key] = f"Unnamed Channel {index_1based}"
-            elif key in ("saturation_config", "adstock_decay_config", "spend_sampling_gamma_params", "noise_variance"):
+            elif key in ("saturation_config", "adstock_decay_config", "seasonality_config", "spend_sampling_gamma_params", "noise_variance"):
                 out[key] = dict(default_val) if isinstance(default_val, dict) else default_val
             elif isinstance(default_val, dict):
                 out[key] = {

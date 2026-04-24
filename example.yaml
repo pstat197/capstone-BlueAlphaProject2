@@ -31,6 +31,12 @@ channel_list:
       true_roi: 3.1
       spend_range: [1500, 40000]
       baseline_revenue: 6000
+      trend_slope: 20
+      seasonality_config:
+        type: sin
+        amplitude: 0.1
+        period: 26
+        phase: 0
       saturation_config:
         type: linear
         slope: 1.0
@@ -54,6 +60,10 @@ channel_list:
       true_roi: 2.2
       spend_range: [3000, 60000]
       baseline_revenue: 9500
+      trend_slope: -10
+      seasonality_config:
+        type: categorical
+        pattern: [1.0, 1.03, 0.98, 1.01]
       saturation_config:
         type: linear
         slope: 0.8

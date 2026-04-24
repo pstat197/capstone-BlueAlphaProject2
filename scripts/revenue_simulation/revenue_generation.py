@@ -229,8 +229,7 @@ def _calculate_channel_revenue(
 
     x = _saturation_fn(impressions, channel.saturation_config) if saturation_on else impressions.astype(float, copy=True)
     transformed_imp = _adstock_decay(x, channel.adstock_decay_config) if adstock_on else x
-    beta = channel.true_roi * (spend / (impressions + 1e-9))
-    revenue = transformed_imp * beta
+    revenue = transformed_imp * float(channel.true_roi)
     trend_slope = float(getattr(channel, "trend_slope", 0.0))
     seasonality_config = getattr(channel, "seasonality_config", None)
     revenue += _generate_baseline_revenue(len(spend), channel.baseline_revenue, trend_slope, seasonality_config)

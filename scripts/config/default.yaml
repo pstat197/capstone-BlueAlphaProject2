@@ -18,6 +18,8 @@ channel_list:
       true_roi: 2.5
       spend_range: [1000, 50000]
       baseline_revenue: 5000
+      trend_slope: 0.0
+      seasonality_config: {}
       saturation_config:
         type: linear
         slope: 1.0

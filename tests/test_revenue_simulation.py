@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from scripts.config.loader import load_config
+from scripts.config.loader import load_config, load_config_from_dict
 from scripts.impressions_simulation.impressions_generation import generate_impressions
 from scripts.revenue_simulation.revenue_generation import (
     _adstock_decay,
@@ -81,6 +81,41 @@ def test_generate_revenue_reproducible_with_seed():
     assert rev1.shape[1] == len(config1.get_channel_list())
 
 
+def test_generate_revenue_includes_trend_and_seasonality_baseline():
+    """Seasonality/trend fields from config affect baseline revenue end-to-end."""
+    cfg = load_config_from_dict(
+        {
+            "run_identifier": "SeasonalityE2E",
+            "week_range": 4,
+            "seed": 123,
+            "channel_list": [
+                {
+                    "channel": {
+                        "channel_name": "A",
+                        "true_roi": 0.0,
+                        "spend_range": [0, 0],
+                        "baseline_revenue": 100.0,
+                        "trend_slope": 10.0,
+                        "seasonality_config": {
+                            "type": "categorical",
+                            "pattern": [1.0, 2.0],
+                        },
+                        "saturation_config": {"type": "linear", "slope": 1.0},
+                        "adstock_decay_config": {"type": "linear", "lag": 0},
+                        "spend_sampling_gamma_params": {"shape": 1.0, "scale": 1.0},
+                        "noise_variance": {"impression": 0.0, "revenue": 0.0},
+                        "cpm": 10.0,
+                    }
+                }
+            ],
+        }
+    )
+    impressions = np.zeros((4, 1), dtype=float)
+    rev = generate_revenue(cfg, impressions)
+    expected = np.array([100.0, 220.0, 120.0, 260.0])
+    np.testing.assert_allclose(rev[:, 0], expected)
+
+
 def main():
     print("Revenue simulation tests...")
     test_generate_revenue_shape_and_finite()
@@ -88,6 +123,7 @@ def main():
     test_linear_adstock_uniform_moving_average_when_lag_positive()
     test_linear_adstock_lag_zero_is_identity()
     test_generate_revenue_reproducible_with_seed()
+    test_generate_revenue_includes_trend_and_seasonality_baseline()
     print("Revenue simulation tests passed.")
 
 

@@ -14,6 +14,8 @@ def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "adstock_decay_config": dict(resolved_template.get("adstock_decay_config") or {}),
         "spend_sampling_gamma_params": dict(resolved_template.get("spend_sampling_gamma_params") or {}),
         "noise_variance": dict(resolved_template.get("noise_variance") or {}),
+        "seasonality_config": dict(resolved_template.get("seasonality_config") or {}),
+        "trend_slope": float(resolved_template.get("trend_slope", 0.0)),
         "cpm": resolved_template.get("cpm"),
     }
 
@@ -235,6 +237,11 @@ class InputConfigurations:
             saturation_config = dict(sat_cfg) if isinstance(sat_cfg, dict) else dict(defaults["saturation_config"])
             adstock_cfg = ch.get("adstock_decay_config")
             adstock_decay_config = dict(adstock_cfg) if isinstance(adstock_cfg, dict) else dict(defaults["adstock_decay_config"])
+            seasonality_cfg = ch.get("seasonality_config")
+            seasonality_config = (
+                dict(seasonality_cfg) if isinstance(seasonality_cfg, dict) else dict(defaults["seasonality_config"])
+            )
+            trend_slope = float(ch.get("trend_slope", defaults["trend_slope"]))
             # Ensure numeric types for adstock_decay_config
             if "lag" in adstock_decay_config:
                 adstock_decay_config["lag"] = int(adstock_decay_config["lag"])
@@ -256,6 +263,8 @@ class InputConfigurations:
                     true_roi=float(ch.get("true_roi", 0.0)),
                     spend_range=list(ch.get("spend_range", [0, 0])),
                     baseline_revenue=float(baseline),
+                    trend_slope=trend_slope,
+                    seasonality_config=seasonality_config,
                     saturation_config=saturation_config,
                     adstock_decay_config=adstock_decay_config,
                     spend_sampling_gamma_params=spend_sampling_gamma_params,

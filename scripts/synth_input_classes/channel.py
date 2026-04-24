@@ -39,6 +39,8 @@ class Channel:
     spend_sampling_gamma_params: Dict[str, float]
     noise_variance: Dict[str, float]
     cpm: float
+    trend_slope: float = 0.0
+    seasonality_config: Dict[str, Any] = field(default_factory=dict)
 
     # On/off toggles. Fail-open: defaults leave the channel fully active.
     enabled: bool = True
@@ -58,6 +60,12 @@ class Channel:
 
     def get_baseline_revenue(self) -> float:
         return self.baseline_revenue
+
+    def get_trend_slope(self) -> float:
+        return self.trend_slope
+
+    def get_seasonality_config(self) -> Dict[str, Any]:
+        return self.seasonality_config
 
     def get_saturation_config(self) -> Dict[str, Any]:
         return self.saturation_config

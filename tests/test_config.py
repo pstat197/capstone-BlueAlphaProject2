@@ -50,6 +50,12 @@ def test_channel_tiktok(config: InputConfigurations):
     assert tiktok.get_true_roi() == 3.1
     assert tiktok.get_spend_range() == [1500, 40000]
     assert tiktok.get_baseline_revenue() == 6000
+    assert tiktok.get_trend_slope() == 20
+    seasonality = tiktok.get_seasonality_config()
+    assert seasonality["type"] == "sin"
+    assert seasonality["amplitude"] == 0.1
+    assert seasonality["period"] == 26
+    assert seasonality["phase"] == 0
     sat = tiktok.get_saturation_config()
     assert sat["type"] == "linear" and sat["slope"] == 1.0 and sat["K"] == 50000.0 and sat["beta"] == 0.5
     adstock = tiktok.get_adstock_decay_config()
@@ -70,6 +76,10 @@ def test_channel_linkedin(config: InputConfigurations):
     assert linkedin.get_true_roi() == 2.2
     assert linkedin.get_spend_range() == [3000, 60000]
     assert linkedin.get_baseline_revenue() == 9500
+    assert linkedin.get_trend_slope() == -10
+    seasonality = linkedin.get_seasonality_config()
+    assert seasonality["type"] == "categorical"
+    assert seasonality["pattern"] == [1.0, 1.03, 0.98, 1.01]
     sat = linkedin.get_saturation_config()
     assert sat["type"] == "linear" and sat["slope"] == 0.8
     adstock = linkedin.get_adstock_decay_config()
@@ -97,6 +107,7 @@ def test_load_default_yaml():
         assert c.get_channel_name()
         assert c.get_spend_sampling_gamma_params() is not None
         assert c.get_noise_variance() is not None
+        assert c.get_seasonality_config() is not None
         assert c.get_saturation_config() is not None
         assert c.get_adstock_decay_config() is not None
         assert 0.5 <= c.get_cpm() <= 50.0, "cpm should be in default sampling range when loaded from default"
@@ -121,6 +132,7 @@ def test_number_of_channels_generates_from_default():
         for c in channels:
             assert c.get_spend_sampling_gamma_params()
             assert c.get_noise_variance()
+            assert c.get_seasonality_config() is not None
             assert c.get_saturation_config() is not None
             assert c.get_adstock_decay_config() is not None
             assert 0.5 <= c.get_cpm() <= 50.0, "generated channels should have cpm in default sampling range"
@@ -143,6 +155,7 @@ def test_missing_fields_filled_from_default():
         assert channels[0].get_channel_name() == "Only"
         assert channels[0].get_spend_sampling_gamma_params()
         assert channels[0].get_noise_variance()
+        assert channels[0].get_seasonality_config() is not None
         assert 0.5 <= channels[0].get_cpm() <= 50.0, "minimal channel without cpm should get sampled cpm in range"
     finally:
         Path(tmp).unlink(missing_ok=True)

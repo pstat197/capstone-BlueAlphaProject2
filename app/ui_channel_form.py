@@ -429,6 +429,11 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
             )
 
             render_channel_toggles_block(i, data, week_range_for_ranges)
+            channel_active = bool(st.session_state.get(f"tog_enabled_{i}", True))
+            if not channel_active:
+                # Auto-collapse inactive channels and hide all non-reactivation controls.
+                st.session_state[f"ch_exp_{i}"] = False
+                continue
 
             st.markdown("##### Spend & ROI")
             st.caption(

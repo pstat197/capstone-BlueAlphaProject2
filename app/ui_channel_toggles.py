@@ -373,11 +373,6 @@ def render_channel_toggles_block(
     ensure_channel_toggle_state_initialized(cfg, i, week_range)
 
     st.markdown("##### Availability")
-    st.caption(
-        "Controls when this channel contributes. **Channel active** toggles the "
-        "whole channel. **Pause rules** below can fix spend/impressions to zero for "
-        "whole ranges or add sticky random pauses; adstock echo can still flow (soft off)."
-    )
 
     st.checkbox(
         "Channel active",
@@ -393,11 +388,13 @@ def render_channel_toggles_block(
     channel_active = bool(st.session_state.get(ch_enabled_key(i), True))
 
     if not channel_active:
-        st.info(
-            "Channel is fully disabled — pause rules are ignored while the channel "
-            "is inactive."
-        )
+        # Keep only the reactivation control visible while inactive.
         return
+
+    st.caption(
+        "Controls when this channel contributes. **Pause rules** can fix spend/impressions "
+        "to zero for whole ranges or add sticky random pauses; adstock echo can still flow (soft off)."
+    )
 
     st.divider()
 

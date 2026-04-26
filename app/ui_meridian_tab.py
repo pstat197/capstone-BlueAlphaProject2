@@ -7,20 +7,17 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import matplotlib.pyplot as plt
+import altair as alt
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_OUT_DIR = _REPO_ROOT / "output"
-_ROI_FOREST_PNG = _OUT_DIR / "mmm_roi_forest_plot.png"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from app.meridian_mmm import (  # noqa: E402
     MeridianRunConfig,
-    arviz_posterior_table,
     channel_names_from_simulator_df,
     fit_meridian,
     format_predictive_metrics_df,
@@ -33,7 +30,7 @@ from app.ui_config_merge import merge_ui_into_config  # noqa: E402
 from app.ui_yaml_io import yaml_dump  # noqa: E402
 from app.mmm_roi_forest import (  # noqa: E402
     meridian_posterior_roi_forest_rows,
-    plot_mmm_roi_forest,
+    plotly_mmm_roi_forest_figure,
     roi_m_rhat_by_media_channel,
     true_roi_by_channel_map,
 )
@@ -72,6 +69,9 @@ samples, (3) runs **NUTS** chains: adaptation, burn-in, then kept samples. Chain
 - [Configure the model / priors](https://developers.google.com/meridian/docs/user-guide/configure-model)
 """
 
+# Session: user clicked Run model; next rerun performs fit (shows busy button, blocks re-click)
+_K_MMM_FIT_PENDING = "m_meridian_fit_pending"
+
 # (chains, n_adapt, n_burnin, n_keep, n_prior draws)
 MCMC_PRESETS: Dict[str, Tuple[int, int, int, int, int]] = {
     "Fast (smaller, quicker)": (2, 500, 200, 200, 200),
@@ -80,8 +80,75 @@ MCMC_PRESETS: Dict[str, Tuple[int, int, int, int, int]] = {
 }
 
 
+def _budget_recommendation_html(df_rec: pd.DataFrame) -> str:
+    """HTML lines (no Markdown ** so nothing breaks); green / red / gray; clear $ formatting."""
+    parts: List[str] = [
+        '<div style="font-size:1.2rem;line-height:1.55;font-weight:500;">',
+    ]
+    _g, _r, _n = "#15803d", "#b91c1c", "#64748b"
+    for _, row in df_rec.iterrows():
+        ch = str(row["channel"])
+        cur = float(row["current_weekly_spend"])
+        optv = float(row["optimized_weekly_spend"])
+        d = optv - cur
+        if "change_pct" in row and pd.notna(row.get("change_pct")):
+            pct = float(row["change_pct"])
+        else:
+            pct = 100.0 * d / (cur + 1e-9)
+        if abs(d) < 0.5:
+            parts.append(
+                f'<p style="margin:0.4em 0;color:{_n}"><b>{ch}</b>: keep weekly spend at about '
+                f"<b>${optv:,.0f}</b> (within ~$1 of current).</p>"
+            )
+        elif d > 0:
+            parts.append(
+                f'<p style="margin:0.4em 0;color:{_g}"><b>{ch}</b>: increase weekly spend by '
+                f"<b>${d:,.0f}</b> (<b>{pct:+.1f}%</b>) — target <b>${optv:,.0f}</b>/week vs "
+                f"<b>${cur:,.0f}</b>/week now.</p>"
+            )
+        else:
+            parts.append(
+                f'<p style="margin:0.4em 0;color:{_r}"><b>{ch}</b>: decrease weekly spend by '
+                f"<b>${-d:,.0f}</b> (<b>{pct:+.1f}%</b>) — target <b>${optv:,.0f}</b>/week vs "
+                f"<b>${cur:,.0f}</b>/week now.</p>"
+            )
+    parts.append("</div>")
+    return "".join(parts) if len(parts) > 1 else ""
+
+
+def _meridian_pie_title(chart: Any, title: str) -> Any:
+    """Override Altair pie title from Meridian."""
+    if chart is None:
+        return None
+    return chart.properties(
+        title=alt.TitleParams(text=title, anchor="start", fontSize=17, fontWeight="normal")
+    )
+
+
 def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, Any]) -> None:
     """Plot Altair figures and tables from `meridian_visualizations` result."""
+    st.markdown(
+        """
+        <style>
+        /* Remove default card / band background on this tab (metrics + row layout). */
+        div[data-testid="stMetric"] {
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stMetric"] > div,
+        [data-testid="stMetric"] [data-testid="stMetricValue"],
+        [data-testid="stMetric"] [data-testid="stMetricLabel"] {
+            background-color: transparent !important;
+        }
+        section.main div[data-testid="stHorizontalBlock"] {
+            background: transparent !important;
+            border: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.subheader("Model fit & diagnostics")
     mcols = st.columns(3)
     rh = summ.get("rhat_max")
@@ -98,56 +165,53 @@ def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, A
     mcols[1].empty()
     mcols[2].empty()  # layout spacer
     st.caption(
-        "**R̂ (R-hat):** MCMC mixing only. **R² / MAPE / wMAPE:** how close **posterior-mean** predictions are to **realized** revenue in sample—low R² is common on short, noisy, or misspecified runs."
+        "**R̂ (R-hat):** MCMC mixing only. **R², MAPE, wMAPE:** in-sample **goodness of fit** for "
+        "posterior-mean **predicted** revenue vs **realized** revenue. Low R² is common on short or noisy series."
     )
     fit_raw = viz.get("fit_metrics")
     fit_df = format_predictive_metrics_df(fit_raw) if fit_raw is not None else None
     if fit_df is not None and hasattr(fit_df, "empty") and not fit_df.empty:
         st.markdown("**In-sample predictive accuracy (Meridian table)**")
+        st.caption(
+            "**MAPE** (Mean Absolute Percentage Error) is the average of "
+            "|actual − predicted| / |actual| (by week), expressed as a percent. It treats big misses as a "
+            "fraction of the actual level, so a few small weeks are not up-weighted like in plain MAE. "
+            "**wMAPE** (weighted MAPE) is similar but weighted so larger-revenue weeks count more. "
+            "Values are in-sample: they do **not** measure holdout or business forecast accuracy on their own."
+        )
         st.dataframe(fit_df, use_container_width=True, hide_index=True)
     elif viz.get("fit_metrics_error"):
         st.caption("Fit metrics: " + str(viz["fit_metrics_error"]))
 
     st.subheader("Recovered media ROI (posterior)")
-    st.caption("Per-**channel** incremental ROI from the **fitted** model, with 90% credible intervals (Channel names match your synthetic data).")
-    if viz.get("media_roi_bar_chart") is not None:
-        st.altair_chart(viz["media_roi_bar_chart"], use_container_width=True)
-    elif viz.get("media_roi_error"):
-        st.caption("Media ROI chart: " + str(viz["media_roi_error"]))
-
     st.caption(
-        "**Forest plot** — same posterior ROI as above, as a horizontal dot-and-whisker "
-        "(median, 90% CI, optional synthetic **true ROI** from your YAML). **R̂** for `roi_m` when available."
+        "Per-**channel** incremental ROI from the **fitted** model (90% credible interval). "
+        "Optional **true** ROI (red dashed) comes from your YAML. Hover a point for details. **R̂** for `roi_m` in hover when available."
     )
     try:
         tr = true_roi_by_channel_map(st.session_state.get("sim_config"))
         rows = meridian_posterior_roi_forest_rows(mmm, true_map=tr)
         rh = roi_m_rhat_by_media_channel(mmm)
-        fig_for = plot_mmm_roi_forest(
-            rows,
-            save_path=_ROI_FOREST_PNG,
-            dpi=150,
-            rhat_by_channel=rh,
-        )
-        st.pyplot(fig_for, use_container_width=True)
-        plt.close(fig_for)
-        st.caption(f"Saved: `{_ROI_FOREST_PNG}` (150 dpi).")
+        fig_ply = plotly_mmm_roi_forest_figure(rows, rhat_by_channel=rh)
+        st.plotly_chart(fig_ply, use_container_width=True)
     except Exception as e:
         st.caption("ROI forest plot: " + str(e))
 
-    g1, g2 = st.columns(2)
-    with g1:
-        if viz.get("model_fit_chart") is not None:
-            st.caption("Expected vs actual revenue (in-sample)")
-            st.altair_chart(viz["model_fit_chart"], use_container_width=True)
-        elif viz.get("model_fit_error"):
-            st.caption("Model fit plot: " + str(viz["model_fit_error"]))
-    with g2:
-        if viz.get("rhat_chart") is not None:
-            st.caption("R̂ by parameter (MCMC convergence)")
-            st.altair_chart(viz["rhat_chart"], use_container_width=True)
-        elif viz.get("rhat_error"):
-            st.caption("R-hat plot: " + str(viz["rhat_error"]))
+    with st.expander("Advanced analytics", expanded=False):
+        st.caption("Optional diagnostics: in-sample **fit** vs data and **MCMC** convergence by parameter.")
+        g1, g2 = st.columns(2)
+        with g1:
+            if viz.get("model_fit_chart") is not None:
+                st.caption("Expected vs actual revenue (in-sample)")
+                st.altair_chart(viz["model_fit_chart"], use_container_width=True)
+            elif viz.get("model_fit_error"):
+                st.caption("Model fit plot: " + str(viz["model_fit_error"]))
+        with g2:
+            if viz.get("rhat_chart") is not None:
+                st.caption("R̂ by parameter (MCMC convergence)")
+                st.altair_chart(viz["rhat_chart"], use_container_width=True)
+            elif viz.get("rhat_error"):
+                st.caption("R-hat plot: " + str(viz["rhat_error"]))
 
     st.subheader("Budget optimization (fixed total ≈ historical)")
     st.caption(
@@ -170,30 +234,6 @@ def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, A
                 rec_opt["change_pct"] = (
                     rec_opt["optimized_weekly_spend"] / (rec_opt["current_weekly_spend"] + 1e-9) - 1.0
                 ) * 100.0
-                total_b = float(rec_opt["spend_baseline"].sum())
-                st.markdown(
-                    f"**Window total spend (all channels, model view):** ${total_b:,.0f}  ·  **Weeks in data:** {n_weeks}  "
-                    f"·  **Implied average weekly budget:** ${total_b / n_weeks:,.0f}"
-                )
-                show_cols = [
-                    c
-                    for c in [
-                        "channel",
-                        "spend_baseline",
-                        "spend_optimized",
-                        "current_weekly_spend",
-                        "optimized_weekly_spend",
-                        "change_pct",
-                        "delta",
-                        "delta_pct",
-                    ]
-                    if c in rec_opt.columns
-                ]
-                st.dataframe(
-                    rec_opt[show_cols] if show_cols else rec_opt,
-                    use_container_width=True,
-                    hide_index=True,
-                )
         opt = viz.get("optimization")
         if opt is not None:
             try:
@@ -203,13 +243,52 @@ def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, A
                 if "total_incremental_outcome" in na and "total_incremental_outcome" in oa:
                     t0 = float(na["total_incremental_outcome"])
                     t1 = float(oa["total_incremental_outcome"])
-                    m1.metric("Non-optimized incremental (model)", f"{t0:,.0f}")
-                    m2.metric("Optimized incremental (model)", f"{t1:,.0f}")
-                    m3.metric("Lift (absolute)", f"{t1 - t0:,.0f}")
-                    m4.metric(
-                        "Lift (%)",
-                        f"{(t1 / t0 - 1.0) * 100.0:+.1f}%" if t0 and t0 > 0 else "—",
+                    m1.metric("Non-optimized incremental (model)", f"${t0:,.0f}")
+                    m2.metric("Optimized incremental (model)", f"${t1:,.0f}")
+                    lift = t1 - t0
+                    _green, _red, _neu = "#15803d", "#b91c1c", "#64748b"
+                    # Match default st.metric value (size/weight); color is only green/red/gray
+                    _lbl = (
+                        "color:rgba(49, 51, 63, 0.6);font-size:0.875rem;font-weight:400;margin:0 0 0.15rem 0;"
+                        "padding:0;line-height:1.15;"
                     )
+                    _val = (
+                        "font-size:2.25rem;font-weight:400;line-height:1.12;margin:0;padding:0;"
+                    )
+                    if lift > 0:
+                        lift_str = f"+${lift:,.0f}"
+                    elif lift < 0:
+                        lift_str = f"−${-lift:,.0f}"
+                    else:
+                        lift_str = "$0"
+                    lift_color = _neu if lift == 0 else (_green if lift > 0 else _red)
+                    with m3:
+                        st.markdown(
+                            f'<div style="margin:0;padding:0;min-width:0;">'
+                            f'<p style="{_lbl}">Lift (absolute vs baseline budget)</p>'
+                            f'<p style="{_val}color:{lift_color}">{lift_str}</p>'
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with m4:
+                        if t0 and t0 > 0:
+                            p = (t1 / t0 - 1.0) * 100.0
+                            pcol = _neu if p == 0 else (_green if p > 0 else _red)
+                            if p > 0:
+                                pstr = f"+{p:.1f}%"
+                            elif p < 0:
+                                pstr = f"−{abs(p):.1f}%"
+                            else:
+                                pstr = "0%"
+                            st.markdown(
+                                f'<div style="margin:0;padding:0;min-width:0;">'
+                                f'<p style="{_lbl}">Lift (%)</p>'
+                                f'<p style="{_val}color:{pcol}">{pstr}</p>'
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.metric("Lift (%)", "—")
             except (KeyError, TypeError, ValueError):
                 pass
         if rec_opt is not None:
@@ -235,33 +314,30 @@ def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, A
                 showlegend=True,
             )
             st.plotly_chart(figb, use_container_width=True)
-
-    row1, row2 = st.columns(2)
-    with row1:
-        if viz.get("opt_outcome_delta_chart") is not None:
-            st.caption("Incremental outcome — reallocation effect (waterfall)")
-            st.altair_chart(viz["opt_outcome_delta_chart"], use_container_width=True)
-    with row2:
-        if viz.get("opt_spend_delta_chart") is not None:
-            st.caption("Change in spend by channel (vs baseline allocation)")
-            st.altair_chart(viz["opt_spend_delta_chart"], use_container_width=True)
-        elif viz.get("opt_spend_delta_error"):
-            st.caption("Spend delta chart: " + str(viz["opt_spend_delta_error"]))
+            st.markdown(
+                "<p style='font-size:1.35rem;font-weight:600;margin:0.5rem 0 0.3rem 0;'>"
+                "Recommended reallocation (weekly, model suggestion)</p>",
+                unsafe_allow_html=True,
+            )
+            rec_html = _budget_recommendation_html(rec_opt)
+            if rec_html:
+                st.markdown(rec_html, unsafe_allow_html=True)
+            else:
+                st.caption("No per-channel text could be built from the optimization table.")
 
     p1, p2 = st.columns(2)
     with p1:
         if viz.get("opt_spend_pie_nonopt") is not None:
-            st.caption("Share of spend — baseline")
-            st.altair_chart(viz["opt_spend_pie_nonopt"], use_container_width=True)
+            st.altair_chart(
+                _meridian_pie_title(viz["opt_spend_pie_nonopt"], "Current budget allocation"),
+                use_container_width=True,
+            )
     with p2:
         if viz.get("opt_spend_pie_opt") is not None:
-            st.caption("Share of spend — optimized")
-            st.altair_chart(viz["opt_spend_pie_opt"], use_container_width=True)
-
-    t = arviz_posterior_table(mmm)
-    if t is not None:
-        st.markdown("##### Posterior (ArviZ summary)")
-        st.dataframe(t, use_container_width=True)
+            st.altair_chart(
+                _meridian_pie_title(viz["opt_spend_pie_opt"], "Optimized budget allocation"),
+                use_container_width=True,
+            )
 
 
 def render_meridian_tab(schema: Dict[str, Any]) -> None:
@@ -306,6 +382,8 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
         st.info("No data yet. Run the simulator in the first tab, or use **Load synthetic data** above.")
         return
 
+    st.session_state.setdefault(_K_MMM_FIT_PENDING, False)
+
     chans = channel_names_from_simulator_df(df)
     n_weeks = len(df)
     st.caption(
@@ -329,14 +407,15 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
         index=0,
         key="m_roi_mode",
     )
-    c1, c2 = st.columns(2)
-    with c1:
-        st.number_input("Shared: lognormal μ", value=0.2, step=0.1, key="m_roi_mu")
-    with c2:
-        st.number_input("Shared: lognormal σ", value=0.9, min_value=0.01, step=0.1, key="m_roi_sig")
     indep = st.session_state.get("m_roi_mode", "").startswith("Independent")
-    if indep:
-        st.caption("Per-channel names match your synthetic data.")
+    if not indep:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.number_input("Shared: lognormal μ", value=0.2, step=0.1, key="m_roi_mu")
+        with c2:
+            st.number_input("Shared: lognormal σ", value=0.9, min_value=0.01, step=0.1, key="m_roi_sig")
+    else:
+        st.caption("Per-channel lognormal **μ** and **σ** (names match your synthetic data).")
         for i, ch in enumerate(chans):
             a, b = st.columns(2)
             a.number_input(f"{ch} — μ", value=0.2, step=0.1, key=f"m_pr_mu_{i}")
@@ -385,12 +464,34 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
         key="m_batch_size",
     )
 
-    go = st.button("Run model", type="primary", use_container_width=True)
+    if st.session_state.get(_K_MMM_FIT_PENDING) and not mer_ok:
+        st.session_state[_K_MMM_FIT_PENDING] = False
 
-    if go:
-        if not mer_ok:
-            st.error("Install `google-meridian` in this environment, then restart Streamlit.")
-            return
+    m_pending = bool(st.session_state.get(_K_MMM_FIT_PENDING, False))
+    if m_pending:
+        st.button(
+            "⏳ Running model…",
+            type="secondary",
+            disabled=True,
+            use_container_width=True,
+            key="m_run_busy",
+            help="Sampling and optimization in progress — wait for this run to finish.",
+        )
+    else:
+        run_model = st.button(
+            "Run model",
+            type="primary",
+            use_container_width=True,
+            key="m_run_go",
+        )
+        if run_model:
+            if not mer_ok:
+                st.error("Install `google-meridian` in this environment, then restart Streamlit.")
+            else:
+                st.session_state[_K_MMM_FIT_PENDING] = True
+                st.rerun()
+
+    if m_pending and mer_ok:
         psel = st.session_state.get("m_mcmc_profile", "Balanced")
         if psel in MCMC_PRESETS:
             nc, na, nb, nk, npr0 = MCMC_PRESETS[psel]
@@ -434,7 +535,8 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
                 st.session_state["meridian_mmm"] = None
                 st.session_state["meridian_summary"] = None
                 st.session_state["meridian_viz"] = None
-                return
+            finally:
+                st.session_state[_K_MMM_FIT_PENDING] = False
 
     mmm: Optional[object] = st.session_state.get("meridian_mmm")
     summ: Optional[Dict[str, Any]] = st.session_state.get("meridian_summary")

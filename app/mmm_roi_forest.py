@@ -240,3 +240,145 @@ def plot_mmm_roi_forest(
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=dpi, bbox_inches="tight", facecolor="white")
     return fig
+
+
+def plotly_mmm_roi_forest_figure(
+    rows: List[Mapping[str, Any]],
+    *,
+    rhat_by_channel: Optional[Mapping[str, float]] = None,
+) -> "Any":
+    """Interactive horizontal forest plot (Plotly) — same data as the matplotlib version."""
+    import plotly.graph_objects as go  # type: ignore[import-not-found]
+
+    if not rows:
+        return go.Figure().update_layout(
+            title="Recovered media ROI (posterior)",
+            height=200,
+        )
+
+    rhat_map = rhat_by_channel or {}
+    n = len(rows)
+    fig = go.Figure()
+    has_true = any(
+        r.get("true_roi") is not None
+        and np.isfinite(r["true_roi"])
+        for r in rows
+    )
+    true_legend_placed = False
+    for i, r in enumerate(rows):
+        ch = str(r["channel"])
+        med = float(r["median"])
+        lo = float(r["ci_low"])
+        hi = float(r["ci_high"])
+        # Shaded 90% band
+        fig.add_shape(
+            type="rect",
+            x0=lo,
+            x1=hi,
+            y0=i - 0.2,
+            y1=i + 0.2,
+            fillcolor="rgba(55, 138, 221, 0.12)",
+            line_width=0,
+            layer="below",
+        )
+        # CI line + caps
+        fig.add_trace(
+            go.Scatter(
+                x=[lo, hi],
+                y=[i, i],
+                mode="lines",
+                line=dict(color=_CI_BLUE, width=2.5),
+                showlegend=(i == 0),
+                name="90% credible interval",
+                legendgroup="ci",
+            )
+        )
+        for cx in (lo, hi):
+            fig.add_trace(
+                go.Scatter(
+                    x=[cx, cx],
+                    y=[i - 0.1, i + 0.1],
+                    mode="lines",
+                    line=dict(color=_CI_BLUE, width=2),
+                    showlegend=False,
+                    legendgroup="ci",
+                )
+            )
+        tr = r.get("true_roi")
+        if tr is not None and np.isfinite(float(tr)):
+            tval = float(tr)
+            sleg = has_true and (not true_legend_placed)
+            if sleg:
+                true_legend_placed = True
+            fig.add_trace(
+                go.Scatter(
+                    x=[tval, tval],
+                    y=[i - 0.38, i + 0.38],
+                    mode="lines",
+                    line=dict(color=_TRUE_RED, width=1.5, dash="dash"),
+                    showlegend=sleg,
+                    name="True synthetic ROI",
+                    legendgroup="true",
+                )
+            )
+        rh = rhat_map.get(ch)
+        if rh is None and rhat_map:
+            for k, v in rhat_map.items():
+                if k.strip().lower() == ch.lower():
+                    rh = v
+                    break
+        htext = f"{ch}<br>Median ROI: {med:.2f}<br>90% CI: [{lo:.2f}, {hi:.2f}]"
+        if tr is not None and np.isfinite(float(tr)):
+            htext += f"<br>True (YAML): {float(tr):.2f}"
+        if rh is not None and np.isfinite(rh):
+            htext += f"<br>R̂ (roi_m): {float(rh):.3f}"
+        fig.add_trace(
+            go.Scatter(
+                x=[med],
+                y=[i],
+                mode="markers",
+                name="Posterior median",
+                showlegend=(i == 0),
+                legendgroup="med",
+                marker=dict(
+                    size=11,
+                    color=_CI_BLUE,
+                    line=dict(color="white", width=1),
+                ),
+                hovertext=[htext],
+                hoverinfo="text",
+            )
+        )
+
+    xmax = max(float(r["ci_high"]) for r in rows)
+    xmin = min(float(r["ci_low"]) for r in rows)
+    if has_true:
+        for r in rows:
+            t = r.get("true_roi")
+            if t is not None and np.isfinite(t):
+                xmax = max(xmax, float(t))
+                xmin = min(xmin, float(t))
+    pad = (xmax - xmin) * 0.08 if xmax > xmin else 0.1 * (abs(xmax) + 0.1)
+    x_pad_r = 1.2 if rhat_map else 1.0
+    fig.update_xaxes(
+        title_text="ROI ($ returned per $1 spent)",
+        range=[xmin - pad, xmax + pad * x_pad_r],
+        showgrid=True,
+        gridcolor="rgba(0,0,0,0.1)",
+    )
+    fig.update_yaxes(
+        tickmode="array",
+        tickvals=list(range(n)),
+        ticktext=[str(r["channel"]) for r in rows],
+        autorange="reversed",
+        showgrid=False,
+    )
+    fig.update_layout(
+        title="Recovered media ROI — posterior median with 90% credible interval",
+        height=max(300, 80 * n + 120),
+        template="plotly_white",
+        margin=dict(l=24, r=24, t=64, b=64),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        showlegend=bool(n),
+    )
+    return fig

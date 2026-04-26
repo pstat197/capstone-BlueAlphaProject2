@@ -221,11 +221,8 @@ def meridian_visualizations(
     except Exception as e:
         out["model_fit_error"] = str(e)
 
-    try:
-        ms = visualizer.MediaSummary(mmm, use_kpi=False)
-        out["media_roi_bar_chart"] = ms.plot_roi_bar_chart(include_ci=True)
-    except Exception as e:
-        out["media_roi_error"] = str(e)
+    # Per-channel ROI is shown in the app as an interactive forest plot; skip Altair bar.
+    out["media_roi_bar_chart"] = None
 
     try:
         bo = optmod.BudgetOptimizer(mmm)

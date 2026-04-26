@@ -34,13 +34,154 @@ from app.ui_config_merge import (  # noqa: E402
     clear_widget_keys,
     merge_ui_into_config,
 )
+from app.ui_meridian_tab import render_meridian_tab  # noqa: E402
 from app.ui_results import render_results_panel  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
 
 
+def _render_simulator_tab(schema: dict) -> None:
+    df = st.session_state.get("last_df")
+    show_charts = df is not None
+    if st.session_state.config_collapsed and show_charts:
+        render_results_panel(df, compact_toolbar=True)
+        return
+
+    st.title("Marketing mix simulator")
+    st.caption("Configure the simulation below, then run.")
+
+    st.markdown("##### Simulation settings")
+    st.caption(
+        "Length and labeling for each run. **Random seed** fixes sampling so the same settings reproduce "
+        "the same series and cache behavior."
+    )
+    col_w, col_r, col_s = st.columns(3)
+    with col_w:
+        st.number_input(
+            "Week range",
+            min_value=1,
+            max_value=None,
+            step=1,
+            key="week_range_num",
+            help="Simulation length in weeks.",
+            on_change=yaml_sync_from_form,
+        )
+    with col_r:
+        st.text_input(
+            "Run Name",
+            key="run_identifier_input",
+            placeholder="e.g. Example Alpha",
+            help="Labels CSV downloads and run summaries.",
+            on_change=yaml_sync_from_form,
+        )
+    with col_s:
+        st.number_input(
+            "Random seed",
+            min_value=0,
+            max_value=2_147_483_647,
+            step=1,
+            key="seed_input",
+            help="Fixes randomness so runs and cache keys are reproducible.",
+            on_change=yaml_sync_from_form,
+        )
+
+    st.markdown("##### Channels")
+    st.caption(
+        "Each row is one media channel with its own spend, response curve, carry-over, and noise. "
+        "Open a channel; optional **reference** expanders under Noise, Saturation, and Adstock explain formulas and when to use each option."
+    )
+    row_a, row_b = st.columns([4, 1])
+    with row_a:
+        new_nm = st.text_input(
+            "Name for new channel",
+            key="new_channel_name",
+            placeholder="e.g. TikTok",
+            on_change=yaml_sync_from_form,
+        )
+    with row_b:
+        st.write("")
+        if st.button("Add channel", use_container_width=True):
+            nm = (new_nm or "").strip() or "New channel"
+            ch = default_channel_dict()
+            ch["channel_name"] = nm
+            if "channel_list" not in st.session_state.sim_config:
+                st.session_state.sim_config["channel_list"] = []
+            st.session_state.sim_config["channel_list"].append({"channel": ch})
+            st.session_state["yaml_manual_edit"] = False
+            clear_channel_widget_keys()
+            st.rerun()
+
+    n_channels = len((st.session_state.sim_config.get("channel_list") or []))
+    if n_channels > 0:
+        render_channel_widgets(schema, st.session_state.sim_config, n_channels)
+    else:
+        st.info("Add at least one channel to run the simulation.")
+
+    with st.expander("Advanced: edit full YAML", expanded=False):
+        st.caption(
+            "Stays in sync with the form unless you edit here—then click **Apply YAML to form** to load it. "
+            "Editing the form updates this panel on the next run."
+        )
+        st.text_area(
+            "YAML",
+            height=280,
+            key="advanced_yaml",
+            label_visibility="collapsed",
+            on_change=yaml_mark_dirty,
+        )
+        if st.button("Apply YAML to form", type="secondary"):
+            try:
+                parsed = yaml.safe_load(st.session_state.advanced_yaml)
+                if not isinstance(parsed, dict):
+                    raise ValueError("YAML must parse to a mapping (dict).")
+                st.session_state.sim_config = parsed
+                st.session_state.yaml_manual_edit = False
+                clear_channel_widget_keys()
+                st.session_state["_sync_top_widgets_from_sim_config"] = True
+                st.session_state["pending_yaml_dump"] = yaml_dump(st.session_state.sim_config)
+                st.success("YAML applied.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not apply YAML: {e}")
+
+    run_clicked = st.button("Run simulation", type="primary", use_container_width=False)
+
+    if run_clicked:
+        try:
+            merged, warns = merge_ui_into_config(schema)
+            for w in warns:
+                st.warning(w)
+            if not (merged.get("channel_list") or []):
+                raise ValueError("Add at least one channel before running.")
+            df_out, run_id, cache_hit, cfg_hash, corr_results = run_with_cache(merged, run_pipeline)
+            st.session_state["last_df"] = df_out
+            st.session_state["last_run_id"] = run_id
+            st.session_state["last_cache_hit"] = cache_hit
+            st.session_state["last_hash"] = cfg_hash
+            st.session_state["last_corr_results"] = corr_results
+            st.session_state["last_error"] = None
+            st.session_state.sim_config = copy.deepcopy(merged)
+            st.session_state["pending_yaml_dump"] = yaml_dump(merged)
+            st.session_state.yaml_manual_edit = False
+            st.session_state.config_collapsed = True
+            st.rerun()
+        except Exception as e:
+            st.session_state["last_error"] = str(e)
+            st.session_state["last_df"] = None
+            st.session_state.config_collapsed = False
+
+    err: Optional[str] = st.session_state.get("last_error")
+    if err:
+        st.error(err)
+
+    df2 = st.session_state.get("last_df")
+    if df2 is not None and not st.session_state.config_collapsed:
+        st.markdown("---")
+        render_results_panel(df2, compact_toolbar=False)
+
+
 def main() -> None:
     st.set_page_config(
-        page_title="BlueAlpha Simulator",
+        page_title="BlueAlpha: Simulator & MMM",
         page_icon="📊",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -118,146 +259,11 @@ def main() -> None:
             n = clear_run_cache()
             st.caption(f"Cleared {n} cached file(s).")
 
-    user_dict = st.session_state.sim_config
-    n_channels = len(user_dict.get("channel_list") or [])
-
-    df = st.session_state.get("last_df")
-    show_charts = df is not None
-
-    if st.session_state.config_collapsed and show_charts:
-        render_results_panel(df, compact_toolbar=True)
-        return
-
-    st.title("Marketing mix simulator")
-    st.caption("Configure the simulation below, then run.")
-
-    st.markdown("##### Simulation settings")
-    st.caption(
-        "Length and labeling for each run. **Random seed** fixes sampling so the same settings reproduce "
-        "the same series and cache behavior."
-    )
-    col_w, col_r, col_s = st.columns(3)
-    with col_w:
-        st.number_input(
-            "Week range",
-            min_value=1,
-            max_value=None,
-            step=1,
-            key="week_range_num",
-            help="Simulation length in weeks.",
-            on_change=yaml_sync_from_form,
-        )
-    with col_r:
-        st.text_input(
-            "Run Name",
-            key="run_identifier_input",
-            placeholder="e.g. Example Alpha",
-            help="Labels CSV downloads and run summaries.",
-            on_change=yaml_sync_from_form,
-        )
-    with col_s:
-        st.number_input(
-            "Random seed",
-            min_value=0,
-            max_value=2_147_483_647,
-            step=1,
-            key="seed_input",
-            help="Fixes randomness so runs and cache keys are reproducible.",
-            on_change=yaml_sync_from_form,
-        )
-
-    st.markdown("##### Channels")
-    st.caption(
-        "Each row is one media channel with its own spend, response curve, carry-over, and noise. "
-        "Open a channel; optional **reference** expanders under Noise, Saturation, and Adstock explain formulas and when to use each option."
-    )
-    row_a, row_b = st.columns([4, 1])
-    with row_a:
-        new_nm = st.text_input(
-            "Name for new channel",
-            key="new_channel_name",
-            placeholder="e.g. TikTok",
-            on_change=yaml_sync_from_form,
-        )
-    with row_b:
-        st.write("")
-        if st.button("Add channel", use_container_width=True):
-            nm = (new_nm or "").strip() or "New channel"
-            ch = default_channel_dict()
-            ch["channel_name"] = nm
-            if "channel_list" not in st.session_state.sim_config:
-                st.session_state.sim_config["channel_list"] = []
-            st.session_state.sim_config["channel_list"].append({"channel": ch})
-            st.session_state["yaml_manual_edit"] = False
-            clear_channel_widget_keys()
-            st.rerun()
-
-    if n_channels > 0:
-        render_channel_widgets(schema, user_dict, n_channels)
-    else:
-        st.info("Add at least one channel to run the simulation.")
-
-    with st.expander("Advanced: edit full YAML", expanded=False):
-        st.caption(
-            "Stays in sync with the form unless you edit here—then click **Apply YAML to form** to load it. "
-            "Editing the form updates this panel on the next run."
-        )
-        st.text_area(
-            "YAML",
-            height=280,
-            key="advanced_yaml",
-            label_visibility="collapsed",
-            on_change=yaml_mark_dirty,
-        )
-        if st.button("Apply YAML to form", type="secondary"):
-            try:
-                parsed = yaml.safe_load(st.session_state.advanced_yaml)
-                if not isinstance(parsed, dict):
-                    raise ValueError("YAML must parse to a mapping (dict).")
-                st.session_state.sim_config = parsed
-                st.session_state.yaml_manual_edit = False
-                clear_channel_widget_keys()
-                st.session_state["_sync_top_widgets_from_sim_config"] = True
-                st.session_state["pending_yaml_dump"] = yaml_dump(st.session_state.sim_config)
-                st.success("YAML applied.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Could not apply YAML: {e}")
-
-    run_clicked = st.button("Run simulation", type="primary", use_container_width=False)
-
-    if run_clicked:
-        try:
-            merged, warns = merge_ui_into_config(schema)
-            for w in warns:
-                st.warning(w)
-            if not (merged.get("channel_list") or []):
-                raise ValueError("Add at least one channel before running.")
-            df_out, run_id, cache_hit, cfg_hash, corr_results = run_with_cache(merged, run_pipeline)
-            st.session_state["last_df"] = df_out
-            st.session_state["last_run_id"] = run_id
-            st.session_state["last_cache_hit"] = cache_hit
-            st.session_state["last_hash"] = cfg_hash
-            st.session_state["last_corr_results"] = corr_results
-            st.session_state["last_error"] = None
-            st.session_state.sim_config = copy.deepcopy(merged)
-            st.session_state["pending_yaml_dump"] = yaml_dump(merged)
-            st.session_state.yaml_manual_edit = False
-            st.session_state.config_collapsed = True
-            st.rerun()
-        except Exception as e:
-            st.session_state["last_error"] = str(e)
-            st.session_state["last_df"] = None
-            st.session_state.config_collapsed = False
-
-    err: Optional[str] = st.session_state.get("last_error")
-    if err:
-        st.error(err)
-
-    df2 = st.session_state.get("last_df")
-    if df2 is not None and not st.session_state.config_collapsed:
-        st.markdown("---")
-        render_results_panel(df2, compact_toolbar=False)
+    tab_sim, tab_mmm = st.tabs(["Synthetic data (simulator)", "Bayesian MMM (Meridian)"])
+    with tab_sim:
+        _render_simulator_tab(schema)
+    with tab_mmm:
+        render_meridian_tab(schema)
 
 
 if __name__ == "__main__":

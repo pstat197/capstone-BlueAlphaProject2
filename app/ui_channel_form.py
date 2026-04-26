@@ -315,7 +315,6 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
             with st.expander(
                 "How noise values work (click to open)",
                 expanded=False,
-                key=f"noise_ref_{i}",
             ):
                 st.markdown(NOISE_PARAMETERS_GUIDE_MD)
             noise = grouped.get("noise", [])
@@ -334,7 +333,6 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
             with st.expander(
                 "Saturation types — reference (click to open)",
                 expanded=False,
-                key=f"sat_types_ref_{i}",
             ):
                 st.markdown(SATURATION_TYPES_GUIDE_MD)
             sat_opts = list(sat_select.get("options", [])) if sat_select else []
@@ -355,7 +353,6 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
             with st.expander(
                 "Adstock types — reference (click to open)",
                 expanded=False,
-                key=f"ad_types_ref_{i}",
             ):
                 st.markdown(ADSTOCK_TYPES_GUIDE_MD)
             ad_opts = list(ad_select.get("options", [])) if ad_select else []

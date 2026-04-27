@@ -344,9 +344,23 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
     st.header("Bayesian MMM")
     st.caption("Uses synthetic data from the Simulator tab (in memory). Configure the run, then run the model.")
 
-    mer_ok, _ = meridian_import_status()
+    mer_ok, mer_err = meridian_import_status()
     if not mer_ok:
-        st.caption("Meridian not loaded — after `pip install google-meridian`, restart Streamlit with that same Python.")
+        st.error(
+            "**Google Meridian is not installed** in the Python environment running Streamlit. "
+            "The simulator tab still works; this tab needs the optional MMM stack (TensorFlow + Meridian)."
+        )
+        st.markdown(
+            "From the **project root**, with your venv activated (use **Python 3.11** if you can — Meridian’s supported range):\n\n"
+            "```\npip install -r requirements.txt\n"
+            "pip install -r requirements-meridian.txt\n```\n\n"
+            "Or: `pip install -e \".[mmm]\"` if you use editable install from `pyproject.toml`.\n\n"
+            "**Restart Streamlit** after installing (same terminal / venv you use for `streamlit run`)."
+        )
+        if mer_err:
+            with st.expander("Import error details (for debugging)", expanded=False):
+                st.code(mer_err or "", language="text")
+        return
 
     with st.expander("Optional: background on Bayesian MMM", expanded=False):
         st.markdown(MERIDIAN_HELP)

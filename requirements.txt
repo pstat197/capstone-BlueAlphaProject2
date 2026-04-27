@@ -5,5 +5,4 @@ PyYAML
 pytest
 streamlit>=1.28.0
 plotly>=5.18.0
-# Bayesian MMM (optional for Streamlit tab 2). Requires Python 3.11–3.13 per Google; includes TensorFlow.
-google-meridian>=1.4.0
+# Bayesian MMM (tab 2): install separately — see requirements-meridian.txt

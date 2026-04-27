@@ -1,0 +1,5 @@
+# Optional: Bayesian MMM (Google Meridian) — second tab in Streamlit.
+# Install on top of base deps. Google recommends Python 3.11–3.13.
+#   pip install -r requirements.txt
+#   pip install -r requirements-meridian.txt
+google-meridian>=1.4.0

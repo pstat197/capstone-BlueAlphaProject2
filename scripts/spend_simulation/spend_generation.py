@@ -109,6 +109,9 @@ def _apply_budget_shifts(spend: np.ndarray, config: InputConfigurations) -> None
                     spend[w, :] *= factor
         elif t == "reallocate":
             start_w = int(rule["start_week"])
+            end_w = rule.get("end_week")
+            if end_w is not None:
+                end_w = int(end_w)
             f_name = rule["from_channel"]
             t_name = rule["to_channel"]
             fraction = float(rule["fraction"])
@@ -123,11 +126,28 @@ def _apply_budget_shifts(spend: np.ndarray, config: InputConfigurations) -> None
             if fi == ti:
                 continue
             for w in range(num_weeks):
-                if w + 1 < start_w:
+                week_1based = w + 1
+                if week_1based < start_w:
+                    continue
+                if end_w is not None and week_1based > end_w:
                     continue
                 move_amt = spend[w, fi] * fraction
                 spend[w, fi] -= move_amt
                 spend[w, ti] += move_amt
+        elif t == "scale_channel":
+            start_w = int(rule["start_week"])
+            end_w = int(rule["end_week"])
+            factor = float(rule["factor"])
+            cname = rule["channel_name"]
+            if cname not in name_to_idx:
+                raise ValueError(
+                    f"budget_shifts scale_channel: unknown channel {cname!r}; known: {names}"
+                )
+            ci = name_to_idx[cname]
+            for w in range(num_weeks):
+                week_1based = w + 1
+                if start_w <= week_1based <= end_w:
+                    spend[w, ci] *= factor
         else:
             raise ValueError(f"unsupported budget_shifts type: {t!r}")
 

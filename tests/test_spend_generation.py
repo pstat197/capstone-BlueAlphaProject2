@@ -269,6 +269,137 @@ def test_budget_shifts_reallocate_preserves_row_totals():
     assert (shifted[:, 0] < base[:, 0] - 1e-3).any() and (shifted[:, 1] > base[:, 1] + 1e-3).any()
 
 
+def test_budget_shifts_reallocate_respects_end_week():
+    """reallocate with end_week only moves spend inside the inclusive window."""
+    seed = 3
+    common = {
+        "run_identifier": "ReallocWin",
+        "week_range": 4,
+        "seed": seed,
+        "channel_list": [
+            {
+                "channel": {
+                    "channel_name": "A",
+                    "spend_sampling_gamma_params": {"shape": 2.0, "scale": 800},
+                    "spend_range": [500, 50000],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            },
+            {
+                "channel": {
+                    "channel_name": "B",
+                    "spend_sampling_gamma_params": {"shape": 2.0, "scale": 800},
+                    "spend_range": [500, 50000],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            },
+        ],
+    }
+    init_rng(seed)
+    base = generate_spend(InputConfigurations.from_yaml_dict({**common, "budget_shifts": []}))
+    init_rng(seed)
+    shifted = generate_spend(
+        InputConfigurations.from_yaml_dict(
+            {
+                **common,
+                "budget_shifts": [
+                    {
+                        "type": "reallocate",
+                        "start_week": 2,
+                        "end_week": 2,
+                        "from_channel": "A",
+                        "to_channel": "B",
+                        "fraction": 0.3,
+                    }
+                ],
+            }
+        )
+    )
+    np.testing.assert_array_almost_equal(shifted[0, :], base[0, :])
+    np.testing.assert_array_almost_equal(shifted[2, :], base[2, :])
+    np.testing.assert_array_almost_equal(shifted[3, :], base[3, :])
+    assert not np.allclose(shifted[1, :], base[1, :])
+    np.testing.assert_array_almost_equal(shifted.sum(axis=1), base.sum(axis=1))
+
+
+def test_budget_shifts_scale_channel_one_channel_only():
+    """scale_channel multiplies spend for a single named channel in the window."""
+    seed = 4
+    common = {
+        "run_identifier": "ChScale",
+        "week_range": 3,
+        "seed": seed,
+        "channel_list": [
+            {
+                "channel": {
+                    "channel_name": "A",
+                    "spend_sampling_gamma_params": {"shape": 2.0, "scale": 600},
+                    "spend_range": [400, 40000],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            },
+            {
+                "channel": {
+                    "channel_name": "B",
+                    "spend_sampling_gamma_params": {"shape": 2.0, "scale": 600},
+                    "spend_range": [400, 40000],
+                    "true_roi": 1.0,
+                    "baseline_revenue": 0,
+                    "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+                    "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+                    "noise_variance": {},
+                }
+            },
+        ],
+    }
+    init_rng(seed)
+    base = generate_spend(InputConfigurations.from_yaml_dict({**common, "budget_shifts": []}))
+    init_rng(seed)
+    shifted = generate_spend(
+        InputConfigurations.from_yaml_dict(
+            {
+                **common,
+                "budget_shifts": [
+                    {
+                        "type": "scale_channel",
+                        "channel_name": "A",
+                        "start_week": 2,
+                        "end_week": 2,
+                        "factor": 2.0,
+                    }
+                ],
+            }
+        )
+    )
+    np.testing.assert_array_almost_equal(shifted[0, :], base[0, :])
+    np.testing.assert_array_almost_equal(shifted[2, :], base[2, :])
+    np.testing.assert_array_almost_equal(shifted[1, 0], base[1, 0] * 2.0)
+    np.testing.assert_array_almost_equal(shifted[1, 1], base[1, 1])
+
+
+def test_generate_auto_budget_shift_rules_reproducible():
+    from scripts.spend_simulation.budget_shift_auto import generate_auto_budget_shift_rules
+
+    a = generate_auto_budget_shift_rules(20, ["X", "Y"], "global", 12345)
+    b = generate_auto_budget_shift_rules(20, ["X", "Y"], "global", 12345)
+    assert a == b
+    assert len(a) >= 1
+    mixed = generate_auto_budget_shift_rules(20, ["X", "Y"], "global_and_channel", 12345)
+    assert any(r.get("type") == "scale_channel" for r in mixed)
+
+
 def test_budget_shifts_reallocate_unknown_channel_raises():
     init_rng(0)
     data = {
@@ -467,6 +598,9 @@ def main():
     test_get_budget_shifts_empty_by_default()
     test_budget_shifts_scale_single_week()
     test_budget_shifts_reallocate_preserves_row_totals()
+    test_budget_shifts_reallocate_respects_end_week()
+    test_budget_shifts_scale_channel_one_channel_only()
+    test_generate_auto_budget_shift_rules_reproducible()
     test_budget_shifts_reallocate_unknown_channel_raises()
     test_generate_spend_single_week_single_channel()
     test_correlated_spend_shape()

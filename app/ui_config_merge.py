@@ -21,6 +21,7 @@ from app.ui_form_state import (
     saturation_slider_visible,
     select_session_key,
 )
+from app.ui_budget_shifts import merge_budget_shifts_from_widgets
 from app.ui_correlations import merge_correlations_from_widgets
 from app.ui_helpers import apply_overrides
 from app.ui_seasonality_panel import _read_basic_cycle_multipliers, warm_basic_cycle_editor_if_needed
@@ -197,11 +198,18 @@ def clear_widget_keys() -> None:
                 "ch_exp_",
                 "sea_",
             )
-        ) or k.startswith(("corr_a_", "corr_b_", "corr_rho_", "corr_rm_")) or k in (
+        ) or k.startswith(("corr_a_", "corr_b_", "corr_rho_", "corr_rm_")) or k.startswith(
+            "bs_"
+        ) or k in (
             "new_channel_name",
             "advanced_yaml",
             "corr_ui_rows",
             "corr_next_id",
+            "budget_shift_ui_rows",
+            "budget_shift_next_id",
+            "budget_shift_extra_option",
+            "budget_shift_auto_sig",
+            "budget_shift_auto_rules",
         ):
             del st.session_state[k]
     clear_toggle_widget_keys()
@@ -233,6 +241,10 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
     corrs, corr_warns = merge_correlations_from_widgets(merged, silent=silent)
     merged["correlations"] = corrs
     warns.extend(corr_warns)
+
+    shifts, shift_warns = merge_budget_shifts_from_widgets(merged, silent=silent)
+    merged["budget_shifts"] = shifts
+    warns.extend(shift_warns)
 
     toggle_warns = merge_channel_toggles_into_config(merged, silent=silent)
     warns.extend(toggle_warns)

@@ -185,13 +185,33 @@ def _normalize_budget_shifts(raw: Any) -> List[Dict[str, Any]]:
         elif t == "reallocate":
             frac = float(item["fraction"])
             frac = max(0.0, min(1.0, frac))
+            sw = int(item["start_week"])
+            rec: Dict[str, Any] = {
+                "type": "reallocate",
+                "start_week": sw,
+                "from_channel": str(item["from_channel"]),
+                "to_channel": str(item["to_channel"]),
+                "fraction": frac,
+            }
+            if "end_week" in item and item["end_week"] is not None:
+                ew = int(item["end_week"])
+                if ew < sw:
+                    raise ValueError("budget_shifts reallocate: end_week must be >= start_week")
+                rec["end_week"] = ew
+            out.append(rec)
+        elif t == "scale_channel":
+            sw = int(item["start_week"])
+            factor = float(item["factor"])
+            ew = int(item.get("end_week", sw))
+            if ew < sw:
+                raise ValueError("budget_shifts scale_channel: end_week must be >= start_week")
             out.append(
                 {
-                    "type": "reallocate",
-                    "start_week": int(item["start_week"]),
-                    "from_channel": str(item["from_channel"]),
-                    "to_channel": str(item["to_channel"]),
-                    "fraction": frac,
+                    "type": "scale_channel",
+                    "channel_name": str(item["channel_name"]),
+                    "start_week": sw,
+                    "end_week": ew,
+                    "factor": factor,
                 }
             )
         else:

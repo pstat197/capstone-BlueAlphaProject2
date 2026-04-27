@@ -2,7 +2,9 @@
 #
 # Optional budget_shifts (1-based weeks, same as CSV "week" column). Applied after base spend draw.
 #   - type: scale — multiply all channels' spend for each week in [start_week, end_week]
-#   - type: reallocate — from start_week onward, move fraction of from_channel spend to to_channel each week
+#   - type: scale_channel — multiply one channel_name in [start_week, end_week]
+#   - type: reallocate — move fraction of from_channel spend to to_channel each week in [start_week, end_week]
+#     (omit end_week to mean from start_week through end of simulation)
 # budget_shifts:
 #   - type: scale
 #     start_week: 1

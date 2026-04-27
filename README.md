@@ -148,7 +148,7 @@ Weekly spend correlations are computed from `spend_matrix` inside `run_simulatio
 
 ## Configuration and YAML
 
-- **Top-level keys** typically include `run_identifier`, `week_range`, `seed`, `channel_list`, optional `correlations`, optional `adstock` / `saturation` global sections, optional `number_of_channels`, and optional **`budget_shifts`** (list of rules applied after the base spend draw: `type: scale` multiplies all channels’ spend in an inclusive 1-based week range; `type: reallocate` moves a fraction of spend from one named channel to another from `start_week` onward). See `example.yaml` comments and `tests/test_spend_generation.py`.
+- **Top-level keys** typically include `run_identifier`, `week_range`, `seed`, `channel_list`, optional `correlations`, optional `adstock` / `saturation` global sections, optional `number_of_channels`, and optional **`budget_shifts`** (list of rules applied after the base spend draw: `type: scale` multiplies all channels in an inclusive 1-based week range; `type: scale_channel` multiplies one `channel_name` in a week range; `type: reallocate` moves a fraction from `from_channel` to `to_channel` each week in `[start_week, end_week]` when `end_week` is set, otherwise from `start_week` through the end of the horizon). See `example.yaml` comments and `tests/test_spend_generation.py`.
 - **Each channel** (under `channel_list` as `- channel: { ... }`) includes at least: `channel_name`, `cpm`, `spend_range`, `true_roi`, `baseline_revenue`, `trend_slope` (linear drift on baseline per week), `seasonality_config` (often `{}`), `saturation_config`, `adstock_decay_config`, `spend_sampling_gamma_params`, `noise_variance`, plus optional availability and effect toggles (see [Channel availability and effect toggles](#channel-availability-and-effect-toggles)).
 - **`scripts/config/default.yaml`** is the canonical default channel template used by the loader for fills and generated channels.
 
@@ -160,7 +160,7 @@ Weekly spend correlations are computed from `spend_matrix` inside `run_simulatio
 
 - **If `correlations` is empty:** each week and channel is an **independent** draw from that channel’s gamma(`shape`, `scale`), then clipped to `spend_range`.
 - **If `correlations` is non-empty:** spend is drawn **jointly** each week: channel marginals are matched to the same gammas in **lognormal** space (`mu`, `sigma` per channel), a correlation matrix is built from the YAML pairwise `rho` values (unspecified pairs are 0), and **`rng.multivariate_normal(mu, cov, size=num_weeks)`** produces log-spend; **`exp`** yields positive spend, then per-channel **`spend_range`** clipping. The YAML `rho` is therefore a **linear correlation in log-spend** (Gaussian coupling), not the same number as a Pearson correlation of **dollar spend** after `exp` and clipping. The UI and `correlation_analysis` explain both “configured copula ρ” and “observed spend ρ”.
-- After the draw: optional **`budget_shifts`** mutate the matrix in place (scale windows or reallocate between channels by name), then everything is clipped again to ranges and non-negative.
+- After the draw: optional **`budget_shifts`** mutate the matrix in place (global scale, per-channel `scale_channel`, or `reallocate` between channels by name), then everything is clipped again to ranges and non-negative.
 - **Toggles:** fully disabled channels and deterministic or sticky pause rules zero spend where configured. Sticky pauses use a reproducible RNG branch from `(seed, channel_index)`.
 
 ---

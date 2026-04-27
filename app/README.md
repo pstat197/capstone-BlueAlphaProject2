@@ -55,11 +55,15 @@ Single row of widgets: **Week range** (`week_range_num`, minimum 1, no hard maxi
 
 - **`render_correlations_section`** (`ui_correlations.py`): table of pairwise channel pairs and ρ, aligned with `sim_config["correlations"]`. Channel name dropdowns track live renames from the Channels tab where possible. Editing rows updates session state for merge into YAML.
 
+### Budget shifts
+
+- **`render_budget_shifts_section`** (`ui_budget_shifts.py`): manual rules for **`budget_shifts`** (global scale, **scale one channel**, bounded **reallocate** windows) plus **Extra shifts from seed** (append-only; cache refreshes when seed, option, week range, or channel names change). Merged via **`merge_budget_shifts_from_widgets`** and **`_normalize_budget_shifts`**. Auto rules are built by **`scripts/spend_simulation/budget_shift_auto.py`**. Session keys use the **`bs_`** prefix; **`clear_widget_keys`** clears them and the extra-option keys on reset.
+
 ### Advanced
 
-- **`advanced_yaml`:** full-dump text area. If **`yaml_manual_edit`** is false, each script run sets the textarea from **`merge_ui_into_config(schema, silent=True)`** so it tracks Channels + Correlations widgets without opening expanders.
+- **`advanced_yaml`:** full-dump text area. If **`yaml_manual_edit`** is false, each script run sets the textarea from **`merge_ui_into_config(schema, silent=True)`** so it tracks Channels + Correlations + Budget shifts widgets without opening expanders.
 - **`yaml_mark_dirty`:** marks manual edit when the user types in the textarea.
-- **Apply YAML to form:** `yaml.safe_load` the textarea into **`sim_config`**, then **`_resync_form_from_sim_config`** (clears `clear_channel_widget_keys`, reapplies correlation UI rows from dict, sets flags so week range / seed / run id sync from `sim_config`), **`st.rerun`**.
+- **Apply YAML to form:** `yaml.safe_load` the textarea into **`sim_config`**, then **`_resync_form_from_sim_config`** (clears `clear_channel_widget_keys`, reapplies correlation and budget-shift UI rows from dict, sets flags so week range / seed / run id sync from `sim_config`), **`st.rerun`**.
 
 ---
 
@@ -100,9 +104,11 @@ If cached CSV predates per-channel **`_revenue`** columns, the UI instructs to c
 
 | File | Role |
 |------|------|
-| `ui_config_merge.py` | Collect per-channel overrides, seasonality, toggles, correlations; `merge_ui_into_config`; `clear_widget_keys` / `clear_channel_widget_keys`. |
+| `ui_config_merge.py` | Collect per-channel overrides, seasonality, toggles, correlations, budget shifts; `merge_ui_into_config`; `clear_widget_keys` / `clear_channel_widget_keys`. |
 | `ui_form_state.py` | Shared parsing helpers for numeric fields and select keys. |
 | `ui_helpers.py` | `get_at`, `apply_overrides` path helpers. |
 | `ui_channel_toggles.py` | Merge availability tables into `sim_config`. |
 | `default_channel.py` | Template dict for newly added channels. |
-| `ui_schema.yaml` | Drives generic per-channel field widgets. |
+| `ui_schema.yaml` | Drives generic per-channel field widgets; header comments document top-level `budget_shifts`. |
+| `ui_budget_shifts.py` | Merge and UI for optional `budget_shifts` rules. |
+| `scripts/spend_simulation/budget_shift_auto.py` (repo root) | Deterministic extra `budget_shifts` from seed (used by the UI). |

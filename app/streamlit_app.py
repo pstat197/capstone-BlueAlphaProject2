@@ -34,6 +34,11 @@ from app.ui_config_merge import (  # noqa: E402
     clear_widget_keys,
     merge_ui_into_config,
 )
+from app.ui_budget_shifts import (  # noqa: E402
+    apply_budget_shifts_to_session_rows,
+    ensure_budget_shift_rows_initialized,
+    render_budget_shifts_section,
+)
 from app.ui_correlations import (  # noqa: E402
     apply_correlations_to_session_rows,
     ensure_corr_rows_initialized,
@@ -75,6 +80,7 @@ def _resync_form_from_sim_config() -> None:
     """
     clear_channel_widget_keys()
     apply_correlations_to_session_rows(st.session_state.sim_config)
+    apply_budget_shifts_to_session_rows(st.session_state.sim_config)
     st.session_state["_sync_top_widgets_from_sim_config"] = True
     st.session_state["pending_yaml_dump"] = yaml_dump(st.session_state.sim_config)
     st.session_state["yaml_manual_edit"] = False
@@ -115,6 +121,7 @@ def main() -> None:
         st.session_state.seed_input = int(s) if s is not None else 0
 
     ensure_corr_rows_initialized(st.session_state.sim_config)
+    ensure_budget_shift_rows_initialized(st.session_state.sim_config)
 
     if st.session_state.pop("_resync_form_from_sim_config", False):
         _resync_form_from_sim_config()
@@ -250,7 +257,9 @@ def main() -> None:
             on_change=yaml_sync_from_form,
         )
 
-    tab_channels, tab_corr, tab_adv = st.tabs(["Channels", "Correlations", "Advanced"])
+    tab_channels, tab_corr, tab_budget, tab_adv = st.tabs(
+        ["Channels", "Correlations", "Budget shifts", "Advanced"]
+    )
 
     with tab_channels:
         st.caption(
@@ -288,11 +297,14 @@ def main() -> None:
     with tab_corr:
         render_correlations_section(user_dict, n_channels)
 
+    with tab_budget:
+        render_budget_shifts_section(user_dict, n_channels)
+
     with tab_adv:
         st.caption(
             "Edit the full YAML directly. Stays in sync with the form unless you edit here—"
-            "then click **Apply YAML to form** to load it. Editing any field in the other "
-            "tabs updates this panel on the next run."
+            "then click **Apply YAML to form** to load it. Editing fields in Channels, Correlations, "
+            "or Budget shifts updates this panel on the next run."
         )
         st.text_area(
             "YAML",

@@ -4,13 +4,16 @@ Load user YAML and config/default.yaml; fill or generate missing fields per desi
 - number_of_channels: add channels up to N, named "Generated Channel 1", ... with default + noise.
 - Per-channel: missing fields filled with default or default + noise (saturation_config and adstock_decay_config = default only).
 """
+import copy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from scripts.synth_input_classes.input_configurations import InputConfigurations
+from scripts.spend_simulation.budget_shift_auto import generate_auto_budget_shift_rules
+from scripts.spend_simulation.correlation_auto import generate_auto_correlation_entries
+from scripts.synth_input_classes.input_configurations import InputConfigurations, _normalize_budget_shifts
 
 from .defaults import get_default_channel_template
 
@@ -113,6 +116,88 @@ def _fill_channel_missing_fields(
     return out
 
 
+def _channel_names_in_order(merged: Dict[str, Any]) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+    for item in merged.get("channel_list") or []:
+        ch = item.get("channel") or item
+        nm = str(ch.get("channel_name", "")).strip() if isinstance(ch, dict) else ""
+        if nm and nm not in seen:
+            seen.add(nm)
+            out.append(nm)
+    return out
+
+
+def _pair_key(a: str, b: str) -> Tuple[str, str]:
+    return tuple(sorted((a, b)))
+
+
+def apply_seed_append_expansion(merged: Dict[str, Any]) -> None:
+    """
+    Read ``budget_shifts_auto_mode`` / ``correlations_auto_mode``, expand into concrete
+    ``budget_shifts`` / ``correlations`` lists for this run, then **remove** the mode keys
+    so :class:`InputConfigurations` only sees canonical YAML fields.
+    """
+    seed = int(merged.get("seed") or 0)
+    week_range = max(1, int(merged.get("week_range") or 52))
+    names_list = _channel_names_in_order(merged)
+    names_set = set(names_list)
+
+    bs_mode = str(merged.pop("budget_shifts_auto_mode", "none") or "none").strip().lower()
+    if bs_mode not in ("none", "global", "global_and_channel"):
+        bs_mode = "none"
+
+    manual_bs_raw = merged.get("budget_shifts")
+    manual_bs = _normalize_budget_shifts(manual_bs_raw)
+    if bs_mode in ("global", "global_and_channel") and names_list:
+        extra = generate_auto_budget_shift_rules(week_range, names_list, bs_mode, seed)
+        merged["budget_shifts"] = _normalize_budget_shifts(manual_bs + extra)
+    else:
+        merged["budget_shifts"] = manual_bs
+
+    corr_mode = str(merged.pop("correlations_auto_mode", "none") or "none").strip().lower()
+    if corr_mode not in ("none", "random"):
+        corr_mode = "none"
+
+    manual_corr: List[Dict[str, Any]] = []
+    for entry in merged.get("correlations") or []:
+        if isinstance(entry, dict):
+            manual_corr.append(dict(entry))
+
+    ordered_keys: List[Tuple[str, str]] = []
+    last_rho: Dict[Tuple[str, str], float] = {}
+    for entry in manual_corr:
+        pair = entry.get("channels") or []
+        if len(pair) != 2:
+            continue
+        a, b = str(pair[0]).strip(), str(pair[1]).strip()
+        if not a or not b or a == b:
+            continue
+        pk = _pair_key(a, b)
+        if pk not in last_rho:
+            ordered_keys.append(pk)
+        last_rho[pk] = float(entry.get("rho", 0.0))
+
+    if corr_mode == "random" and len(names_list) >= 2:
+        names_sorted = sorted(names_set)
+        for entry in generate_auto_correlation_entries(names_sorted, seed):
+            ch = entry.get("channels") or []
+            if len(ch) != 2:
+                continue
+            a, b = str(ch[0]).strip(), str(ch[1]).strip()
+            if not a or not b or a == b or a not in names_set or b not in names_set:
+                continue
+            pk = _pair_key(a, b)
+            if pk in last_rho:
+                continue
+            rho = float(entry.get("rho", 0.0))
+            rho = max(-1.0, min(1.0, rho))
+            last_rho[pk] = rho
+            ordered_keys.append(pk)
+
+    merged["correlations"] = [{"channels": [k[0], k[1]], "rho": last_rho[k]} for k in ordered_keys]
+
+
 def load_config_from_dict(user_data: Dict[str, Any]) -> InputConfigurations:
     """
     Same as load_config but user config is provided as a dict (merged with default.yaml).
@@ -122,7 +207,9 @@ def load_config_from_dict(user_data: Dict[str, Any]) -> InputConfigurations:
     with open(default_path, "r") as f:
         default_data = yaml.safe_load(f) or {}
 
-    user_data = user_data or {}
+    # Deep copy so downstream merges and validation never mutate the caller's nested lists
+    # (e.g. `budget_shifts`, `correlations`) — important for Streamlit snapshots of the same dict.
+    user_data = copy.deepcopy(user_data or {})
     merged = _deep_merge(user_data, default_data)
     default_channel = _default_channel_template(default_data)
 
@@ -162,6 +249,8 @@ def load_config_from_dict(user_data: Dict[str, Any]) -> InputConfigurations:
         filled_ch = _fill_channel_missing_fields(ch, default_channel, i + 1)
         filled.append({"channel": filled_ch})
     merged["channel_list"] = filled
+
+    apply_seed_append_expansion(merged)
 
     # Step 5: Validate correlations block (if present)
     correlations_raw = merged.get("correlations") or []

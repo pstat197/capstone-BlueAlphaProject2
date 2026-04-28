@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Tuple
 
 import streamlit as st
 
-
 def _yaml_sync_from_form() -> None:
     st.session_state["yaml_manual_edit"] = False
 
@@ -257,6 +256,10 @@ def render_correlations_section(cfg: Dict[str, Any], n_channels: int) -> None:
         "The slider is **correlation of log‑spend**, not of dollar spend in the CSV—results charts use spend‑level ρ. "
         "Leave empty for independent channels (default). "
         "Each channel pair may appear **once**; duplicate entries in pasted YAML are collapsed to a single row (last ρ kept)."
+    )
+
+    st.caption(
+        "**Extra correlation pairs from seed** are chosen under **Random append (same run seed)** above."
     )
 
     names = effective_channel_names(cfg, n_channels)

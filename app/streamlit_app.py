@@ -45,6 +45,7 @@ from app.ui_correlations import (  # noqa: E402
     render_correlations_section,
 )
 from app.ui_results import render_results_panel  # noqa: E402
+from app.ui_seed_extras import render_seed_extra_controls, sync_seed_extra_modes_from_cfg  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
 
 
@@ -81,6 +82,7 @@ def _resync_form_from_sim_config() -> None:
     clear_channel_widget_keys()
     apply_correlations_to_session_rows(st.session_state.sim_config)
     apply_budget_shifts_to_session_rows(st.session_state.sim_config)
+    sync_seed_extra_modes_from_cfg(st.session_state.sim_config)
     st.session_state["_sync_top_widgets_from_sim_config"] = True
     st.session_state["pending_yaml_dump"] = yaml_dump(st.session_state.sim_config)
     st.session_state["yaml_manual_edit"] = False
@@ -257,6 +259,8 @@ def main() -> None:
             on_change=yaml_sync_from_form,
         )
 
+    render_seed_extra_controls()
+
     tab_channels, tab_corr, tab_budget, tab_adv = st.tabs(
         ["Channels", "Correlations", "Budget shifts", "Advanced"]
     )
@@ -335,15 +339,20 @@ def main() -> None:
                 st.warning(w)
             if not (merged.get("channel_list") or []):
                 raise ValueError("Add at least one channel before running.")
-            df_out, run_id, cache_hit, cfg_hash, corr_results = run_with_cache(merged, run_pipeline)
+            # Isolate the run payload from `load_config_from_dict` / loader merges, which can share
+            # references into nested lists (e.g. `budget_shifts`) and must not shrink what we save
+            # for YAML snapshot and `sim_config`.
+            config_for_storage = copy.deepcopy(merged)
+            to_run = copy.deepcopy(merged)
+            df_out, run_id, cache_hit, cfg_hash, corr_results = run_with_cache(to_run, run_pipeline)
             st.session_state["last_df"] = df_out
             st.session_state["last_run_id"] = run_id
             st.session_state["last_cache_hit"] = cache_hit
             st.session_state["last_hash"] = cfg_hash
             st.session_state["last_corr_results"] = corr_results
             st.session_state["last_error"] = None
-            st.session_state.sim_config = copy.deepcopy(merged)
-            st.session_state["pending_yaml_dump"] = yaml_dump(merged)
+            st.session_state.sim_config = config_for_storage
+            st.session_state["pending_yaml_dump"] = yaml_dump(config_for_storage)
             st.session_state.yaml_manual_edit = False
             st.session_state.config_collapsed = True
             st.rerun()

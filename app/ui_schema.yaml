@@ -1,11 +1,12 @@
 # group: layout. † = loader may jitter when auto-filling (excludes saturation/adstock dicts).
 # Paths are relative to channel_list.{i}.
 #
-# Top-level YAML ``budget_shifts`` (optional list) is edited in the Streamlit **Budget shifts** tab
-# (``ui_budget_shifts.py``), not via the per-channel sliders below. Rules: ``type: scale`` (all channels),
-# ``type: scale_channel`` (one ``channel_name``), ``type: reallocate`` (``start_week`` / optional
-# ``end_week`` window, ``from_channel``, ``to_channel``, ``fraction``). Optional **Extra shifts from seed**
-# appends reproducible random rules (see ``scripts/spend_simulation/budget_shift_auto.py``).
+# Top-level ``budget_shifts`` (optional list): manual rows in the **Budget shifts** tab (``ui_budget_shifts.py``).
+# Rules: ``type: scale``, ``type: scale_channel`` (``channel_name``), ``type: reallocate`` (week window,
+# ``from_channel``, ``to_channel``, ``fraction``). Optional ``budget_shifts_auto_mode`` (``none`` | ``global`` |
+# ``global_and_channel``) and ``correlations_auto_mode`` (``none`` | ``random``) come from **Random append**
+# (``ui_seed_extras.py``); ``load_config_from_dict`` expands them into concrete lists using ``seed``,
+# ``week_range``, and channel names (``scripts/config/loader.py``, ``budget_shift_auto.py``, ``correlation_auto.py``).
 
 top_level_sliders: []
 

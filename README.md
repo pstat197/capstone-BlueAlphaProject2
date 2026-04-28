@@ -10,13 +10,13 @@ Additional narrative (Google Doc): [Documentation of Code](https://docs.google.c
 
 | Area | Role |
 |------|------|
-| `scripts/config/` | `default.yaml`, `loader.py` (`load_config`, `load_config_from_dict`), `defaults.py`, RNG helpers. Merges user YAML over defaults, fills missing channel fields, optional `number_of_channels` expansion, validates `correlations`. |
+| `scripts/config/` | `default.yaml`, `loader.py` (`load_config`, `load_config_from_dict`, `apply_seed_append_expansion`), `defaults.py`, RNG helpers. Merges user YAML over defaults, fills missing channel fields, optional `number_of_channels` expansion, expands **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** into lists, validates `correlations`. |
 | `scripts/synth_input_classes/` | `InputConfigurations` and `Channel` dataclasses: parsing from dict, `normalize_seasonality_config` on each channel, global adstock/saturation flags. |
 | `scripts/revenue_simulation/` | `revenue_generation.py` (saturation, adstock, ROI, baseline, seasonality, noise), `seasonality_fit.py` (Fourier fit, sin to Fourier, evaluation). |
 | `scripts/spend_simulation/` | `spend_generation.py` (independent gamma per cell **or** correlated lognormal draw from YAML `correlations`, then `budget_shifts`, then toggle masks), `correlation_analysis.py`, `spend_noise.py`, `pairwise_summary.py`. |
 | `scripts/impressions_simulation/` | `impressions_generation.py` (CPM, impression noise, masks). |
 | `scripts/main.py` | `run_simulation`, `construct_csv`, CLI entry that reads YAML (see [Config loading paths](#config-loading-paths)). |
-| `app/` | `streamlit_app.py` (layout, tabs, run/cache), `ui_channel_form.py`, `ui_config_merge.py`, `ui_seasonality_panel.py`, `ui_correlations.py`, `ui_results.py` (charts, correlation panel, data preview), `ui_help_markdown.py`, `ui_schema.yaml`, `theme.py`, `default_channel.py`, `cache.py`, `pipeline_runner.py` (calls `load_config_from_dict` + `run_simulation`, no Streamlit). |
+| `app/` | `streamlit_app.py` (layout, tabs, run/cache), `ui_channel_form.py`, `ui_config_merge.py`, `ui_seed_extras.py` (simulation-settings seed-append modes), `ui_seasonality_panel.py`, `ui_correlations.py`, `ui_budget_shifts.py`, `ui_results.py` (charts, correlation panel, data preview), `ui_help_markdown.py`, `ui_schema.yaml`, `theme.py`, `default_channel.py`, `cache.py`, `pipeline_runner.py` (calls `load_config_from_dict` + `run_simulation`, no Streamlit). |
 | `tests/` | Pytest modules mirroring config, spend, impressions, revenue, pipeline, toggles, correlations, seasonality merge/fit, UI toggle helpers. |
 | `example.yaml` | Sample multi-channel config for local runs. |
 
@@ -75,9 +75,9 @@ Shorter UI-specific notes live in [app/README.md](app/README.md). The app prepen
 
 There are two ways a dict becomes an `InputConfigurations` object:
 
-1. **`scripts.config.loader.load_config(path)` or `load_config_from_dict(user_dict)`** (used by tests, `app/pipeline_runner.run_pipeline`, and recommended for any code that should match the UI): reads `scripts/config/default.yaml`, deep-merges the user dict on top, fills missing per-channel keys from the default channel template, optionally grows `channel_list` to `number_of_channels` with noised numerics, validates `correlations` channel names and `rho` in `[-1, 1]`, initializes the global RNG from `seed` when present, then calls `InputConfigurations.from_yaml_dict(merged, default_channel_template=...)`.
+1. **`scripts.config.loader.load_config(path)` or `load_config_from_dict(user_dict)`** (used by tests, `app/pipeline_runner.run_pipeline`, and recommended for any code that should match the UI): reads `scripts/config/default.yaml`, deep-merges the user dict on top, fills missing per-channel keys from the default channel template, optionally grows `channel_list` to `number_of_channels` with noised numerics, expands **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** into concrete `budget_shifts` / `correlations` via **`apply_seed_append_expansion`**, validates `correlations` channel names and `rho` in `[-1, 1]`, initializes the global RNG from `seed` when present, then calls `InputConfigurations.from_yaml_dict(merged, default_channel_template=...)`.
 
-2. **`python -m scripts.main` with a YAML file** (see [Running the pipeline](#running-the-pipeline)): currently uses `yaml.safe_load` and `InputConfigurations.from_yaml_dict(data)` **without** the loader merge. Channel rows still pick up defaults for missing keys via `_get_defaults()` inside `from_yaml_dict`, but top-level defaults, `number_of_channels` expansion, and loader-only validation are not applied on that path. For behavior identical to the Streamlit app, run through `load_config` or `load_config_from_dict` in your own script.
+2. **`python -m scripts.main` with a YAML file** (see [Running the pipeline](#running-the-pipeline)): currently uses `yaml.safe_load` and `InputConfigurations.from_yaml_dict(data)` **without** the loader merge. Channel rows still pick up defaults for missing keys via `_get_defaults()` inside `from_yaml_dict`, but top-level defaults, `number_of_channels` expansion, **`apply_seed_append_expansion`** (so **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** are ignored), and loader-only validation are not applied on that path. For behavior identical to the Streamlit app, run through `load_config` or `load_config_from_dict` in your own script.
 
 ---
 
@@ -126,6 +126,7 @@ python -m pytest tests/test_pipeline.py -q
 ```
 YAML (or merged dict)
     → load_config_from_dict / load_config  →  merged dict
+    → apply_seed_append_expansion (auto modes → concrete budget_shifts / correlations)
     → InputConfigurations.from_yaml_dict     →  InputConfigurations + Channel objects
 
 InputConfigurations
@@ -148,9 +149,36 @@ Weekly spend correlations are computed from `spend_matrix` inside `run_simulatio
 
 ## Configuration and YAML
 
-- **Top-level keys** typically include `run_identifier`, `week_range`, `seed`, `channel_list`, optional `correlations`, optional `adstock` / `saturation` global sections, optional `number_of_channels`, and optional **`budget_shifts`** (list of rules applied after the base spend draw: `type: scale` multiplies all channels in an inclusive 1-based week range; `type: scale_channel` multiplies one `channel_name` in a week range; `type: reallocate` moves a fraction from `from_channel` to `to_channel` each week in `[start_week, end_week]` when `end_week` is set, otherwise from `start_week` through the end of the horizon). See `example.yaml` comments and `tests/test_spend_generation.py`.
+- **Top-level keys** typically include `run_identifier`, `week_range`, `seed`, `channel_list`, optional `correlations`, optional **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** (seed-append intent; expanded in the loader), optional `adstock` / `saturation` global sections, optional `number_of_channels`, and optional **`budget_shifts`** (manual rules applied after the base spend draw: `type: scale` multiplies all channels in an inclusive 1-based week range; `type: scale_channel` multiplies one `channel_name` in a week range; `type: reallocate` moves a fraction from `from_channel` to `to_channel` each week in `[start_week, end_week]` when `end_week` is set, otherwise from `start_week` through the end of the horizon). See `example.yaml` comments and `tests/test_spend_generation.py`.
 - **Each channel** (under `channel_list` as `- channel: { ... }`) includes at least: `channel_name`, `cpm`, `spend_range`, `true_roi`, `baseline_revenue`, `trend_slope` (linear drift on baseline per week), `seasonality_config` (often `{}`), `saturation_config`, `adstock_decay_config`, `spend_sampling_gamma_params`, `noise_variance`, plus optional availability and effect toggles (see [Channel availability and effect toggles](#channel-availability-and-effect-toggles)).
 - **`scripts/config/default.yaml`** is the canonical default channel template used by the loader for fills and generated channels.
+
+---
+
+## Streamlit: seeded random `budget_shifts` and `correlations` (YAML intent + loader expansion)
+
+**Random append (same run seed)** lives under **Simulation settings** in `app/ui_seed_extras.py` (outside tabs so Streamlit always records the choice). The merged config and YAML snapshots store **intent** in two optional top-level keys:
+
+- **`budget_shifts_auto_mode`:** `none` | `global` | `global_and_channel` (defaults in `scripts/config/default.yaml`).
+- **`correlations_auto_mode`:** `none` | `random`.
+
+`app/ui_config_merge.py` writes them beside manual **`budget_shifts`** / **`correlations`**. **`load_config_from_dict`** (`scripts/config/loader.py`) runs **`apply_seed_append_expansion`**, which turns those modes into concrete rules using **`seed`**, **`week_range`**, and channel names, then **drops** the mode keys before **`InputConfigurations.from_yaml_dict`**. The same YAML therefore reproduces the same effective lists. Generators use **`SeedSequence([seed, 0xB05E11AF])`** and **`0xC0FFA1AB`**, so they do not perturb the main spend RNG sequence.
+
+After **Run simulation**, `sim_config` and the results YAML snapshot use a **deep copy** of the merged dict; `yaml_dump` sanitizes NumPy scalars. The snapshot shows the two **`*_auto_mode`** keys plus manual lists (not the post-expansion-only view inside `InputConfigurations`). Disk cache hashing (`app/cache.py` **`canonical_config_hash`**) includes those keys so cache hits match intent.
+
+### Random `budget_shifts` (`scripts/spend_simulation/budget_shift_auto.py`)
+
+- **UI labels:** *None*; *Global — random all-channel scales + bounded reallocates*; *Global + per-channel — also random single-channel scales*.
+- **RNG:** `numpy.random.default_rng(numpy.random.SeedSequence([seed, 0xB05E11AF]))`.
+- **What gets built:** A pseudo-random number of rules (for example 2–4 in *Global*, 3–6 in *Global + per-channel*): **`scale`**, **`reallocate`**, and in *Global + per-channel* often **`scale_channel`**; if that mode finishes without any `scale_channel`, one may be **appended** when at least one channel exists (see `budget_shift_auto.py`).
+- **Order:** Manual rules normalized first, auto rules concatenated after; `_apply_budget_shifts` runs the combined list in order.
+
+### Random `correlations` (`scripts/spend_simulation/correlation_auto.py`)
+
+- **UI:** **Extra correlation pairs** — *None* vs *Random pairs (same seed)*.
+- **RNG:** `numpy.random.default_rng(numpy.random.SeedSequence([seed, 0xC0FFA1AB]))`.
+- **What gets built:** **Sorted** channel names, all unordered pairs shuffled, random `K ∈ {1, …, min(3, #pairs)}`, each **ρ ~ Uniform(−0.92, 0.92)** (**copula correlation in log-spend**, same meaning as manual sliders).
+- **Conflict policy:** Auto pairs are added only when the unordered pair is **not** already manual; **manual ρ wins**.
 
 ---
 
@@ -217,7 +245,7 @@ Each row is one week. Columns include `week`, total `revenue` (sum of per-channe
 
 The analysis works on the **simulated spend matrix** (dollar levels per week per channel): a **static Pearson matrix** over the full run, **rolling Pearson** correlations with default window **12 weeks** (capped by run length; see `analyze_spend_correlations` in `correlation_analysis.py`), per-channel average absolute correlation, and a **`pairwise_summary`** (from `pairwise_summary.py`) that labels drift in rolling spend-ρ between early and late windows.
 
-YAML **`correlations`** is a list of `{ "channels": ["A", "B"], "rho": <float in [-1, 1]> }`. Those `rho` values feed the **log-space multivariate normal** in `generate_spend` when the list is non-empty. **`loader.load_config`** validates that each pair names two real channels after merge. The **CLI** prints `print_correlation_report`. The Streamlit **Correlations** tab lets you edit the same structure in the UI; the **results** correlation tab (see below) shows heatmaps, badges for **observed spend ρ**, gray parenthetical **configured log-copula ρ** when a YAML row exists, rolling charts, and drift labels (see captions in `app/ui_results.py`).
+YAML **`correlations`** is a list of `{ "channels": ["A", "B"], "rho": <float in [-1, 1]> }`. With the loader, optional **`correlations_auto_mode: random`** is expanded into extra list entries (deterministic from **`seed`** and channel names) before validation; the spend stage still sees a plain list. Those `rho` values feed the **log-space multivariate normal** in `generate_spend` when the list is non-empty. **`loader.load_config`** validates that each pair names two real channels after merge. The **CLI** prints `print_correlation_report`. The Streamlit **Correlations** tab edits manual pairs; **Random append** under **Simulation settings** sets **`correlations_auto_mode`**. The **results** correlation tab (see below) shows heatmaps, badges for **observed spend ρ**, gray parenthetical **configured log-copula ρ** when a row exists, rolling charts, and drift labels (see captions in `app/ui_results.py`).
 
 ---
 
@@ -225,15 +253,17 @@ YAML **`correlations`** is a list of `{ "channels": ["A", "B"], "rho": <float in
 
 **Entry:** `streamlit_app.py`. First session: `sim_config` loads from **`app/ui_yaml_io.load_example_text()`** (same idea as `example.yaml`). **`inject_theme_css`** (`theme.py`) applies night mode styling.
 
-**Layout:** **Simulation settings** on the main page (**Week range**, **Run Name** / run identifier, **Random seed**). **Settings** appear in the **sidebar** and again inside a main-page **popover** (duplicate widgets use prefixed keys so Streamlit does not collide). **Tabs:** **Channels**, **Correlations**, **Advanced**.
+**Layout:** **Simulation settings** on the main page (**Week range**, **Run Name** / run identifier, **Random seed**, **Random append** for **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** — same semantics as the section **Streamlit: seeded random `budget_shifts` and `correlations` (YAML intent + loader expansion)** earlier in this file). **Settings** appear in the **sidebar** and again inside a main-page **popover** (duplicate widgets use prefixed keys so Streamlit does not collide). **Tabs:** **Channels**, **Correlations**, **Budget shifts**, **Advanced**.
 
 - **`st.session_state.sim_config`** is the canonical dict. Top-level widgets sync into it on change via **`yaml_sync_from_form`** (marks that the YAML textarea should track the form).
 
-**Channels tab:** Add channels with a name field and **Add channel** (unique names, **`default_channel_dict()`** template). Each channel is an expander driven by **`ui_schema.yaml`** plus custom sections (availability, saturation, adstock reference expanders from **`ui_help_markdown.py`**, **trend slope**, **seasonality** radio: none, repeating cycle, sin, random Fourier, comma pattern; cycle mode uses **`st.data_editor`** and a Plotly preview). **`merge_ui_into_config`** in **`ui_config_merge.py`** deep-copies `sim_config`, collects overrides from all widget keys (including **`sea_*`** seasonality and **`corr_*`** rows), applies **`apply_overrides`**, merges renamed channels, runs **`merge_channel_toggles_into_config`**, and returns **`(merged, warnings)`**. **`ensure_seasonality_widgets_warmed`** runs inside merge so the YAML preview is not empty for seasonality before expanders render.
+**Channels tab:** Add channels with a name field and **Add channel** (unique names, **`default_channel_dict()`** template). Each channel is an expander driven by **`ui_schema.yaml`** plus custom sections (availability, saturation, adstock reference expanders from **`ui_help_markdown.py`**, **trend slope**, **seasonality** radio: none, repeating cycle, sin, random Fourier, comma pattern; cycle mode uses **`st.data_editor`** and a Plotly preview). **`merge_ui_into_config`** in **`ui_config_merge.py`** deep-copies `sim_config`, collects overrides from all widget keys (including **`sea_*`** seasonality, **`corr_*`** correlation rows, **`bs_*`** budget-shift rows, and the seed-append selectboxes), applies **`apply_overrides`**, merges renamed channels, runs **`merge_channel_toggles_into_config`**, and returns **`(merged, warnings)`** including top-level **`budget_shifts_auto_mode`** / **`correlations_auto_mode`**. **`ensure_seasonality_widgets_warmed`** runs inside merge so the YAML preview is not empty for seasonality before expanders render.
 
-**Correlations tab:** Edits the optional **`correlations`** list in session state and merges into config (pairs of channel names and ρ). **`ensure_corr_rows_initialized`** seeds rows from YAML.
+**Correlations tab:** Edits manual **`correlations`** rows (pairs and ρ) into session state for merge. **`ensure_corr_rows_initialized`** seeds rows from YAML. Random extra pairs are controlled from **Simulation settings**, not this tab alone.
 
-**Advanced tab:** **`st.text_area`** bound to **`advanced_yaml`**. If the user has **not** marked manual YAML edit, each rerun performs **`merge_ui_into_config(..., silent=True)`** and overwrites the textarea with **`yaml_dump(merged)`** so the panel tracks the form. Editing the textarea calls **`yaml_mark_dirty`** so the silent overwrite stops until the user applies or resets. **Apply YAML to form** parses YAML, assigns **`sim_config`**, calls **`_resync_form_from_sim_config`** (clears channel/correlation widget keys, reapplies correlation rows), then **`st.rerun`**.
+**Budget shifts tab:** Manual **`budget_shifts`** rules only; seed-based extras use **`budget_shifts_auto_mode`** on the main page.
+
+**Advanced tab:** **`st.text_area`** bound to **`advanced_yaml`**. If the user has **not** marked manual YAML edit, each rerun performs **`merge_ui_into_config(..., silent=True)`** and overwrites the textarea with **`yaml_dump(merged)`** so the panel tracks the form. Editing the textarea calls **`yaml_mark_dirty`** so the silent overwrite stops until the user applies or resets. **Apply YAML to form** parses YAML, assigns **`sim_config`**, calls **`_resync_form_from_sim_config`** (clears channel widget keys, reapplies correlation and budget-shift rows from **`sim_config`**, **`sync_seed_extra_modes_from_cfg`**, syncs week range / seed / run id, queues a fresh **`yaml_dump`**), then **`st.rerun`**.
 
 **Run simulation:** **`merge_ui_into_config(schema)`** (non-silent warnings shown), require at least one channel, then **`run_with_cache(merged, run_pipeline)`**. On success: store **`last_df`**, run id, cache hit flag, config hash, **`last_corr_results`**, copy merged config back to **`sim_config`**, queue **`pending_yaml_dump`**, set **`config_collapsed`** true, **`rerun`**. On failure: **`last_error`** string, **`last_df`** cleared, config panel stays open.
 
@@ -250,7 +280,7 @@ YAML **`correlations`** is a list of `{ "channels": ["A", "B"], "rho": <float in
 - If **`config_collapsed`** is true and a dataframe exists, the app shows a **compact results-only** view: title **Results**, **Edit configuration** (sets flags to resync widgets from **`sim_config`** and reruns), **Download CSV** (filename uses **`last_run_id`**), caption showing run id / cache hit / config hash tail, then the same results content as below.
 - When the config panel is still visible but a previous **`last_df`** exists, a **Latest results** block appears under the form with the same controls.
 
-**Inside the results block:** expander **Configuration (YAML snapshot)** shows **`yaml_dump(sim_config)`**. Three inner tabs:
+**Inside the results block:** expander **Configuration (YAML snapshot)** shows **`yaml_dump(sim_config)`** — the same shape as the Advanced panel after a run: manual **`budget_shifts`** / **`correlations`** plus **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** (expansion into concrete rules happens inside **`load_config_from_dict`**, not in this snapshot). Three inner tabs:
 
 1. **Chart view:** select **totals** or a single channel; optional **Overlay series** (min-max normalized revenue, spend, impressions on one Plotly chart). Respects **night mode** and **colorblind-safe** palette from session state.
 2. **Correlation analysis:** heatmap of **Pearson ρ on weekly spend levels**, pairwise badges, configured **log-copula ρ** in muted text, rolling ρ chart for a chosen pair, multicollinearity-style bars. Rebuilt from CSV + **`sim_config`** when needed so cache hits stay consistent.

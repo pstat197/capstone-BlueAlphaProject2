@@ -400,6 +400,17 @@ def test_generate_auto_budget_shift_rules_reproducible():
     assert any(r.get("type") == "scale_channel" for r in mixed)
 
 
+def test_generate_auto_correlation_entries_reproducible():
+    from scripts.spend_simulation.correlation_auto import generate_auto_correlation_entries
+
+    a = generate_auto_correlation_entries(["B", "A"], 777)
+    b = generate_auto_correlation_entries(["A", "B"], 777)
+    assert a == b
+    assert len(a) == 1
+    assert len(a[0].get("channels") or []) == 2
+    assert -1.0 <= float(a[0]["rho"]) <= 1.0
+
+
 def test_budget_shifts_reallocate_unknown_channel_raises():
     init_rng(0)
     data = {
@@ -601,6 +612,7 @@ def main():
     test_budget_shifts_reallocate_respects_end_week()
     test_budget_shifts_scale_channel_one_channel_only()
     test_generate_auto_budget_shift_rules_reproducible()
+    test_generate_auto_correlation_entries_reproducible()
     test_budget_shifts_reallocate_unknown_channel_raises()
     test_generate_spend_single_week_single_channel()
     test_correlated_spend_shape()

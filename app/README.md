@@ -40,6 +40,8 @@ Night and colorblind flags are mirrored into canonical keys **`night_mode`** and
 
 Single row of widgets: **Week range** (`week_range_num`, minimum 1, no hard maximum), **Run Name** (`run_identifier_input`, labels downloads and captions), **Random seed** (`seed_input`, bound to reproducibility and cache hashing together with the rest of the config). Changes call **`yaml_sync_from_form`** so the Advanced YAML panel can refresh from the merged form state on the next rerun.
 
+**Random append (same run seed):** **`render_seed_extra_controls`** in **`ui_seed_extras.py`** renders the budget-shift and correlation seed-append selectboxes **above** the tab strip so they run on every script execution. (Streamlit only runs the **selected** tab’s body; controls trapped in an inactive tab would not update `session_state`, so merge could treat extras as “none” and leave `budget_shifts: []`.)
+
 ---
 
 ## Tabs
@@ -54,10 +56,11 @@ Single row of widgets: **Week range** (`week_range_num`, minimum 1, no hard maxi
 ### Correlations
 
 - **`render_correlations_section`** (`ui_correlations.py`): table of pairwise channel pairs and ρ, aligned with `sim_config["correlations"]`. Channel name dropdowns track live renames from the Channels tab where possible. Editing rows updates session state for merge into YAML.
+- **Extra correlation pairs from seed:** chosen in **Random append** above; stored as **`correlations_auto_mode`** in merged YAML and expanded in **`load_config_from_dict`** (`correlation_auto.py`); manual pairs win on duplicates.
 
 ### Budget shifts
 
-- **`render_budget_shifts_section`** (`ui_budget_shifts.py`): manual rules for **`budget_shifts`** (global scale, **scale one channel**, bounded **reallocate** windows) plus **Extra shifts from seed** (append-only; cache refreshes when seed, option, week range, or channel names change). Merged via **`merge_budget_shifts_from_widgets`** and **`_normalize_budget_shifts`**. Auto rules are built by **`scripts/spend_simulation/budget_shift_auto.py`**. Session keys use the **`bs_`** prefix; **`clear_widget_keys`** clears them and the extra-option keys on reset.
+- **`render_budget_shifts_section`** (`ui_budget_shifts.py`): manual rules for **`budget_shifts`**. **Extra shifts from seed** are selected in **`ui_seed_extras.py`** (above tabs) as **`budget_shifts_auto_mode`**; **`load_config_from_dict`** expands via **`budget_shift_auto.py`**. Merged via **`merge_budget_shifts_from_widgets`** (manual only). Session keys use the **`bs_`** prefix; **`clear_widget_keys`** clears them and the auto-mode keys on reset.
 
 ### Advanced
 
@@ -110,5 +113,7 @@ If cached CSV predates per-channel **`_revenue`** columns, the UI instructs to c
 | `ui_channel_toggles.py` | Merge availability tables into `sim_config`. |
 | `default_channel.py` | Template dict for newly added channels. |
 | `ui_schema.yaml` | Drives generic per-channel field widgets; header comments document top-level `budget_shifts`. |
+| `ui_seed_extras.py` | Always-visible seed-append controls for `budget_shifts` / `correlations` (above tabs). |
 | `ui_budget_shifts.py` | Merge and UI for optional `budget_shifts` rules. |
-| `scripts/spend_simulation/budget_shift_auto.py` (repo root) | Deterministic extra `budget_shifts` from seed (used by the UI). |
+| `scripts/spend_simulation/budget_shift_auto.py` (repo root) | Deterministic extra `budget_shifts` from seed (used by the loader when **`budget_shifts_auto_mode`** is set). |
+| `scripts/spend_simulation/correlation_auto.py` (repo root) | Deterministic extra `correlations` pairs from seed (used by the UI). |

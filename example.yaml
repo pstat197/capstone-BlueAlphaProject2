@@ -19,6 +19,9 @@
 run_identifier: Example Alpha
 week_range: 26
 seed: 133233
+# Optional: seed-append modes (expanded into budget_shifts / correlations when the sim loads).
+# budget_shifts_auto_mode: none   # none | global | global_and_channel
+# correlations_auto_mode: none    # none | random
 # number_of_channels: 3
 
 channel_list:

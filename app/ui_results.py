@@ -526,7 +526,10 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
         st.session_state.results_chart_scope = scope_options[0]
 
     with st.expander("Configuration (YAML snapshot)", expanded=False):
-        st.caption("Last merged settings (same structure as Advanced YAML).")
+        st.caption(
+            "Last merged settings (same structure as Advanced YAML), including **manual rules plus "
+            "any seed-appended** `correlations` / `budget_shifts` from the Correlations and Budget shifts tabs."
+        )
         st.code(
             yaml_dump(st.session_state.get("sim_config") or {}),
             language="yaml",

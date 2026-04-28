@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Tuple
 import streamlit as st
 
 from app.ui_correlations import effective_channel_names
-from scripts.spend_simulation.budget_shift_auto import generate_auto_budget_shift_rules
 from scripts.synth_input_classes.input_configurations import _normalize_budget_shifts
 
 
@@ -93,8 +92,6 @@ def clear_budget_shift_keys() -> None:
         if k.startswith("bs_") or k in (
             "budget_shift_ui_rows",
             "budget_shift_next_id",
-            "budget_shift_auto_sig",
-            "budget_shift_auto_rules",
         ):
             del st.session_state[k]
 
@@ -218,28 +215,8 @@ def merge_budget_shifts_from_widgets(
                 }
             )
 
-    extra = str(st.session_state.get("budget_shift_extra_option") or "none").strip().lower()
-    if extra not in ("none", "global", "global_and_channel"):
-        extra = "none"
-
-    names_list = list(effective_channel_names(merged, n))
-    auto_list: List[Dict[str, Any]] = []
-    if extra != "none" and names_list:
-        sig = (int(merged.get("seed", 0)), extra, week_cap, tuple(names_list))
-        if st.session_state.get("budget_shift_auto_sig") == sig and "budget_shift_auto_rules" in st.session_state:
-            auto_list = list(st.session_state["budget_shift_auto_rules"])
-        else:
-            auto_list = generate_auto_budget_shift_rules(week_cap, names_list, extra, int(merged.get("seed", 0)))
-            st.session_state["budget_shift_auto_sig"] = sig
-            st.session_state["budget_shift_auto_rules"] = list(auto_list)
-    elif extra == "none":
-        st.session_state.pop("budget_shift_auto_sig", None)
-        st.session_state.pop("budget_shift_auto_rules", None)
-
-    combined = raw_out + auto_list
-
     try:
-        normalized = _normalize_budget_shifts(combined)
+        normalized = _normalize_budget_shifts(raw_out)
     except (TypeError, ValueError) as e:
         if not silent:
             warns.append(f"budget_shifts: could not normalize rules ({e}); cleared.")
@@ -257,20 +234,13 @@ def render_budget_shifts_section(cfg: Dict[str, Any], n_channels: int) -> None:
         "Weeks are **1-based**. **Scale window** multiplies all channels; **Scale one channel** multiplies "
         "a single named channel; **Reallocate** moves a fraction of spend between channels (optional "
         "YAML may omit `end_week` on reallocate to mean through end of run. "
-        "**Extra shifts from seed** append reproducible random rules; they refresh when **Random seed**, "
-        "this option, **Week range**, or **channel names** change."
+        "**Extra shifts from seed** are configured above (**Random append**); they refresh when **Random seed**, "
+        "that option, **Week range**, or **channel names** change."
     )
 
-    st.selectbox(
-        "Extra shifts from seed (appended after manual rules)",
-        options=["none", "global", "global_and_channel"],
-        format_func=lambda x: {
-            "none": "None — manual rules only",
-            "global": "Global — random all-channel scales + bounded reallocates",
-            "global_and_channel": "Global + per-channel — also random single-channel scales",
-        }[x],
-        key="budget_shift_extra_option",
-        on_change=_yaml_sync_from_form,
+    st.caption(
+        "**Extra shifts from seed** are chosen under **Random append (same run seed)** above so they "
+        "still apply when you run from another tab."
     )
 
     week_cap = max(1, int(st.session_state.get("week_range_num", cfg.get("week_range") or 52)))

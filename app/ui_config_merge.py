@@ -205,11 +205,12 @@ def clear_widget_keys() -> None:
             "advanced_yaml",
             "corr_ui_rows",
             "corr_next_id",
+            "corr_extra_option",
             "budget_shift_ui_rows",
             "budget_shift_next_id",
             "budget_shift_extra_option",
-            "budget_shift_auto_sig",
-            "budget_shift_auto_rules",
+            "budget_shifts_auto_mode",
+            "correlations_auto_mode",
         ):
             del st.session_state[k]
     clear_toggle_widget_keys()
@@ -245,6 +246,26 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
     shifts, shift_warns = merge_budget_shifts_from_widgets(merged, silent=silent)
     merged["budget_shifts"] = shifts
     warns.extend(shift_warns)
+
+    bs_mode = str(
+        st.session_state.get("budget_shifts_auto_mode")
+        or merged.get("budget_shifts_auto_mode")
+        or st.session_state.get("budget_shift_extra_option")
+        or "none"
+    ).strip().lower()
+    if bs_mode not in ("none", "global", "global_and_channel"):
+        bs_mode = "none"
+    merged["budget_shifts_auto_mode"] = bs_mode
+
+    corr_mode = str(
+        st.session_state.get("correlations_auto_mode")
+        or merged.get("correlations_auto_mode")
+        or st.session_state.get("corr_extra_option")
+        or "none"
+    ).strip().lower()
+    if corr_mode not in ("none", "random"):
+        corr_mode = "none"
+    merged["correlations_auto_mode"] = corr_mode
 
     toggle_warns = merge_channel_toggles_into_config(merged, silent=silent)
     warns.extend(toggle_warns)

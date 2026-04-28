@@ -682,16 +682,11 @@ def _collect_channel_toggle(
     return patch, warns
 
 
-def merge_channel_toggles_into_config(
-    merged: Dict[str, Any],
-    *,
-    silent: bool = False,
-) -> List[str]:
+def merge_channel_toggles_into_config(merged: Dict[str, Any]) -> List[str]:
     """
     Apply per-channel toggle widgets onto ``merged``.
 
-    Mutates ``merged`` in place. Returns a list of user-facing warnings
-    (empty if silent or if nothing needed flagging).
+    Mutates ``merged`` in place. Returns a list of user-facing warnings.
 
     Top-level ``adstock.global`` / ``saturation.global`` flags from the
     loaded YAML are preserved unchanged — this function never reads or
@@ -709,11 +704,10 @@ def merge_channel_toggles_into_config(
         if not isinstance(ch, dict):
             continue
         patch, per_warns = _collect_channel_toggle(i, week_range)
-        if not silent:
-            warns.extend(per_warns)
+        warns.extend(per_warns)
         ch.update(patch)
 
-    return [] if silent else warns
+    return warns
 
 
 def resync_toggle_state_from_config(cfg: Dict[str, Any]) -> None:

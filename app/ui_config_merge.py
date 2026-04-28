@@ -217,6 +217,12 @@ def clear_widget_keys() -> None:
 
 
 def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tuple[Dict[str, Any], List[str]]:
+    """Merge widget state into a config dict.
+
+    The second tuple element always lists merge warnings (invalid numbers,
+    skipped rules, etc.). The ``silent`` keyword is ignored and kept only so
+    older call sites can pass ``silent=True`` without changes.
+    """
     merged = copy.deepcopy(st.session_state.sim_config)
     merged["week_range"] = int(st.session_state.get("week_range_num", 52))
     merged["run_identifier"] = str(st.session_state.get("run_identifier_input", "run")).strip() or "run"
@@ -239,11 +245,11 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
                 if isinstance(ch, dict):
                     ch["channel_name"] = nm
 
-    corrs, corr_warns = merge_correlations_from_widgets(merged, silent=silent)
+    corrs, corr_warns = merge_correlations_from_widgets(merged)
     merged["correlations"] = corrs
     warns.extend(corr_warns)
 
-    shifts, shift_warns = merge_budget_shifts_from_widgets(merged, silent=silent)
+    shifts, shift_warns = merge_budget_shifts_from_widgets(merged)
     merged["budget_shifts"] = shifts
     warns.extend(shift_warns)
 
@@ -267,7 +273,8 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
         corr_mode = "none"
     merged["correlations_auto_mode"] = corr_mode
 
-    toggle_warns = merge_channel_toggles_into_config(merged, silent=silent)
+    toggle_warns = merge_channel_toggles_into_config(merged)
     warns.extend(toggle_warns)
 
-    return merged, ([] if silent else warns)
+    _ = silent
+    return merged, warns

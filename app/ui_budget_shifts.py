@@ -104,11 +104,7 @@ def apply_budget_shifts_to_session_rows(cfg: Dict[str, Any]) -> None:
     st.session_state.budget_shift_next_id = next_id
 
 
-def merge_budget_shifts_from_widgets(
-    merged: Dict[str, Any],
-    *,
-    silent: bool,
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+def merge_budget_shifts_from_widgets(merged: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Build ``budget_shifts`` YAML list from session widgets, plus optional auto rules."""
     warns: List[str] = []
     n = len(merged.get("channel_list") or [])
@@ -128,21 +124,18 @@ def merge_budget_shifts_from_widgets(
             ew = int(st.session_state.get(f"bs_ew_{rid}", row.get("end_week", sw)))
             factor = float(st.session_state.get(f"bs_factor_{rid}", row.get("factor", 1.0)))
             if sw < 1 or ew < 1:
-                if not silent:
-                    warns.append(f"Budget shift row {rid} (scale): weeks must be ≥ 1; skipped.")
+                warns.append(f"Budget shift row {rid} (scale): weeks must be ≥ 1; skipped.")
                 continue
             if ew < sw:
-                if not silent:
-                    warns.append(
-                        f"Budget shift row {rid} (scale): end_week ({ew}) < start_week ({sw}); skipped."
-                    )
+                warns.append(
+                    f"Budget shift row {rid} (scale): end_week ({ew}) < start_week ({sw}); skipped."
+                )
                 continue
             if sw > week_cap or ew > week_cap:
-                if not silent:
-                    warns.append(
-                        f"Budget shift row {rid} (scale): weeks exceed current week range ({week_cap}); "
-                        "rule kept — extend **Week range** if you need longer horizons."
-                    )
+                warns.append(
+                    f"Budget shift row {rid} (scale): weeks exceed current week range ({week_cap}); "
+                    "rule kept — extend **Week range** if you need longer horizons."
+                )
             raw_out.append({"type": "scale", "start_week": sw, "end_week": ew, "factor": factor})
 
         elif kind == "scale_channel":
@@ -151,16 +144,13 @@ def merge_budget_shifts_from_widgets(
             factor = float(st.session_state.get(f"bs_ch_factor_{rid}", row.get("factor", 1.0)))
             cname = str(st.session_state.get(f"bs_ch_name_{rid}", row.get("channel_name", ""))).strip()
             if sw < 1 or ew < 1:
-                if not silent:
-                    warns.append(f"Budget shift row {rid} (scale one channel): weeks must be ≥ 1; skipped.")
+                warns.append(f"Budget shift row {rid} (scale one channel): weeks must be ≥ 1; skipped.")
                 continue
             if ew < sw:
-                if not silent:
-                    warns.append(f"Budget shift row {rid} (scale one channel): end < start; skipped.")
+                warns.append(f"Budget shift row {rid} (scale one channel): end < start; skipped.")
                 continue
             if not cname or cname not in names_set:
-                if not silent:
-                    warns.append(f"Budget shift row {rid} (scale one channel): unknown channel {cname!r}; skipped.")
+                warns.append(f"Budget shift row {rid} (scale one channel): unknown channel {cname!r}; skipped.")
                 continue
             raw_out.append(
                 {
@@ -178,31 +168,25 @@ def merge_budget_shifts_from_widgets(
             t_name = str(st.session_state.get(f"bs_to_{rid}", row.get("to_channel", ""))).strip()
             frac = float(st.session_state.get(f"bs_frac_{rid}", row.get("fraction", 0.0)))
             if sw < 1 or ew < 1:
-                if not silent:
-                    warns.append(f"Budget shift row {rid} (reallocate): weeks must be ≥ 1; skipped.")
+                warns.append(f"Budget shift row {rid} (reallocate): weeks must be ≥ 1; skipped.")
                 continue
             if ew < sw:
-                if not silent:
-                    warns.append(f"Budget shift row {rid} (reallocate): end_week < start_week; skipped.")
+                warns.append(f"Budget shift row {rid} (reallocate): end_week < start_week; skipped.")
                 continue
             if not f_name or not t_name:
-                if not silent:
-                    warns.append(f"Budget shift row {rid} (reallocate): both channels required; skipped.")
+                warns.append(f"Budget shift row {rid} (reallocate): both channels required; skipped.")
                 continue
             if f_name == t_name:
-                if not silent:
-                    warns.append(f"Budget shift row {rid} (reallocate): from and to must differ; skipped.")
+                warns.append(f"Budget shift row {rid} (reallocate): from and to must differ; skipped.")
                 continue
             if f_name not in names_set or t_name not in names_set:
-                if not silent:
-                    warns.append(
-                        f"Budget shift row {rid} (reallocate): unknown channel "
-                        f"(from={f_name!r}, to={t_name!r}); skipped."
-                    )
+                warns.append(
+                    f"Budget shift row {rid} (reallocate): unknown channel "
+                    f"(from={f_name!r}, to={t_name!r}); skipped."
+                )
                 continue
             if n < 2:
-                if not silent:
-                    warns.append(f"Budget shift row {rid} (reallocate): need at least two channels; skipped.")
+                warns.append(f"Budget shift row {rid} (reallocate): need at least two channels; skipped.")
                 continue
             raw_out.append(
                 {
@@ -218,8 +202,7 @@ def merge_budget_shifts_from_widgets(
     try:
         normalized = _normalize_budget_shifts(raw_out)
     except (TypeError, ValueError) as e:
-        if not silent:
-            warns.append(f"budget_shifts: could not normalize rules ({e}); cleared.")
+        warns.append(f"budget_shifts: could not normalize rules ({e}); cleared.")
         return [], warns
 
     return normalized, warns

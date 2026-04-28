@@ -190,11 +190,7 @@ def _reconcile_corr_row_choices(
     return opts_a, opts_b, a_now, b_now
 
 
-def merge_correlations_from_widgets(
-    merged: Dict[str, Any],
-    *,
-    silent: bool,
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+def merge_correlations_from_widgets(merged: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Build `correlations` YAML list from session widgets; returns (list, warnings)."""
     warns: List[str] = []
     n = len(merged.get("channel_list") or [])
@@ -209,25 +205,21 @@ def merge_correlations_from_widgets(
         b = str(st.session_state.get(f"corr_b_{rid}", row.get("ch1", ""))).strip()
         rho = float(st.session_state.get(f"corr_rho_{rid}", row.get("rho", 0.0)))
         if not a or not b:
-            if not silent:
-                warns.append(f"Correlation row {rid}: both channels must be selected; skipped.")
+            warns.append(f"Correlation row {rid}: both channels must be selected; skipped.")
             continue
         if a == b:
-            if not silent:
-                warns.append(f"Correlation {a}/{b}: channels must differ; skipped.")
+            warns.append(f"Correlation {a}/{b}: channels must differ; skipped.")
             continue
         if a not in names_set or b not in names_set:
-            if not silent:
-                warns.append(f"Correlation {a} / {b}: unknown channel name; skipped.")
+            warns.append(f"Correlation {a} / {b}: unknown channel name; skipped.")
             continue
         if not (-1.0 <= rho <= 1.0):
-            if not silent:
-                warns.append(f"Correlation {a} / {b}: rho clipped to [-1, 1].")
+            warns.append(f"Correlation {a} / {b}: rho clipped to [-1, 1].")
             rho = max(-1.0, min(1.0, rho))
         pair_key = tuple(sorted((a, b)))
         if pair_key not in last_rho:
             ordered_keys.append(pair_key)
-        elif not silent and abs(last_rho[pair_key] - rho) > 1e-12:
+        elif abs(last_rho[pair_key] - rho) > 1e-12:
             warns.append(
                 f"Duplicate pair {pair_key[0]} / {pair_key[1]}: using ρ={rho:.2f} from the lower row "
                 f"(replaces earlier ρ={last_rho[pair_key]:.2f})."

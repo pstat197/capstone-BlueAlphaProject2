@@ -44,33 +44,17 @@ from app.ui_correlations import (  # noqa: E402
     ensure_corr_rows_initialized,
     render_correlations_section,
 )
+from app.ui_prerun import (  # noqa: E402
+    build_run_summary_table,
+    existing_channel_names,
+    informational_merge_warns,
+    next_unique_channel_name,
+    predict_cache_fingerprint,
+    prerun_blocking_issues,
+)
 from app.ui_results import render_results_panel  # noqa: E402
 from app.ui_seed_extras import render_seed_extra_controls, sync_seed_extra_modes_from_cfg  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
-
-
-def _existing_channel_names(cfg: dict) -> list[str]:
-    """Channel names currently in ``cfg.channel_list`` (ignores blanks)."""
-    out: list[str] = []
-    for item in cfg.get("channel_list") or []:
-        ch = item.get("channel") if isinstance(item, dict) else None
-        if not isinstance(ch, dict):
-            ch = item if isinstance(item, dict) else {}
-        nm = ch.get("channel_name")
-        if isinstance(nm, str) and nm.strip():
-            out.append(nm.strip())
-    return out
-
-
-def _next_unique_channel_name(base: str, existing: list[str]) -> str:
-    """Return ``base`` if unused, else ``base 2``, ``base 3``, … (case-insensitive)."""
-    taken = {n.lower() for n in existing}
-    if base.lower() not in taken:
-        return base
-    i = 2
-    while f"{base} {i}".lower() in taken:
-        i += 1
-    return f"{base} {i}"
 
 
 def _resync_form_from_sim_config() -> None:
@@ -295,8 +279,8 @@ def main() -> None:
             st.write("")
             if st.button("Add channel", width="stretch"):
                 base = (new_nm or "").strip() or "New channel"
-                existing = _existing_channel_names(st.session_state.sim_config)
-                nm = _next_unique_channel_name(base, existing)
+                existing = existing_channel_names(st.session_state.sim_config)
+                nm = next_unique_channel_name(base, existing)
                 ch = default_channel_dict()
                 ch["channel_name"] = nm
                 if "channel_list" not in st.session_state.sim_config:
@@ -342,12 +326,45 @@ def main() -> None:
             except Exception as e:
                 st.error(f"Could not apply YAML: {e}")
 
+    merged_for_run, merge_warns = merge_ui_into_config(schema)
+    run_blockers = prerun_blocking_issues(merged_for_run, merge_warns)
+    run_ok = not run_blockers
+
     st.divider()
-    run_clicked = st.button("Run simulation", type="primary", width="content")
+    cfg_hash, cache_pred_hit = predict_cache_fingerprint(merged_for_run)
+    cache_lbl = "hit" if cache_pred_hit else "miss"
+    if run_blockers:
+        st.warning("**Run** is disabled until you fix the issues below — open **Run preview**.")
+
+    with st.expander(
+        f"Run preview — config {cfg_hash[:8]}… · cache {cache_lbl}",
+        expanded=False,
+    ):
+        st.caption("What the next simulation will use (same merge as **Run**).")
+        st.dataframe(build_run_summary_table(merged_for_run), use_container_width=True, hide_index=True)
+        st.caption("(Disk cache prediction for this merged config.)")
+        if run_blockers:
+            st.error("Fix the following before running:")
+            for msg in run_blockers:
+                st.markdown(f"- {msg}")
+        notes = informational_merge_warns(merge_warns)
+        if notes:
+            with st.expander("Non-blocking merge notes", expanded=False):
+                for n in notes:
+                    st.markdown(f"- {n}")
+
+    run_clicked = st.button(
+        "Run simulation",
+        type="primary",
+        width="content",
+        disabled=not run_ok,
+        help="" if run_ok else "Open Run preview and fix the listed issues.",
+    )
 
     if run_clicked:
         try:
-            merged, warns = merge_ui_into_config(schema)
+            merged = merged_for_run
+            warns = merge_warns
             for w in warns:
                 st.warning(w)
             if not (merged.get("channel_list") or []):

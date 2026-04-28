@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from typing import Any, Dict, List, Optional
 
@@ -32,6 +33,7 @@ from app.ui_help_markdown import (
 )
 from app.ui_seasonality_panel import render_seasonality_block
 from app.ui_helpers import get_at, path_string_to_parts
+from app.ui_prerun import existing_channel_names, next_unique_channel_name
 
 
 def yaml_sync_from_form() -> None:
@@ -40,6 +42,30 @@ def yaml_sync_from_form() -> None:
 
 def yaml_mark_dirty() -> None:
     st.session_state["yaml_manual_edit"] = True
+
+
+def duplicate_channel_at_index(i: int) -> None:
+    """Deep-copy channel ``i``, assign a unique name, insert below ``i``, and refresh widget keys."""
+    cfg = st.session_state.sim_config
+    cl = list(cfg.get("channel_list") or [])
+    if not (0 <= i < len(cl)):
+        return
+    existing = existing_channel_names(cfg)
+    item = copy.deepcopy(cl[i])
+    if not isinstance(item, dict):
+        return
+    ch = item.get("channel")
+    if not isinstance(ch, dict):
+        ch = {}
+    base = str(ch.get("channel_name", "Channel")).strip() or "Channel"
+    nm = next_unique_channel_name(base, existing)
+    ch["channel_name"] = nm
+    item["channel"] = ch
+    cl.insert(i + 1, item)
+    cfg["channel_list"] = cl
+    st.session_state["yaml_manual_edit"] = False
+    clear_channel_widget_keys()
+    st.rerun()
 
 
 _default_channel_template: Optional[Dict[str, Any]] = None
@@ -382,13 +408,22 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
         # so toggling a checkbox or adding a pause window no longer snaps the
         # expander shut. With `key` set, `expanded` is only the initial state.
         with st.expander(header, expanded=False, key=f"ch_exp_{i}"):
-            head_l, head_r = st.columns([5, 1])
+            head_l, head_m, head_r = st.columns([4, 1, 1])
             with head_l:
                 st.text_input(
                     "Channel name",
                     key=f"ch_name_{i}",
                     on_change=yaml_sync_from_form,
                 )
+            with head_m:
+                st.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
+                if st.button(
+                    "Duplicate",
+                    key=f"dup_ch_{i}",
+                    type="secondary",
+                    help="Copy this channel (new unique name) right below",
+                ):
+                    duplicate_channel_at_index(i)
             with head_r:
                 st.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
                 if st.button("Remove", key=f"del_ch_{i}", type="secondary", help="Delete this channel"):

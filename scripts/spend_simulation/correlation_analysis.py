@@ -10,6 +10,7 @@ from typing import Dict, List
 
 import numpy as np
 
+from scripts.spend_simulation.correlation_math import safe_corrcoef
 from scripts.spend_simulation.pairwise_summary import build_pairwise_summary
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 
@@ -22,7 +23,7 @@ def compute_static_correlation(spend: np.ndarray) -> np.ndarray:
     Returns:
         (num_channels, num_channels) correlation matrix.
     """
-    return np.corrcoef(spend.T)
+    return safe_corrcoef(spend.T)
 
 
 def compute_rolling_correlation(
@@ -43,7 +44,7 @@ def compute_rolling_correlation(
         raise ValueError(f"Window ({window}) exceeds number of weeks ({T})")
     results = np.zeros((T - window, C, C))
     for t in range(T - window):
-        results[t] = np.corrcoef(spend[t : t + window].T)
+        results[t] = safe_corrcoef(spend[t : t + window].T)
     return results
 
 

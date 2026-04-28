@@ -13,6 +13,7 @@ from plotly.subplots import make_subplots
 from app.cache import cached_dataframe_schema_ok
 from app.ui_chart_constants import ACCENT2, BLUE, CHART_PAL_CVD, ORANGE
 from app.ui_yaml_io import yaml_dump
+from scripts.spend_simulation.correlation_math import safe_corrcoef
 from scripts.spend_simulation.pairwise_summary import build_pairwise_summary
 
 
@@ -427,7 +428,7 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
 
     spend = df[spend_cols].to_numpy(dtype=float)
     t, c = spend.shape
-    static_corr = np.corrcoef(spend.T)
+    static_corr = safe_corrcoef(spend.T)
 
     # Match scripts.spend_simulation.correlation_analysis.analyze_spend_correlations (default window=12).
     roll_window = 12
@@ -436,7 +437,7 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
     drift = np.zeros((c, c))
     if effective_window < t:
         rolling_corr = np.array(
-            [np.corrcoef(spend[i : i + effective_window].T) for i in range(t - effective_window)]
+            [safe_corrcoef(spend[i : i + effective_window].T) for i in range(t - effective_window)]
         )
         edge = min(5, rolling_corr.shape[0])
         drift = rolling_corr[-edge:].mean(axis=0) - rolling_corr[:edge].mean(axis=0)

@@ -210,19 +210,32 @@ def main() -> None:
 
     df = st.session_state.get("last_df")
     show_charts = df is not None
+    collapsed_results = bool(st.session_state.config_collapsed and show_charts)
 
-    if st.session_state.config_collapsed and show_charts:
+    # After a run, `render_results_panel` is tall (charts, tabs). If it sits above the header
+    # row, the main **Settings** popover scrolls away — put title + Settings *above* results.
+    if collapsed_results:
+        top_title, top_settings = st.columns([6, 1])
+        with top_title:
+            st.title("Marketing mix simulator")
+            st.caption("Latest run below. **Settings** stays here while you scroll the results.")
+        with top_settings:
+            st.write("")
+            with st.popover("Settings", width="stretch"):
+                _render_settings_controls(prefix="pop_top")
+        st.divider()
         render_results_panel(df, compact_toolbar=True)
-        return
+        st.divider()
 
-    title_col, settings_col = st.columns([6, 1])
-    with title_col:
-        st.title("Marketing mix simulator")
-        st.caption("Configure the simulation below, then run.")
-    with settings_col:
-        st.write("")
-        with st.popover("Settings", width="stretch"):
-            _render_settings_controls(prefix="pop")
+    if not collapsed_results:
+        title_col, settings_col = st.columns([6, 1])
+        with title_col:
+            st.title("Marketing mix simulator")
+            st.caption("Configure the simulation below, then run.")
+        with settings_col:
+            st.write("")
+            with st.popover("Settings", width="stretch"):
+                _render_settings_controls(prefix="pop")
 
     st.markdown("##### Simulation settings")
     st.caption(

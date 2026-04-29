@@ -4,10 +4,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-import yaml
 import pandas as pd
 import numpy as np
 
+from scripts.config.loader import load_config
 from scripts.spend_simulation.spend_generation import generate_spend
 from scripts.spend_simulation.correlation_analysis import analyze_spend_correlations, print_correlation_report
 from scripts.impressions_simulation.impressions_generation import generate_impressions
@@ -94,16 +94,12 @@ def run_simulation(
 
 
 def main(yaml_path):
-
-    # load config
+    # Load config through the canonical loader path so CLI behavior matches UI/tests:
+    # deep-merge defaults, auto-mode expansion, and validation all apply.
     path = Path(yaml_path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
-
-    with open(path, "r") as f:
-        data = yaml.safe_load(f)
-
-    config = InputConfigurations.from_yaml_dict(data)
+    config = load_config(str(path))
 
     df, corr_results = run_simulation(config)
 
@@ -137,7 +133,10 @@ if __name__ == "__main__":
     yaml_path = args.config or args.config_file
 
     if not yaml_path:
-        parser.error("Provide a YAML config path, e.g. python main.py example.yaml or python main.py -c path/to/config.yaml")
+        parser.error(
+            "Provide a YAML config path, e.g. python -m scripts.main example.yaml "
+            "or python -m scripts.main -c path/to/config.yaml"
+        )
 
     print(f"Running with config: {yaml_path}")
     print("--------------------------------")

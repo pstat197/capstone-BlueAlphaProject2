@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import yaml
 
 from scripts.spend_simulation.budget_shift_auto import generate_auto_budget_shift_rules
@@ -130,6 +131,38 @@ def _channel_names_in_order(merged: Dict[str, Any]) -> List[str]:
 
 def _pair_key(a: str, b: str) -> Tuple[str, str]:
     return tuple(sorted((a, b)))
+
+
+def _validate_correlation_matrix_psd(
+    channel_names_ordered: List[str],
+    correlations_raw: List[Dict[str, Any]],
+    *,
+    tol: float = 1e-8,
+) -> None:
+    """Reject invalid pairwise rho sets that cannot form a PSD correlation matrix."""
+    n = len(channel_names_ordered)
+    if n <= 1:
+        return
+    name_to_idx = {nm: i for i, nm in enumerate(channel_names_ordered)}
+    corr = np.eye(n, dtype=float)
+    for entry in correlations_raw:
+        pair = entry.get("channels") or []
+        if len(pair) != 2:
+            continue
+        a, b = str(pair[0]), str(pair[1])
+        if a not in name_to_idx or b not in name_to_idx or a == b:
+            continue
+        i, j = name_to_idx[a], name_to_idx[b]
+        rho = float(entry.get("rho", 0.0))
+        corr[i, j] = rho
+        corr[j, i] = rho
+
+    min_eig = float(np.linalg.eigvalsh(corr).min())
+    if min_eig < -tol:
+        raise ValueError(
+            "Correlations form a non-PSD matrix; please adjust pairwise rho values "
+            f"(minimum eigenvalue {min_eig:.6f})."
+        )
 
 
 def apply_seed_append_expansion(merged: Dict[str, Any]) -> None:
@@ -268,6 +301,7 @@ def load_config_from_dict(user_data: Dict[str, Any]) -> InputConfigurations:
         rho = float(entry.get("rho", 0.0))
         if not (-1.0 <= rho <= 1.0):
             raise ValueError(f"Correlation rho must be in [-1, 1], got {rho} for {pair}")
+    _validate_correlation_matrix_psd(sorted(channel_names), correlations_raw)
 
     # Step 6: Build (inject default channel so builder uses default.yaml defaults for any missing keys)
     return InputConfigurations.from_yaml_dict(merged, default_channel_template=default_channel)

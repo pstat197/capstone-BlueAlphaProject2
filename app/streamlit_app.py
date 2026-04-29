@@ -166,6 +166,18 @@ def main() -> None:
             st.session_state.sim_config = yaml.safe_load(load_example_text()) or {}
             st.session_state.config_collapsed = False
             clear_widget_keys()
+            for key in (
+                "last_df",
+                "last_run_id",
+                "last_cache_hit",
+                "last_hash",
+                "last_corr_results",
+                "last_error",
+                "results_chart_scope",
+                "corr_pair_select",
+                "overlay_results_charts",
+            ):
+                st.session_state.pop(key, None)
             st.session_state.week_range_num = int(st.session_state.sim_config.get("week_range", 52))
             st.session_state.run_identifier_input = str(
                 st.session_state.sim_config.get("run_identifier", "run")

@@ -176,21 +176,33 @@ def _normalize_budget_shifts(raw: Any) -> List[Dict[str, Any]]:
             raise TypeError(f"budget_shifts[{i}] must be a mapping")
         t = str(item.get("type", "")).strip().lower()
         if t == "scale":
-            sw = int(item["start_week"])
-            factor = float(item["factor"])
+            try:
+                sw = int(item["start_week"])
+                factor = float(item["factor"])
+            except KeyError as exc:
+                raise ValueError(
+                    f"budget_shifts[{i}] scale requires start_week and factor"
+                ) from exc
             ew = int(item.get("end_week", sw))
             if ew < sw:
                 raise ValueError("budget_shifts scale: end_week must be >= start_week")
             out.append({"type": "scale", "start_week": sw, "end_week": ew, "factor": factor})
         elif t == "reallocate":
-            frac = float(item["fraction"])
+            try:
+                frac = float(item["fraction"])
+                sw = int(item["start_week"])
+                from_channel = str(item["from_channel"])
+                to_channel = str(item["to_channel"])
+            except KeyError as exc:
+                raise ValueError(
+                    f"budget_shifts[{i}] reallocate requires start_week, from_channel, to_channel, and fraction"
+                ) from exc
             frac = max(0.0, min(1.0, frac))
-            sw = int(item["start_week"])
             rec: Dict[str, Any] = {
                 "type": "reallocate",
                 "start_week": sw,
-                "from_channel": str(item["from_channel"]),
-                "to_channel": str(item["to_channel"]),
+                "from_channel": from_channel,
+                "to_channel": to_channel,
                 "fraction": frac,
             }
             if "end_week" in item and item["end_week"] is not None:
@@ -200,15 +212,21 @@ def _normalize_budget_shifts(raw: Any) -> List[Dict[str, Any]]:
                 rec["end_week"] = ew
             out.append(rec)
         elif t == "scale_channel":
-            sw = int(item["start_week"])
-            factor = float(item["factor"])
+            try:
+                sw = int(item["start_week"])
+                factor = float(item["factor"])
+                channel_name = str(item["channel_name"])
+            except KeyError as exc:
+                raise ValueError(
+                    f"budget_shifts[{i}] scale_channel requires channel_name, start_week, and factor"
+                ) from exc
             ew = int(item.get("end_week", sw))
             if ew < sw:
                 raise ValueError("budget_shifts scale_channel: end_week must be >= start_week")
             out.append(
                 {
                     "type": "scale_channel",
-                    "channel_name": str(item["channel_name"]),
+                    "channel_name": channel_name,
                     "start_week": sw,
                     "end_week": ew,
                     "factor": factor,

@@ -30,7 +30,7 @@ streamlit run app/streamlit_app.py
 
 ## Settings (sidebar and popover)
 
-The same controls are rendered twice with different widget key prefixes (`sb_` vs `pop_`): **Night mode**, **Colorblind-safe chart colors** (Wong-style palette for Plotly), **Reset to example.yaml** (reloads example config, clears broad widget keys, resets top-level simulation inputs, queues YAML dump), **Clear simulation cache** (deletes files under `app/.cache/runs/`).
+The same controls are rendered twice with different widget key prefixes (`sb_` vs `pop_`): **Night mode**, **Colorblind-safe chart colors** (Wong-style palette for Plotly), **Reset to example.yaml** (reloads example config, clears broad widget keys, clears latest-run outputs, resets top-level simulation inputs, queues YAML dump), **Clear simulation cache** (deletes files under `app/.cache/runs/`).
 
 Night and colorblind flags are mirrored into canonical keys **`night_mode`** and **`colorblind_charts`** via `on_change` callbacks.
 
@@ -50,7 +50,7 @@ Single row of widgets: **Week range** (`week_range_num`, minimum 1, no hard maxi
 
 - Caption points users to per-channel **reference** expanders (noise, saturation, adstock) with formulas from **`ui_help_markdown.py`**.
 - **Add channel:** text field + button appends a row built from **`default_channel_dict()`** with a unique **`channel_name`**, clears channel-scoped widget keys, reruns.
-- **`render_channel_widgets`** (`ui_channel_form.py`): one expander per channel, schema-driven numeric and select fields, curve previews where applicable, **Availability** (enabled, adstock/saturation toggles, pause rules table mapping to YAML `enabled` / `off_ranges` / `sticky_pause_ranges`), **trend slope**, **seasonality** block (`ui_seasonality_panel.py`: one radio among none, repeating cycle, sin, random Fourier, comma pattern; collapsed expander **How seasonality works (all modes)**; cycle path uses cycle length, `st.data_editor` on multipliers, Plotly line chart).
+- **`render_channel_widgets`** (`ui_channel_form.py`): one expander per channel, schema-driven numeric and select fields, curve previews where applicable, **Availability** (enabled, adstock/saturation toggles, pause rules table mapping to YAML `enabled` / `off_ranges` / `sticky_pause_ranges`), **trend slope**, **seasonality** block (`ui_seasonality_panel.py`: one radio among none, repeating cycle, sin, random Fourier, comma pattern; collapsed expander **How seasonality works (all modes)**; cycle path uses cycle length, `st.data_editor` on multipliers, Plotly line chart). Random Fourier now uses deterministic per-channel fallback seeds derived from the run seed when no explicit seasonality seed is provided.
 - **Global effect switches** below the list: two checkboxes write **`adstock.global`** and **`saturation.global`** on `sim_config`.
 
 ### Correlations
@@ -99,7 +99,7 @@ If cached CSV predates per-channel **`_revenue`** columns, the UI instructs to c
 
 ## Caching
 
-`run_with_cache` hashes the merged config (including **`CACHE_VERSION`** in `cache.py`). Hits skip **`run_pipeline`**; misses run the pipeline and save CSV + JSON metadata when the dataframe passes schema validation. Bump **`CACHE_VERSION`** when output columns or semantics change for the same logical config.
+`run_with_cache` hashes the merged config (including **`CACHE_VERSION`** in `cache.py`). Hits skip **`run_pipeline`**; misses run the pipeline and save CSV + JSON metadata when the dataframe passes schema validation. Bump **`CACHE_VERSION`** when output columns or semantics change for the same logical config. The pre-run cache fingerprint check is non-destructive (it does not load or delete cache rows).
 
 ---
 

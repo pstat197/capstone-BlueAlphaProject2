@@ -111,7 +111,12 @@ def _event_spikes(t, prob=0.02, magnitude=(0.5, 1.5), seed=None):
     return spikes
 
 
-def _seasonality(t: np.ndarray, seasonality_config: Dict) -> np.ndarray:
+def _seasonality(
+    t: np.ndarray,
+    seasonality_config: Dict,
+    *,
+    fallback_seed: int | None = None,
+) -> np.ndarray:
     """
     Flexible seasonality generator.
 
@@ -130,7 +135,7 @@ def _seasonality(t: np.ndarray, seasonality_config: Dict) -> np.ndarray:
         normalized = normalize_seasonality_config(seasonality_config)
         if not normalized:
             return np.ones_like(t, dtype=float)
-        return _seasonality(t, normalized)
+        return _seasonality(t, normalized, fallback_seed=fallback_seed)
 
     if stype == "fourier":
         period = int(seasonality_config["period"])
@@ -139,6 +144,8 @@ def _seasonality(t: np.ndarray, seasonality_config: Dict) -> np.ndarray:
         K = seasonality_config.get("K", 2)
         scale = seasonality_config.get("scale", 0.1)
         seed = seasonality_config.get("seed", None)
+        if seed is None:
+            seed = fallback_seed
         s = _fourier_seasonality(t, period, K, scale, seed)
         return 1 + s
 
@@ -154,12 +161,15 @@ def _seasonality(t: np.ndarray, seasonality_config: Dict) -> np.ndarray:
                     mult = evaluate_deterministic_fourier(t, comp)
                     s *= mult
                 else:
+                    comp_seed = comp.get("seed", None)
+                    if comp_seed is None:
+                        comp_seed = fallback_seed
                     val = _fourier_seasonality(
                         t,
                         comp["period"],
                         comp.get("K", 1),
                         comp.get("scale", 0.1),
-                        comp.get("seed", None),
+                        comp_seed,
                     )
                     s *= (1 + val)
 
@@ -176,11 +186,14 @@ def _seasonality(t: np.ndarray, seasonality_config: Dict) -> np.ndarray:
                     s *= 1.0
 
             elif ctype == "spikes":
+                comp_seed = comp.get("seed", None)
+                if comp_seed is None:
+                    comp_seed = fallback_seed
                 val = _event_spikes(
                     t,
                     prob=comp.get("prob", 0.02),
                     magnitude=comp.get("magnitude", (0.5, 1.5)),
-                    seed=comp.get("seed", None)
+                    seed=comp_seed,
                 )
                 s *= (1 + val)
 
@@ -191,21 +204,29 @@ def _seasonality(t: np.ndarray, seasonality_config: Dict) -> np.ndarray:
 
     raise ValueError(f'Unknown seasonality type "{stype}"')
 
-def _generate_baseline_revenue(week_range, base_revenue, trend_slope, seasonality_config):
+def _generate_baseline_revenue(
+    week_range,
+    base_revenue,
+    trend_slope,
+    seasonality_config,
+    *,
+    seasonality_seed: int | None = None,
+):
     t = np.arange(week_range)
     baseline = base_revenue + trend_slope * t
     if seasonality_config:
-        baseline *= _seasonality(t, seasonality_config)
+        baseline *= _seasonality(t, seasonality_config, fallback_seed=seasonality_seed)
     return baseline
 
 def _calculate_channel_revenue(
     channel: Channel,
-    spend: np.ndarray,
+    num_weeks: int,
     impressions: np.ndarray,
     rng: np.random.Generator,
     *,
     adstock_global: bool = True,
     saturation_global: bool = True,
+    seasonality_seed: int | None = None,
 ) -> np.ndarray:
     """
     Compute weekly revenue contribution for a single channel.
@@ -237,7 +258,13 @@ def _calculate_channel_revenue(
     revenue = transformed_imp * float(channel.true_roi)
     trend_slope = float(getattr(channel, "trend_slope", 0.0))
     seasonality_config = getattr(channel, "seasonality_config", None)
-    revenue += _generate_baseline_revenue(len(spend), channel.baseline_revenue, trend_slope, seasonality_config)
+    revenue += _generate_baseline_revenue(
+        num_weeks,
+        channel.baseline_revenue,
+        trend_slope,
+        seasonality_config,
+        seasonality_seed=seasonality_seed,
+    )
 
     noise_cfg = channel.noise_variance or {}
     var_rev = float(noise_cfg.get("revenue", 0.0))
@@ -284,19 +311,23 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
     rng = config.get_rng()
     adstock_global = config.get_adstock_global()
     saturation_global = config.get_saturation_global()
+    run_seed = config.get_seed()
     out = np.zeros((num_weeks, num_channels), dtype=float)
 
     for c, channel in enumerate(channels):
-        cpm = float(channel.get_cpm())
-        channel_spend = (impressions_matrix[:, c].astype(float) * cpm) / 1000.0
         channel_impressions = impressions_matrix[:, c].astype(float)
+        seasonality_seed = int(
+            np.random.SeedSequence([0 if run_seed is None else int(run_seed), int(c), 0x5EA50A1])
+            .generate_state(1)[0]
+        )
         out[:, c] = _calculate_channel_revenue(
             channel,
-            channel_spend,
+            num_weeks,
             channel_impressions,
             rng,
             adstock_global=adstock_global,
             saturation_global=saturation_global,
+            seasonality_seed=seasonality_seed,
         )
 
     return out

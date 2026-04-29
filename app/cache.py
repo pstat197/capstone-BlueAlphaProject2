@@ -74,6 +74,12 @@ def try_load_cached(config_hash: str) -> Optional[Tuple[pd.DataFrame, Dict[str, 
     return df, meta
 
 
+def cache_entry_exists(config_hash: str) -> bool:
+    """Non-destructive existence check for a cache hash."""
+    csv_path, _ = cache_paths(config_hash)
+    return csv_path.is_file()
+
+
 def save_cache(config_hash: str, df: pd.DataFrame, run_identifier: str) -> None:
     csv_path, json_path = cache_paths(config_hash)
     _ensure_cache_dir()

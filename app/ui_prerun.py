@@ -16,9 +16,13 @@ from app.ui_channel_toggles import (
 
 
 def existing_channel_names(cfg: Dict[str, Any]) -> List[str]:
-    """Non-blank channel names in ``cfg.channel_list`` (YAML order)."""
+    """Non-blank effective channel names (live rename widget state wins)."""
     out: List[str] = []
-    for item in cfg.get("channel_list") or []:
+    for i, item in enumerate(cfg.get("channel_list") or []):
+        renamed = st.session_state.get(f"ch_name_{i}")
+        if isinstance(renamed, str) and renamed.strip():
+            out.append(renamed.strip())
+            continue
         ch = item.get("channel") if isinstance(item, dict) else None
         if not isinstance(ch, dict):
             ch = item if isinstance(item, dict) else {}
@@ -156,10 +160,16 @@ def prerun_blocking_issues(merged: Dict[str, Any], merge_warns: List[str]) -> Li
             issues.append(w)
 
     n = len(ch_list)
+    seen_names: set[str] = set()
     for i in range(n):
         nm = str(st.session_state.get(f"ch_name_{i}", "")).strip()
         if not nm:
             issues.append(f"Channel {i + 1}: enter a channel name (or remove the row).")
+        else:
+            lowered = nm.casefold()
+            if lowered in seen_names:
+                issues.append(f"Channel names must be unique (duplicate: {nm!r}).")
+            seen_names.add(lowered)
 
         ch = _channel_dict_at(merged, i)
         roi = ch.get("true_roi")
@@ -174,10 +184,10 @@ def prerun_blocking_issues(merged: Dict[str, Any], merge_warns: List[str]) -> Li
 
 def predict_cache_fingerprint(merged: Dict[str, Any]) -> Tuple[str, bool]:
     """Return (full config hash hex, True if a cache file exists for that hash)."""
-    from app.cache import canonical_config_hash, try_load_cached
+    from app.cache import cache_entry_exists, canonical_config_hash
 
     h = canonical_config_hash(merged)
-    hit = try_load_cached(h) is not None
+    hit = cache_entry_exists(h)
     return h, hit
 
 

@@ -13,7 +13,7 @@ Additional narrative (Google Doc): [Documentation of Code](https://docs.google.c
 | `scripts/config/` | `default.yaml`, `loader.py` (`load_config`, `load_config_from_dict`, `apply_seed_append_expansion`), `defaults.py`, RNG helpers. Merges user YAML over defaults, fills missing channel fields, optional `number_of_channels` expansion, expands **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** into lists, validates `correlations`. |
 | `scripts/synth_input_classes/` | `InputConfigurations` and `Channel` dataclasses: parsing from dict, `normalize_seasonality_config` on each channel, global adstock/saturation flags. |
 | `scripts/revenue_simulation/` | `revenue_generation.py` (saturation, adstock, ROI, baseline, seasonality, noise), `seasonality_fit.py` (Fourier fit, sin to Fourier, evaluation). |
-| `scripts/spend_simulation/` | `spend_generation.py` (independent gamma per cell **or** correlated lognormal draw from YAML `correlations`, then `budget_shifts`, then toggle masks), `correlation_analysis.py`, `spend_noise.py`, `pairwise_summary.py`. |
+| `scripts/spend_simulation/` | `spend_generation.py` (independent gamma per cell **or** correlated lognormal draw from YAML `correlations`, then `budget_shifts`, then toggle masks), `correlation_analysis.py`, `pairwise_summary.py`. |
 | `scripts/impressions_simulation/` | `impressions_generation.py` (CPM, impression noise, masks). |
 | `scripts/main.py` | `run_simulation`, `construct_csv`, CLI entry that reads YAML (see [Config loading paths](#config-loading-paths)). |
 | `app/` | `streamlit_app.py` (layout, tabs, run/cache), `ui_channel_form.py`, `ui_config_merge.py`, `ui_seed_extras.py` (simulation-settings seed-append modes), `ui_seasonality_panel.py`, `ui_correlations.py`, `ui_budget_shifts.py`, `ui_results.py` (charts, correlation panel, data preview), `ui_help_markdown.py`, `ui_schema.yaml`, `theme.py`, `default_channel.py`, `cache.py`, `pipeline_runner.py` (calls `load_config_from_dict` + `run_simulation`, no Streamlit). |
@@ -36,7 +36,8 @@ venv\Scripts\activate
 pip install -e .
 ```
 
-Dependencies are listed in `pyproject.toml` and mirrored in `requirements.txt`: `numpy`, `pandas`, `PyYAML`, `pytest`, `streamlit` (>= 1.28), `plotly` (>= 5.18). Python 3.10+.
+Dependencies are listed in `pyproject.toml` and mirrored in `requirements.txt`: `numpy>=1.25`, `pandas>=2.0`, `PyYAML>=6.0`, `streamlit>=1.28`, `plotly>=5.18`. Python 3.10+.
+Install test-only tooling with extras: `pip install -e ".[tests]"`.
 
 ### Streamlit UI
 
@@ -73,11 +74,11 @@ Shorter UI-specific notes live in [app/README.md](app/README.md). The app prepen
 
 ## Config loading paths
 
-There are two ways a dict becomes an `InputConfigurations` object:
+There are two equivalent ways a dict/YAML becomes an `InputConfigurations` object:
 
-1. **`scripts.config.loader.load_config(path)` or `load_config_from_dict(user_dict)`** (used by tests, `app/pipeline_runner.run_pipeline`, and recommended for any code that should match the UI): reads `scripts/config/default.yaml`, deep-merges the user dict on top, fills missing per-channel keys from the default channel template, optionally grows `channel_list` to `number_of_channels` with noised numerics, expands **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** into concrete `budget_shifts` / `correlations` via **`apply_seed_append_expansion`**, validates `correlations` channel names and `rho` in `[-1, 1]`, initializes the global RNG from `seed` when present, then calls `InputConfigurations.from_yaml_dict(merged, default_channel_template=...)`.
+1. **`scripts.config.loader.load_config(path)` or `load_config_from_dict(user_dict)`** (used by tests, `app/pipeline_runner.run_pipeline`, and any code that should match the UI): reads `scripts/config/default.yaml`, deep-merges the user dict on top, fills missing per-channel keys from the default channel template, optionally grows `channel_list` to `number_of_channels` with noised numerics, expands **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** into concrete `budget_shifts` / `correlations` via **`apply_seed_append_expansion`**, validates `correlations` channel names / `rho` ranges / PSD compatibility, initializes the global RNG from `seed` when present, then calls `InputConfigurations.from_yaml_dict(merged, default_channel_template=...)`.
 
-2. **`python -m scripts.main` with a YAML file** (see [Running the pipeline](#running-the-pipeline)): currently uses `yaml.safe_load` and `InputConfigurations.from_yaml_dict(data)` **without** the loader merge. Channel rows still pick up defaults for missing keys via `_get_defaults()` inside `from_yaml_dict`, but top-level defaults, `number_of_channels` expansion, **`apply_seed_append_expansion`** (so **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** are ignored), and loader-only validation are not applied on that path. For behavior identical to the Streamlit app, run through `load_config` or `load_config_from_dict` in your own script.
+2. **`python -m scripts.main` with a YAML file** (see [Running the pipeline](#running-the-pipeline)): now uses **`load_config`** internally, so CLI runs match Streamlit and test behavior (default merge + auto-mode expansion + validations).
 
 ---
 
@@ -91,15 +92,6 @@ python -m scripts.main -c path/to/config.yaml
 
 Writes a timestamped CSV under `output/` and prints a short preview plus correlation report text when spend correlation analysis runs.
 
-For full default merge behavior, you can instead run a one-liner from the repo root:
-
-```python
-from scripts.config.loader import load_config
-from scripts.main import run_simulation
-cfg = load_config("example.yaml")
-df, corr = run_simulation(cfg)
-```
-
 ---
 
 ## Running tests
@@ -110,7 +102,7 @@ df, corr = run_simulation(cfg)
 pytest tests/ -q
 ```
 
-**Legacy runner:** `python test.py` imports a fixed list of test modules and calls each module’s `main()`-style entry. It does not automatically include every file that exists under `tests/` today. Use **`pytest tests/`** when in doubt.
+`python test.py` is now a thin wrapper around `pytest tests/ -q`.
 
 Single file examples:
 
@@ -223,7 +215,7 @@ Fully disabled channels return zeros for the entire run (no baseline, no noise, 
 
 **Role in the model:** Seasonality multiplies the **baseline** path only (after trend). It does not change spend or impressions.
 
-**Normalization at load:** `sin` and `categorical` (comma-separated pattern) specs in YAML are converted to **deterministic Fourier** configs (`type: fourier` with `period`, `intercept`, and `coefficients` harmonics) so simulation stays reproducible. Random Fourier (`K`, `scale`, no precomputed coefficients) remains a stochastic seasonal component when you ask for that shape.
+**Normalization at load:** `sin` and `categorical` (comma-separated pattern) specs in YAML are converted to **deterministic Fourier** configs (`type: fourier` with `period`, `intercept`, and `coefficients` harmonics) so simulation stays reproducible. Random Fourier (`K`, `scale`, no precomputed coefficients) remains stochastic in shape, but now uses per-channel deterministic seed fallback from the run seed when `seasonality_config.seed` is not set.
 
 **Runtime (`_seasonality` in `revenue_generation.py`):** Supports normalized `fourier` (deterministic evaluation or random draw), `hybrid` components, and defensively still accepts `sin` / `categorical` dicts by re-normalizing and recursing. Evaluation of fitted curves uses `evaluate_deterministic_fourier`.
 

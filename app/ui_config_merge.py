@@ -276,5 +276,6 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
     toggle_warns = merge_channel_toggles_into_config(merged)
     warns.extend(toggle_warns)
 
-    _ = silent
+    if silent:
+        return merged, []
     return merged, warns

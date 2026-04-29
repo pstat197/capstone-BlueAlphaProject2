@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 
 from scripts.config.loader import load_config
-from scripts.spend_simulation.spend_generation import generate_spend
+from scripts.spend_simulation.spend_generation import generate_spend_with_details
 from scripts.spend_simulation.correlation_analysis import analyze_spend_correlations, print_correlation_report
 from scripts.impressions_simulation.impressions_generation import generate_impressions
 from scripts.revenue_simulation.revenue_generation import generate_revenue
@@ -18,9 +18,9 @@ from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 def construct_csv(
     config: InputConfigurations,
-    spend_matrix: "np.ndarray",  # matrix: weeks x channels
-    impressions_matrix: "np.ndarray",  # matrix: weeks x channels
-    revenue_matrix: "np.ndarray",  # matrix: weeks x channels
+    spend_matrix: np.ndarray,  # matrix: weeks x channels
+    impressions_matrix: np.ndarray,  # matrix: weeks x channels
+    revenue_matrix: np.ndarray,  # matrix: weeks x channels
 ) -> pd.DataFrame:
     """
     Construct a DataFrame: each row corresponds to a week.
@@ -40,26 +40,17 @@ def construct_csv(
     channel_spend_cols = [f"{name}_spend" for name in channel_names]
     channel_revenue_cols = [f"{name}_revenue" for name in channel_names]
 
-    # Build rows
-    data = []
-    for week in range(num_weeks):
-        row: dict = {"week": week + 1}
-        total_impressions = 0
-        total_spend = 0
-        for ch in range(num_channels):
-            imp = impressions_matrix[week, ch]
-            spd = spend_matrix[week, ch]
-            row[channel_impression_cols[ch]] = imp
-            row[channel_spend_cols[ch]] = spd
-            row[channel_revenue_cols[ch]] = float(revenue_matrix[week, ch])
-            total_impressions += imp
-            total_spend += spd
-        row["revenue"] = float(revenue_matrix[week].sum())
-        row["total_impressions"] = total_impressions
-        row["total_spend"] = total_spend
-        data.append(row)
+    data: Dict[str, Any] = {
+        "week": np.arange(1, num_weeks + 1, dtype=int),
+        "revenue": revenue_matrix.sum(axis=1).astype(float),
+        "total_impressions": impressions_matrix.sum(axis=1).astype(float),
+        "total_spend": spend_matrix.sum(axis=1).astype(float),
+    }
+    for i in range(num_channels):
+        data[channel_impression_cols[i]] = impressions_matrix[:, i].astype(float)
+        data[channel_spend_cols[i]] = spend_matrix[:, i].astype(float)
+        data[channel_revenue_cols[i]] = revenue_matrix[:, i].astype(float)
 
-    # One block per channel: impressions, spend, revenue (easier to read in CSV / print(df.head()))
     columns = ["week", "revenue"]
     for i in range(num_channels):
         columns += [
@@ -68,7 +59,7 @@ def construct_csv(
             channel_revenue_cols[i],
         ]
     columns += ["total_impressions", "total_spend"]
-    df = pd.DataFrame(data, columns=columns)
+    df = pd.DataFrame(data)[columns]
     return df
 
 
@@ -77,15 +68,21 @@ def run_simulation(
 ) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
     """Run spend -> impressions -> revenue and return (DataFrame, correlation_results).
 
-    correlation_results is always computed from simulated weekly spend (heatmap, rolling
-    analysis, etc.). The ``pairwise_summary`` lists every unordered channel pair; each
-    row includes ``configured_rho`` only when that pair appears under ``correlations``.
+    correlation_results includes both operational (post-toggle-mask) and generative
+    (pre-toggle-mask) spend correlation analyses.
     """
-    spend_matrix = generate_spend(config)
+    spend_pre_mask, spend_matrix = generate_spend_with_details(config)
 
     corr_results: Optional[Dict[str, Any]] = None
     if spend_matrix.size > 0 and spend_matrix.shape[1] >= 1:
-        corr_results = analyze_spend_correlations(config, spend_matrix)
+        operational = analyze_spend_correlations(config, spend_matrix)
+        generative = analyze_spend_correlations(config, spend_pre_mask)
+        corr_results = {
+            **operational,
+            "operational_corr": operational,
+            "generative_corr": generative,
+            "correlation_basis_default": "operational",
+        }
 
     impressions_matrix = generate_impressions(config, spend_matrix)
     revenue_by_channel = generate_revenue(config, impressions_matrix)

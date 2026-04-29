@@ -47,7 +47,7 @@ From the project root:
 streamlit run app/streamlit_app.py
 ```
 
-Shorter UI-specific notes live in [app/README.md](app/README.md). The app prepends the repo root to `sys.path`; editable install is still recommended for tests and `python -m scripts.main`.
+UI operations notes live in [app/README.md](app/README.md). This root README is the authoritative reference for simulation behavior, YAML semantics, and pipeline details. The app prepends the repo root to `sys.path`; editable install is still recommended for tests and `python -m scripts.main`.
 
 ---
 
@@ -135,7 +135,9 @@ InputConfigurations
         → pandas DataFrame → CSV (CLI: output/; UI: cache + download)
 ```
 
-Weekly spend correlations are computed from `spend_matrix` inside `run_simulation` and returned alongside the DataFrame for reporting and UI tables.
+`run_simulation` computes two spend-correlation views and returns both in `corr_results`:
+- **Operational (post-mask):** after channel on/off and sticky pause masking.
+- **Generative (pre-mask):** immediately after spend draw + budget shifts, before toggle masking.
 
 ---
 
@@ -235,9 +237,9 @@ Each row is one week. Columns include `week`, total `revenue` (sum of per-channe
 
 **Code:** `scripts/spend_simulation/correlation_analysis.py`, invoked from `scripts.main.run_simulation` after `generate_spend`.
 
-The analysis works on the **simulated spend matrix** (dollar levels per week per channel): a **static Pearson matrix** over the full run, **rolling Pearson** correlations with default window **12 weeks** (capped by run length; see `analyze_spend_correlations` in `correlation_analysis.py`), per-channel average absolute correlation, and a **`pairwise_summary`** (from `pairwise_summary.py`) that labels drift in rolling spend-ρ between early and late windows.
+Correlation analysis is computed on weekly spend levels with a **static Pearson matrix**, **rolling Pearson** (default window **12**), per-channel average absolute correlation, and a **`pairwise_summary`** drift label from `pairwise_summary.py`. In the UI, you can switch between **Operational (post-mask)** and **Generative (pre-mask)** spend correlation views.
 
-YAML **`correlations`** is a list of `{ "channels": ["A", "B"], "rho": <float in [-1, 1]> }`. With the loader, optional **`correlations_auto_mode: random`** is expanded into extra list entries (deterministic from **`seed`** and channel names) before validation; the spend stage still sees a plain list. Those `rho` values feed the **log-space multivariate normal** in `generate_spend` when the list is non-empty. **`loader.load_config`** validates that each pair names two real channels after merge. The **CLI** prints `print_correlation_report`. The Streamlit **Correlations** tab edits manual pairs; **Random append** under **Simulation settings** sets **`correlations_auto_mode`**. The **results** correlation tab (see below) shows heatmaps, badges for **observed spend ρ**, gray parenthetical **configured log-copula ρ** when a row exists, rolling charts, and drift labels (see captions in `app/ui_results.py`).
+YAML **`correlations`** is a list of `{ "channels": ["A", "B"], "rho": <float in [-1, 1]> }`. With the loader, optional **`correlations_auto_mode: random`** is expanded into extra list entries (deterministic from **`seed`** and channel names) before validation; the spend stage still sees a plain list. Those `rho` values feed the **log-space multivariate normal** in `generate_spend` when the list is non-empty. **`loader.load_config`** validates channel names, rho bounds, and correlation-matrix PSD compatibility. The **CLI** prints `print_correlation_report`. The Streamlit **Correlations** tab edits manual pairs; **Random append** under **Simulation settings** sets **`correlations_auto_mode`**. The **results** correlation tab (see below) shows heatmaps, badges for **observed spend ρ**, gray parenthetical **configured log-copula ρ** when a row exists, rolling charts, and drift labels (see captions in `app/ui_results.py`).
 
 ---
 
@@ -259,7 +261,7 @@ YAML **`correlations`** is a list of `{ "channels": ["A", "B"], "rho": <float in
 
 **Run simulation:** **`merge_ui_into_config(schema)`** (non-silent warnings shown), require at least one channel, then **`run_with_cache(merged, run_pipeline)`**. On success: store **`last_df`**, run id, cache hit flag, config hash, **`last_corr_results`**, copy merged config back to **`sim_config`**, queue **`pending_yaml_dump`**, set **`config_collapsed`** true, **`rerun`**. On failure: **`last_error`** string, **`last_df`** cleared, config panel stays open.
 
-**`app/cache.py`:** Hash = SHA-256 of sorted JSON including **`CACHE_VERSION`** and the merged config dict. Cache hit returns the CSV from **`app/.cache/runs/`**; miss runs **`run_pipeline`**, then saves CSV + small JSON metadata if the dataframe passes **`cached_dataframe_schema_ok`** (requires each `*_impressions` channel column to have a matching `*_revenue` column). **`corr_results` is `None` on cache hits**; the results UI rebuilds correlation structures from the cached CSV plus current **`sim_config`** when possible.
+**`app/cache.py`:** Hash = SHA-256 of canonical JSON including **`CACHE_VERSION`**, runtime signature (Python / NumPy major.minor), and a normalized merged config dict. Cache hit returns the CSV from **`app/.cache/runs/`**; miss runs **`run_pipeline`**, then saves CSV + small JSON metadata if the dataframe passes **`cached_dataframe_schema_ok`** (requires each `*_impressions` channel column to have a matching `*_revenue` column). **`corr_results` is `None` on cache hits**; the results UI rebuilds correlation structures from the cached CSV plus current **`sim_config`** when needed.
 
 **`app/pipeline_runner.py`:** **`run_pipeline(user_data)`** → **`load_config_from_dict`** → **`run_simulation`** (same stack as tests using **`load_config`**).
 
@@ -275,7 +277,7 @@ YAML **`correlations`** is a list of `{ "channels": ["A", "B"], "rho": <float in
 **Inside the results block:** expander **Configuration (YAML snapshot)** shows **`yaml_dump(sim_config)`** — the same shape as the Advanced panel after a run: manual **`budget_shifts`** / **`correlations`** plus **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** (expansion into concrete rules happens inside **`load_config_from_dict`**, not in this snapshot). Three inner tabs:
 
 1. **Chart view:** select **totals** or a single channel; optional **Overlay series** (min-max normalized revenue, spend, impressions on one Plotly chart). Respects **night mode** and **colorblind-safe** palette from session state.
-2. **Correlation analysis:** heatmap of **Pearson ρ on weekly spend levels**, pairwise badges, configured **log-copula ρ** in muted text, rolling ρ chart for a chosen pair, multicollinearity-style bars. Rebuilt from CSV + **`sim_config`** when needed so cache hits stay consistent.
+2. **Correlation analysis:** switchable basis (**Operational post-mask** vs **Generative pre-mask**), heatmap of **Pearson ρ on weekly spend levels**, pairwise badges, configured **log-copula ρ** in muted text, rolling ρ chart for a chosen pair, multicollinearity-style bars. On cache hits, rebuilt from CSV + **`sim_config`**.
 3. **Data preview:** first 25 rows, rounded floats.
 
 If an **old cached CSV** lacks per-channel revenue columns, the UI explains clearing cache or re-running.

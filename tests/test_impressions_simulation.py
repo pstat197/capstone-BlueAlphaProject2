@@ -2,8 +2,6 @@
 Tests for impressions simulation (generate_impressions).
 Run from project root: python -m tests.test_impressions_simulation  or  python test.py
 """
-from pathlib import Path
-
 import numpy as np
 
 from scripts.config.loader import load_config
@@ -11,19 +9,9 @@ from scripts.impressions_simulation.impressions_generation import generate_impre
 from scripts.spend_simulation.spend_generation import generate_spend
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
-
-
-def _load_example_config():
-    example_path = _project_root() / "example.yaml"
-    assert example_path.exists(), f"example.yaml not found at {example_path}"
-    return load_config(str(example_path))
-
-
-def test_generate_impressions_shape_and_non_negative():
+def test_generate_impressions_shape_and_non_negative(example_config):
     """generate_impressions returns non-negative matrix with same shape as spend_matrix."""
-    config = _load_example_config()
+    config = example_config
     spend = generate_spend(config)
     impressions = generate_impressions(config, spend)
 
@@ -32,15 +20,14 @@ def test_generate_impressions_shape_and_non_negative():
     assert np.all(impressions >= 0.0)
 
 
-def test_generate_impressions_reproducible_with_seed():
+def test_generate_impressions_reproducible_with_seed(example_config_path):
     """With a fixed seed in the config, two runs produce identical impressions."""
-    example_path = _project_root() / "example.yaml"
-    config1 = load_config(str(example_path))
+    config1 = load_config(str(example_config_path))
     spend1 = generate_spend(config1)
     imps1 = generate_impressions(config1, spend1)
 
     # Reload config so RNG is reinitialized with the same seed
-    config2 = load_config(str(example_path))
+    config2 = load_config(str(example_config_path))
     spend2 = generate_spend(config2)
     imps2 = generate_impressions(config2, spend2)
 
@@ -48,13 +35,12 @@ def test_generate_impressions_reproducible_with_seed():
     np.testing.assert_array_almost_equal(imps1, imps2)
 
 
-def test_generate_impressions_cpm_effect_direction():
+def test_generate_impressions_cpm_effect_direction(example_config_path):
     """
     Channels with lower CPM should tend to have higher impressions
     for comparable spend (in expectation).
     """
-    example_path = _project_root() / "example.yaml"
-    config = load_config(str(example_path))
+    config = load_config(str(example_config_path))
     spend = generate_spend(config)
     impressions = generate_impressions(config, spend)
 

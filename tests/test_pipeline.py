@@ -7,29 +7,18 @@ import os
 
 import numpy as np
 
-from scripts.config.loader import load_config
 from scripts.impressions_simulation.impressions_generation import generate_impressions
 from scripts.main import construct_csv
 from scripts.revenue_simulation.revenue_generation import generate_revenue
 from scripts.spend_simulation.spend_generation import generate_spend
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
-
-
-def _load_example_config():
-    example_path = _project_root() / "example.yaml"
-    assert example_path.exists(), f"example.yaml not found at {example_path}"
-    return load_config(str(example_path))
-
-
-def test_full_pipeline_construct_csv_and_shapes(tmp_path):
+def test_full_pipeline_construct_csv_and_shapes(tmp_path, example_config):
     """
     End-to-end: config -> spend -> impressions -> revenue -> construct_csv.
     Validate shapes, column names, and basic properties.
     """
-    config = _load_example_config()
+    config = example_config
     spend = generate_spend(config)
     impressions = generate_impressions(config, spend)
     revenue = generate_revenue(config, impressions)

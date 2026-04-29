@@ -207,6 +207,8 @@ def main() -> None:
     df = st.session_state.get("last_df")
     show_charts = df is not None
     collapsed_results = bool(st.session_state.config_collapsed and show_charts)
+    # When collapsed, only the compact header + results render here; the full editor (tabs, Run)
+    # lives in the `if not collapsed_results` block so it does not appear below the results panel.
 
     # After a run, `render_results_panel` is tall (charts, tabs). If it sits above the header
     # row, the main **Settings** popover scrolls away — put title + Settings *above* results.
@@ -233,175 +235,175 @@ def main() -> None:
             with st.popover("Settings", width="stretch"):
                 _render_settings_controls(prefix="pop")
 
-    st.markdown("##### Simulation settings")
-    st.caption(
-        "Length and labeling for each run. **Random seed** fixes sampling so the same settings reproduce "
-        "the same series and cache behavior."
-    )
-    col_w, col_r, col_s = st.columns(3)
-    with col_w:
-        st.number_input(
-            "Week range",
-            min_value=1,
-            max_value=None,
-            step=1,
-            key="week_range_num",
-            help="Simulation length in weeks.",
-            on_change=yaml_sync_from_form,
-        )
-    with col_r:
-        st.text_input(
-            "Run Name",
-            key="run_identifier_input",
-            placeholder="e.g. Example Alpha",
-            help="Labels CSV downloads and run summaries.",
-            on_change=yaml_sync_from_form,
-        )
-    with col_s:
-        st.number_input(
-            "Random seed",
-            min_value=0,
-            max_value=2_147_483_647,
-            step=1,
-            key="seed_input",
-            help="Fixes randomness so runs and cache keys are reproducible.",
-            on_change=yaml_sync_from_form,
-        )
-
-    render_seed_extra_controls()
-
-    tab_channels, tab_corr, tab_budget, tab_adv = st.tabs(
-        ["Channels", "Correlations", "Budget shifts", "Advanced"]
-    )
-
-    with tab_channels:
+        st.markdown("##### Simulation settings")
         st.caption(
-            "Each row is one media channel with its own spend, response curve, carry-over, and noise. "
-            "Open a channel; optional **reference** expanders under Noise, Saturation, and Adstock explain formulas and when to use each option."
+            "Length and labeling for each run. **Random seed** fixes sampling so the same settings reproduce "
+            "the same series and cache behavior."
         )
-        row_a, row_b = st.columns([4, 1])
-        with row_a:
-            new_nm = st.text_input(
-                "Name for new channel",
-                key="new_channel_name",
-                placeholder="e.g. TikTok",
+        col_w, col_r, col_s = st.columns(3)
+        with col_w:
+            st.number_input(
+                "Week range",
+                min_value=1,
+                max_value=None,
+                step=1,
+                key="week_range_num",
+                help="Simulation length in weeks.",
                 on_change=yaml_sync_from_form,
             )
-        with row_b:
-            st.write("")
-            if st.button("Add channel", width="stretch"):
-                base = (new_nm or "").strip() or "New channel"
-                existing = existing_channel_names(st.session_state.sim_config)
-                nm = next_unique_channel_name(base, existing)
-                ch = default_channel_dict()
-                ch["channel_name"] = nm
-                if "channel_list" not in st.session_state.sim_config:
-                    st.session_state.sim_config["channel_list"] = []
-                st.session_state.sim_config["channel_list"].append({"channel": ch})
-                st.session_state["yaml_manual_edit"] = False
-                clear_channel_widget_keys()
-                st.rerun()
+        with col_r:
+            st.text_input(
+                "Run Name",
+                key="run_identifier_input",
+                placeholder="e.g. Example Alpha",
+                help="Labels CSV downloads and run summaries.",
+                on_change=yaml_sync_from_form,
+            )
+        with col_s:
+            st.number_input(
+                "Random seed",
+                min_value=0,
+                max_value=2_147_483_647,
+                step=1,
+                key="seed_input",
+                help="Fixes randomness so runs and cache keys are reproducible.",
+                on_change=yaml_sync_from_form,
+            )
 
-        if n_channels > 0:
-            render_channel_widgets(schema, user_dict, n_channels)
-        else:
-            st.info("Add at least one channel to run the simulation.")
+        render_seed_extra_controls()
 
-    with tab_corr:
-        render_correlations_section(user_dict, n_channels)
-
-    with tab_budget:
-        render_budget_shifts_section(user_dict, n_channels)
-
-    with tab_adv:
-        st.caption(
-            "Edit the full YAML directly. Stays in sync with the form unless you edit here—"
-            "then click **Apply YAML to form** to load it. Editing fields in Channels, Correlations, "
-            "or Budget shifts updates this panel on the next run."
+        tab_channels, tab_corr, tab_budget, tab_adv = st.tabs(
+            ["Channels", "Correlations", "Budget shifts", "Advanced"]
         )
-        st.text_area(
-            "YAML",
-            height=320,
-            key="advanced_yaml",
-            label_visibility="collapsed",
-            on_change=yaml_mark_dirty,
+
+        with tab_channels:
+            st.caption(
+                "Each row is one media channel with its own spend, response curve, carry-over, and noise. "
+                "Open a channel; optional **reference** expanders under Noise, Saturation, and Adstock explain formulas and when to use each option."
+            )
+            row_a, row_b = st.columns([4, 1])
+            with row_a:
+                new_nm = st.text_input(
+                    "Name for new channel",
+                    key="new_channel_name",
+                    placeholder="e.g. TikTok",
+                    on_change=yaml_sync_from_form,
+                )
+            with row_b:
+                st.write("")
+                if st.button("Add channel", width="stretch"):
+                    base = (new_nm or "").strip() or "New channel"
+                    existing = existing_channel_names(st.session_state.sim_config)
+                    nm = next_unique_channel_name(base, existing)
+                    ch = default_channel_dict()
+                    ch["channel_name"] = nm
+                    if "channel_list" not in st.session_state.sim_config:
+                        st.session_state.sim_config["channel_list"] = []
+                    st.session_state.sim_config["channel_list"].append({"channel": ch})
+                    st.session_state["yaml_manual_edit"] = False
+                    clear_channel_widget_keys()
+                    st.rerun()
+
+            if n_channels > 0:
+                render_channel_widgets(schema, user_dict, n_channels)
+            else:
+                st.info("Add at least one channel to run the simulation.")
+
+        with tab_corr:
+            render_correlations_section(user_dict, n_channels)
+
+        with tab_budget:
+            render_budget_shifts_section(user_dict, n_channels)
+
+        with tab_adv:
+            st.caption(
+                "Edit the full YAML directly. Stays in sync with the form unless you edit here—"
+                "then click **Apply YAML to form** to load it. Editing fields in Channels, Correlations, "
+                "or Budget shifts updates this panel on the next run."
+            )
+            st.text_area(
+                "YAML",
+                height=320,
+                key="advanced_yaml",
+                label_visibility="collapsed",
+                on_change=yaml_mark_dirty,
+            )
+            if st.button("Apply YAML to form", type="secondary"):
+                try:
+                    parsed = yaml.safe_load(st.session_state.advanced_yaml)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("YAML must parse to a mapping (dict).")
+                    st.session_state.sim_config = parsed
+                    _resync_form_from_sim_config()
+                    st.success("YAML applied.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Could not apply YAML: {e}")
+
+        merged_for_run, merge_warns = merge_ui_into_config(schema)
+        run_blockers = prerun_blocking_issues(merged_for_run, merge_warns)
+        run_ok = not run_blockers
+
+        st.divider()
+        cfg_hash, cache_pred_hit = predict_cache_fingerprint(merged_for_run)
+        cache_lbl = "hit" if cache_pred_hit else "miss"
+        if run_blockers:
+            st.warning("**Run** is disabled until you fix the issues below — open **Run preview**.")
+
+        with st.expander(
+            f"Run preview — config {cfg_hash[:8]}… · cache {cache_lbl}",
+            expanded=False,
+        ):
+            st.caption("What the next simulation will use (same merge as **Run**).")
+            st.dataframe(build_run_summary_table(merged_for_run), use_container_width=True, hide_index=True)
+            st.caption("(Disk cache prediction for this merged config.)")
+            if run_blockers:
+                st.error("Fix the following before running:")
+                for msg in run_blockers:
+                    st.markdown(f"- {msg}")
+            notes = informational_merge_warns(merge_warns)
+            if notes:
+                with st.expander("Non-blocking merge notes", expanded=False):
+                    for n in notes:
+                        st.markdown(f"- {n}")
+
+        run_clicked = st.button(
+            "Run simulation",
+            type="primary",
+            width="content",
+            disabled=not run_ok,
+            help="" if run_ok else "Open Run preview and fix the listed issues.",
         )
-        if st.button("Apply YAML to form", type="secondary"):
+
+        if run_clicked:
             try:
-                parsed = yaml.safe_load(st.session_state.advanced_yaml)
-                if not isinstance(parsed, dict):
-                    raise ValueError("YAML must parse to a mapping (dict).")
-                st.session_state.sim_config = parsed
-                _resync_form_from_sim_config()
-                st.success("YAML applied.")
+                merged = merged_for_run
+                warns = merge_warns
+                for w in warns:
+                    st.warning(w)
+                if not (merged.get("channel_list") or []):
+                    raise ValueError("Add at least one channel before running.")
+                # Isolate the run payload from `load_config_from_dict` / loader merges, which can share
+                # references into nested lists (e.g. `budget_shifts`) and must not shrink what we save
+                # for YAML snapshot and `sim_config`.
+                config_for_storage = copy.deepcopy(merged)
+                to_run = copy.deepcopy(merged)
+                df_out, run_id, cache_hit, cfg_hash, corr_results = run_with_cache(to_run, run_pipeline)
+                st.session_state["last_df"] = df_out
+                st.session_state["last_run_id"] = run_id
+                st.session_state["last_cache_hit"] = cache_hit
+                st.session_state["last_hash"] = cfg_hash
+                st.session_state["last_corr_results"] = corr_results
+                st.session_state["last_error"] = None
+                st.session_state.sim_config = config_for_storage
+                st.session_state["pending_yaml_dump"] = yaml_dump(config_for_storage)
+                st.session_state.yaml_manual_edit = False
+                st.session_state.config_collapsed = True
                 st.rerun()
             except Exception as e:
-                st.error(f"Could not apply YAML: {e}")
-
-    merged_for_run, merge_warns = merge_ui_into_config(schema)
-    run_blockers = prerun_blocking_issues(merged_for_run, merge_warns)
-    run_ok = not run_blockers
-
-    st.divider()
-    cfg_hash, cache_pred_hit = predict_cache_fingerprint(merged_for_run)
-    cache_lbl = "hit" if cache_pred_hit else "miss"
-    if run_blockers:
-        st.warning("**Run** is disabled until you fix the issues below — open **Run preview**.")
-
-    with st.expander(
-        f"Run preview — config {cfg_hash[:8]}… · cache {cache_lbl}",
-        expanded=False,
-    ):
-        st.caption("What the next simulation will use (same merge as **Run**).")
-        st.dataframe(build_run_summary_table(merged_for_run), use_container_width=True, hide_index=True)
-        st.caption("(Disk cache prediction for this merged config.)")
-        if run_blockers:
-            st.error("Fix the following before running:")
-            for msg in run_blockers:
-                st.markdown(f"- {msg}")
-        notes = informational_merge_warns(merge_warns)
-        if notes:
-            with st.expander("Non-blocking merge notes", expanded=False):
-                for n in notes:
-                    st.markdown(f"- {n}")
-
-    run_clicked = st.button(
-        "Run simulation",
-        type="primary",
-        width="content",
-        disabled=not run_ok,
-        help="" if run_ok else "Open Run preview and fix the listed issues.",
-    )
-
-    if run_clicked:
-        try:
-            merged = merged_for_run
-            warns = merge_warns
-            for w in warns:
-                st.warning(w)
-            if not (merged.get("channel_list") or []):
-                raise ValueError("Add at least one channel before running.")
-            # Isolate the run payload from `load_config_from_dict` / loader merges, which can share
-            # references into nested lists (e.g. `budget_shifts`) and must not shrink what we save
-            # for YAML snapshot and `sim_config`.
-            config_for_storage = copy.deepcopy(merged)
-            to_run = copy.deepcopy(merged)
-            df_out, run_id, cache_hit, cfg_hash, corr_results = run_with_cache(to_run, run_pipeline)
-            st.session_state["last_df"] = df_out
-            st.session_state["last_run_id"] = run_id
-            st.session_state["last_cache_hit"] = cache_hit
-            st.session_state["last_hash"] = cfg_hash
-            st.session_state["last_corr_results"] = corr_results
-            st.session_state["last_error"] = None
-            st.session_state.sim_config = config_for_storage
-            st.session_state["pending_yaml_dump"] = yaml_dump(config_for_storage)
-            st.session_state.yaml_manual_edit = False
-            st.session_state.config_collapsed = True
-            st.rerun()
-        except Exception as e:
-            st.session_state["last_error"] = str(e)
-            st.session_state["last_df"] = None
-            st.session_state.config_collapsed = False
+                st.session_state["last_error"] = str(e)
+                st.session_state["last_df"] = None
+                st.session_state.config_collapsed = False
 
     err: Optional[str] = st.session_state.get("last_error")
     if err:

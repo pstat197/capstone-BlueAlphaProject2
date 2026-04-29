@@ -283,11 +283,29 @@ def _make_rolling_correlation_chart(
 
 def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
     night = st.session_state.get("night_mode", False)
-    names = corr_results["channel_names"]
-    static_corr = corr_results["static_corr"]
-    rolling_corr = corr_results["rolling_corr"]
-    window = corr_results["window"]
-    pairwise = corr_results["pairwise_summary"]
+    mode_options = {"Operational (post-mask spend)": "operational", "Generative (pre-mask spend)": "generative"}
+    has_dual = "operational_corr" in corr_results and "generative_corr" in corr_results
+    selected_mode = "operational"
+    if has_dual:
+        selected_label = st.selectbox(
+            "Correlation basis",
+            options=list(mode_options.keys()),
+            key="corr_basis_select",
+            help=(
+                "Operational uses post-toggle spend (zeros on paused/off weeks). "
+                "Generative uses pre-toggle spend right after draw + budget shifts."
+            ),
+        )
+        selected_mode = mode_options[selected_label]
+        corr_payload = corr_results["operational_corr"] if selected_mode == "operational" else corr_results["generative_corr"]
+    else:
+        corr_payload = corr_results
+
+    names = corr_payload["channel_names"]
+    static_corr = corr_payload["static_corr"]
+    rolling_corr = corr_payload["rolling_corr"]
+    window = corr_payload["window"]
+    pairwise = corr_payload["pairwise_summary"]
 
     st.markdown("---")
     st.markdown("### Channel Spend Correlation Analysis")
@@ -301,7 +319,7 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
         st.caption("Need at least two channels for pairwise summaries and rolling charts.")
 
     m1, m2, m3 = st.columns(3)
-    avg_rho = float(np.mean([v for v in corr_results["avg_abs_corr"].values()]))
+    avg_rho = float(np.mean([v for v in corr_payload["avg_abs_corr"].values()]))
     with m1:
         st.metric(
             "Avg pairwise |rho|",
@@ -311,7 +329,7 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
     with m2:
         st.metric(
             "Most correlated channel",
-            corr_results["most_correlated_channel"],
+            corr_payload["most_correlated_channel"],
             help="Channel with the largest mean |ρ| to every other channel.",
         )
     with m3:
@@ -393,7 +411,7 @@ def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
         st.caption(
             "Per channel: mean |ρ| to all **other** channels. Higher bars flag stronger joint movement with the rest of the mix."
         )
-        for name, val in corr_results["avg_abs_corr"].items():
+        for name, val in corr_payload["avg_abs_corr"].items():
             bar_pct = min(val * 100, 100)
             color = _corr_cell_color(val)
             st.markdown(
@@ -536,15 +554,12 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
             language="yaml",
         )
 
-    # Always prefer recomputing from the saved CSV + current sim_config so pairwise lists stay
-    # complete after code updates and never stay stale vs. the heatmap (session can hold old
-    # last_corr_results from a previous app version or partial dict).
-    rebuilt = _build_corr_results_from_cached_df(df)
-    if rebuilt is not None:
-        st.session_state["last_corr_results"] = rebuilt
-        corr_results = rebuilt
-    else:
-        corr_results = st.session_state.get("last_corr_results")
+    corr_results = st.session_state.get("last_corr_results")
+    if hit or corr_results is None:
+        rebuilt = _build_corr_results_from_cached_df(df)
+        if rebuilt is not None:
+            st.session_state["last_corr_results"] = rebuilt
+            corr_results = rebuilt
 
     tab_chart, tab_corr, tab_data = st.tabs(
         ["Chart view", "Correlation analysis", "Data preview"]

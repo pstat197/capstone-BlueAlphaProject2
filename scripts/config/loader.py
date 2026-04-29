@@ -18,7 +18,7 @@ from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 from .defaults import get_default_channel_template
 
-from .noise import add_noise_to_value, get_default_rng, init_rng
+from .noise import add_noise_to_value
 
 # Default channel template keys that get default-as-is (no noise); all config dicts processed the same way
 NO_NOISE_KEYS = {
@@ -63,6 +63,8 @@ def _deep_merge(user: Any, default: Any) -> Any:
 
 def _add_noise_to_channel_template(
     template: Dict[str, Any],
+    *,
+    rng: np.random.Generator,
 ) -> Dict[str, Any]:
     """Copy template and add normal noise to every numeric field; no noise for NO_NOISE_KEYS."""
     out = {}
@@ -71,11 +73,11 @@ def _add_noise_to_channel_template(
             # Copy dicts so we don't mutate shared defaults
             out[k] = dict(v) if isinstance(v, dict) else v
         elif isinstance(v, dict):
-            out[k] = {kk: add_noise_to_value(float(vv)) for kk, vv in v.items()}
+            out[k] = {kk: add_noise_to_value(float(vv), rng=rng) for kk, vv in v.items()}
         elif isinstance(v, list):
-            out[k] = [add_noise_to_value(float(x)) for x in v]
+            out[k] = [add_noise_to_value(float(x), rng=rng) for x in v]
         elif isinstance(v, (int, float)):
-            out[k] = add_noise_to_value(float(v))
+            out[k] = add_noise_to_value(float(v), rng=rng)
         else:
             out[k] = v
     return out
@@ -85,6 +87,8 @@ def _fill_channel_missing_fields(
     ch: Dict[str, Any],
     default_channel: Dict[str, Any],
     index_1based: int,
+    *,
+    rng: np.random.Generator,
 ) -> Dict[str, Any]:
     """Fill any missing channel fields: default + noise for numerics; config dicts (saturation, adstock, gamma_params, noise_variance) get default only; placeholder name if missing. If cpm is missing, sample from Uniform(cpm_sampling_range)."""
     out = dict(ch)
@@ -98,13 +102,13 @@ def _fill_channel_missing_fields(
                 out[key] = dict(default_val) if isinstance(default_val, dict) else default_val
             elif isinstance(default_val, dict):
                 out[key] = {
-                    k: add_noise_to_value(float(v))
+                    k: add_noise_to_value(float(v), rng=rng)
                     for k, v in default_val.items()
                 }
             elif isinstance(default_val, list):
-                out[key] = [add_noise_to_value(float(x)) for x in default_val]
+                out[key] = [add_noise_to_value(float(x), rng=rng) for x in default_val]
             elif isinstance(default_val, (int, float)):
-                out[key] = add_noise_to_value(float(default_val))
+                out[key] = add_noise_to_value(float(default_val), rng=rng)
             else:
                 out[key] = default_val
     # If cpm not provided, sample per channel from Uniform(cpm_sampling_range)
@@ -113,7 +117,7 @@ def _fill_channel_missing_fields(
         cpm_range = default_channel.get("cpm_sampling_range")
         if isinstance(cpm_range, (list, tuple)) and len(cpm_range) >= 2:
             low, high = float(cpm_range[0]), float(cpm_range[1])
-        out["cpm"] = float(get_default_rng().uniform(low, high))
+        out["cpm"] = float(rng.uniform(low, high))
     return out
 
 
@@ -247,10 +251,7 @@ def load_config_from_dict(user_data: Dict[str, Any]) -> InputConfigurations:
     default_channel = _default_channel_template(default_data)
 
     seed = merged.get("seed")
-    if seed is not None:
-        init_rng(int(seed))
-    else:
-        init_rng(None)
+    merge_rng = np.random.default_rng(int(seed)) if seed is not None else np.random.default_rng()
 
     if not merged.get("run_identifier"):
         merged["run_identifier"] = "run_" + datetime.now().strftime("%Y%m%d_%H%M")
@@ -270,7 +271,7 @@ def load_config_from_dict(user_data: Dict[str, Any]) -> InputConfigurations:
         target_count = int(num_channels_opt)
     if target_count is not None and target_count > len(channel_list):
         for i in range(len(channel_list), target_count):
-            noised = _add_noise_to_channel_template(default_channel)
+            noised = _add_noise_to_channel_template(default_channel, rng=merge_rng)
             noised["channel_name"] = f"Generated Channel {i - len(channel_list) + 1}"
             channel_list.append({"channel": noised})
 
@@ -279,7 +280,7 @@ def load_config_from_dict(user_data: Dict[str, Any]) -> InputConfigurations:
     filled = []
     for i, item in enumerate(channel_list):
         ch = item.get("channel") or item
-        filled_ch = _fill_channel_missing_fields(ch, default_channel, i + 1)
+        filled_ch = _fill_channel_missing_fields(ch, default_channel, i + 1, rng=merge_rng)
         filled.append({"channel": filled_ch})
     merged["channel_list"] = filled
 

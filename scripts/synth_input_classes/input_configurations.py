@@ -2,6 +2,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
+import numpy as np
 from scripts.revenue_simulation.seasonality_fit import normalize_seasonality_config
 
 from .channel import Channel, StickyPauseRange, WeekOffRange
@@ -248,6 +249,7 @@ class InputConfigurations:
     adstock_global: bool = True
     saturation_global: bool = True
     budget_shifts: List[Dict[str, Any]] = field(default_factory=list)
+    rng: np.random.Generator = field(default_factory=np.random.default_rng)
 
     @classmethod
     def from_yaml_dict(
@@ -340,6 +342,7 @@ class InputConfigurations:
         )
 
         budget_shifts = _normalize_budget_shifts(data.get("budget_shifts"))
+        rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
         return cls(
             run_identifier=str(data.get("run_identifier", "")),
             week_range=int(data.get("week_range", 0)),
@@ -349,6 +352,7 @@ class InputConfigurations:
             adstock_global=adstock_global,
             saturation_global=saturation_global,
             budget_shifts=budget_shifts,
+            rng=rng,
         )
 
     def get_run_identifier(self) -> str:
@@ -375,7 +379,6 @@ class InputConfigurations:
     def get_budget_shifts(self) -> List[Dict[str, Any]]:
         return self.budget_shifts
 
-    def get_rng(self):  # -> np.random.Generator (avoid np import at module level)
-        """Return the RNG for this config (same one used during load, seeded with get_seed() if set)."""
-        from scripts.config.noise import get_default_rng
-        return get_default_rng()
+    def get_rng(self) -> np.random.Generator:
+        """Return this run's dedicated RNG instance."""
+        return self.rng

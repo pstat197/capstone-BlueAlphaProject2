@@ -80,9 +80,8 @@ def _generate_independent_spend(config: InputConfigurations) -> np.ndarray:
         spend_range = channels[c].get_spend_range()
         low = spend_range[0] if len(spend_range) >= 1 else 0.0
         high = spend_range[1] if len(spend_range) >= 2 else np.inf
-        for w in range(num_weeks):
-            out[w, c] = rng.gamma(shape, scale)
-            out[w, c] = np.clip(out[w, c], low, high)
+        draws = rng.gamma(shape, scale, size=num_weeks)
+        out[:, c] = np.clip(draws, low, high)
     return out
 
 
@@ -182,9 +181,17 @@ def _apply_channel_toggles(config: InputConfigurations, spend: np.ndarray) -> np
 
 
 def generate_spend(config: InputConfigurations) -> np.ndarray:
+    """Return spend after budget shifts and channel toggle masking."""
+    return generate_spend_with_details(config)[1]
+
+
+def generate_spend_with_details(config: InputConfigurations) -> tuple[np.ndarray, np.ndarray]:
+    """Return (pre_mask_spend, post_mask_spend) for analysis and downstream stages."""
     if config.get_correlations():
         spend = _generate_correlated_spend(config)
     else:
         spend = _generate_independent_spend(config)
     _apply_budget_shifts(spend, config)
-    return _apply_channel_toggles(config, spend)
+    pre_mask = spend.astype(float, copy=True)
+    post_mask = _apply_channel_toggles(config, spend)
+    return pre_mask, post_mask

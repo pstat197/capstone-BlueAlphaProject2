@@ -28,11 +28,26 @@ After `pip install -e .`, from the project root:
 streamlit run app/streamlit_app.py
 ```
 
+Use the **same Python environment** where you installed dependencies. If the **Bayesian MMM (Meridian)** tab says Meridian is missing, you are almost certainly launching Streamlit with a different interpreter than the one where you installed the optional stack.
+
+**Recommended (uses `.venv` in this repo):**
+
+```bash
+pip install -e ".[mmm]"
+./scripts/run_streamlit.sh
+```
+
+Or explicitly:
+
+```bash
+.venv/bin/streamlit run app/streamlit_app.py
+```
+
 See [app/README.md](app/README.md) for UI behavior and options.
 
 Requirements (declared in `pyproject.toml` / `requirements.txt`): `numpy`, `pandas`, `matplotlib`, `PyYAML`, `pytest`, `streamlit`, `plotly`.
 
-**Bayesian MMM tab (optional):** install Google Meridian on top of the base deps — `pip install -r requirements-meridian.txt` or `pip install -e ".[mmm]"` (Python 3.11–3.13 recommended), then restart Streamlit.
+**Bayesian MMM tab (optional):** TensorFlow + Google Meridian — `pip install -r requirements-meridian.txt` or `pip install -e ".[mmm]"` (Python 3.11–3.13 recommended), then **restart Streamlit from that same environment** (`./scripts/run_streamlit.sh` or `.venv/bin/streamlit`).
 
 ---
 

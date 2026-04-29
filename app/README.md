@@ -20,6 +20,14 @@ From the repository root:
 streamlit run app/streamlit_app.py
 ```
 
+**Meridian tab:** install optional deps in this same environment (`pip install -r requirements-meridian.txt` or `pip install -e ".[mmm]"` from the repo root). Then either run Streamlit with that interpreter explicitly or use the helper (uses `.venv`):
+
+```bash
+./scripts/run_streamlit.sh
+```
+
+If the MMM tab claims Meridian is not installed, the Streamlit process is using a different Python than the one where `google-meridian` was installed.
+
 The app also inserts the repo root on `sys.path` for `scripts` imports when you run the file directly; editable install is still recommended for tests and `python -m scripts.main`.
 
 ## Behavior

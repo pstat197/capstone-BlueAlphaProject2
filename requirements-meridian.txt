@@ -1,5 +1,10 @@
 # Optional: Bayesian MMM (Google Meridian) — second tab in Streamlit.
-# Install on top of base deps. Google recommends Python 3.11–3.13.
+# Install on top of base deps (same venv you use for `streamlit run`).
+# Pulls TensorFlow, TensorFlow Probability (tfp-nightly), tf-keras, etc. as declared by google-meridian.
+#
 #   pip install -r requirements.txt
 #   pip install -r requirements-meridian.txt
+#
+# Or in one shot from pyproject extras:
+#   pip install -e ".[mmm]"
 google-meridian>=1.4.0

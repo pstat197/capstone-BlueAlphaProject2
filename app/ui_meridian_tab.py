@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import altair as alt
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -81,7 +80,7 @@ MCMC_PRESETS: Dict[str, Tuple[int, int, int, int, int]] = {
 
 
 def _budget_recommendation_html(df_rec: pd.DataFrame) -> str:
-    """HTML lines (no Markdown ** so nothing breaks); green / red / gray; clear $ formatting."""
+    """Per-channel reallocation lines (HTML, green / red / gray) for the optimization tab."""
     parts: List[str] = [
         '<div style="font-size:1.2rem;line-height:1.55;font-weight:500;">',
     ]
@@ -125,31 +124,8 @@ def _meridian_pie_title(chart: Any, title: str) -> Any:
     )
 
 
-def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, Any]) -> None:
-    """Plot Altair figures and tables from `meridian_visualizations` result."""
-    st.markdown(
-        """
-        <style>
-        /* Remove default card / band background on this tab (metrics + row layout). */
-        div[data-testid="stMetric"] {
-            background-color: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-        }
-        div[data-testid="stMetric"] > div,
-        [data-testid="stMetric"] [data-testid="stMetricValue"],
-        [data-testid="stMetric"] [data-testid="stMetricLabel"] {
-            background-color: transparent !important;
-        }
-        section.main div[data-testid="stHorizontalBlock"] {
-            background: transparent !important;
-            border: none !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.subheader("Model fit & diagnostics")
+def _render_fit_diagnostics_tab(mmm: object, summ: Dict[str, Any], viz: Dict[str, Any]) -> None:
+    """Tab content: max R-hat, in-sample fit metrics, and advanced diagnostics."""
     mcols = st.columns(3)
     rh = summ.get("rhat_max")
     if rh is not None:
@@ -183,20 +159,6 @@ def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, A
     elif viz.get("fit_metrics_error"):
         st.caption("Fit metrics: " + str(viz["fit_metrics_error"]))
 
-    st.subheader("Recovered media ROI (posterior)")
-    st.caption(
-        "Per-**channel** incremental ROI from the **fitted** model (90% credible interval). "
-        "Optional **true** ROI (red dashed) comes from your YAML. Hover a point for details. **R̂** for `roi_m` in hover when available."
-    )
-    try:
-        tr = true_roi_by_channel_map(st.session_state.get("sim_config"))
-        rows = meridian_posterior_roi_forest_rows(mmm, true_map=tr)
-        rh = roi_m_rhat_by_media_channel(mmm)
-        fig_ply = plotly_mmm_roi_forest_figure(rows, rhat_by_channel=rh)
-        st.plotly_chart(fig_ply, use_container_width=True)
-    except Exception as e:
-        st.caption("ROI forest plot: " + str(e))
-
     with st.expander("Advanced analytics", expanded=False):
         st.caption("Optional diagnostics: in-sample **fit** vs data and **MCMC** convergence by parameter.")
         g1, g2 = st.columns(2)
@@ -213,117 +175,33 @@ def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, A
             elif viz.get("rhat_error"):
                 st.caption("R-hat plot: " + str(viz["rhat_error"]))
 
-    st.subheader("Budget optimization (fixed total ≈ historical)")
+
+def _render_roi_tab(mmm: object) -> None:
+    """Tab content: posterior ROI forest plot per channel."""
+    st.caption(
+        "Per-**channel** incremental ROI from the **fitted** model (90% credible interval). "
+        "Optional **true** ROI (red dashed) comes from your YAML. Hover a point for details. **R̂** for `roi_m` in hover when available."
+    )
+    try:
+        tr = true_roi_by_channel_map(st.session_state.get("sim_config"))
+        rows = meridian_posterior_roi_forest_rows(mmm, true_map=tr)
+        rh = roi_m_rhat_by_media_channel(mmm)
+        fig_ply = plotly_mmm_roi_forest_figure(rows, rhat_by_channel=rh)
+        st.plotly_chart(fig_ply, use_container_width=True)
+    except Exception as e:
+        st.caption("ROI forest plot: " + str(e))
+
+
+def _render_optimization_tab(viz: Dict[str, Any]) -> None:
+    """Tab content: budget optimization — current vs optimized spend share (pies + reallocation text)."""
     st.caption(
         "Under Meridian’s default **fixed-budget** scenario, spend is reallocated to maximize **incremental "
-        "revenue (outcome)** in the model window, subject to channel bounds. **Weekly $** = window total / "
-        "number of weeks in your loaded CSV. Pies: share of spend; **grouped bars**: current vs optimized weekly."
+        "revenue (outcome)** in the model window, subject to channel bounds. The pies show each channel’s "
+        "**share of spend** before vs after optimization."
     )
     if viz.get("optimization_error"):
         st.warning("Budget optimization: " + str(viz["optimization_error"]))
-    else:
-        df0 = st.session_state.get("last_df")
-        n_weeks = max(1, int(len(df0))) if df0 is not None else 1
-        rec_opt: Optional[pd.DataFrame] = None
-        if viz.get("spend_recommendation_df") is not None:
-            rec0 = pd.DataFrame(viz["spend_recommendation_df"])
-            if not rec0.empty and "spend_baseline" in rec0.columns and "channel" in rec0.columns:
-                rec_opt = rec0.copy()
-                rec_opt["current_weekly_spend"] = rec_opt["spend_baseline"] / n_weeks
-                rec_opt["optimized_weekly_spend"] = rec_opt["spend_optimized"] / n_weeks
-                rec_opt["change_pct"] = (
-                    rec_opt["optimized_weekly_spend"] / (rec_opt["current_weekly_spend"] + 1e-9) - 1.0
-                ) * 100.0
-        opt = viz.get("optimization")
-        if opt is not None:
-            try:
-                oa = opt.optimized_data.attrs
-                na = opt.nonoptimized_data.attrs
-                m1, m2, m3, m4 = st.columns(4)
-                if "total_incremental_outcome" in na and "total_incremental_outcome" in oa:
-                    t0 = float(na["total_incremental_outcome"])
-                    t1 = float(oa["total_incremental_outcome"])
-                    m1.metric("Non-optimized incremental (model)", f"${t0:,.0f}")
-                    m2.metric("Optimized incremental (model)", f"${t1:,.0f}")
-                    lift = t1 - t0
-                    _green, _red, _neu = "#15803d", "#b91c1c", "#64748b"
-                    # Match default st.metric value (size/weight); color is only green/red/gray
-                    _lbl = (
-                        "color:rgba(49, 51, 63, 0.6);font-size:0.875rem;font-weight:400;margin:0 0 0.15rem 0;"
-                        "padding:0;line-height:1.15;"
-                    )
-                    _val = (
-                        "font-size:2.25rem;font-weight:400;line-height:1.12;margin:0;padding:0;"
-                    )
-                    if lift > 0:
-                        lift_str = f"+${lift:,.0f}"
-                    elif lift < 0:
-                        lift_str = f"−${-lift:,.0f}"
-                    else:
-                        lift_str = "$0"
-                    lift_color = _neu if lift == 0 else (_green if lift > 0 else _red)
-                    with m3:
-                        st.markdown(
-                            f'<div style="margin:0;padding:0;min-width:0;">'
-                            f'<p style="{_lbl}">Lift (absolute vs baseline budget)</p>'
-                            f'<p style="{_val}color:{lift_color}">{lift_str}</p>'
-                            f"</div>",
-                            unsafe_allow_html=True,
-                        )
-                    with m4:
-                        if t0 and t0 > 0:
-                            p = (t1 / t0 - 1.0) * 100.0
-                            pcol = _neu if p == 0 else (_green if p > 0 else _red)
-                            if p > 0:
-                                pstr = f"+{p:.1f}%"
-                            elif p < 0:
-                                pstr = f"−{abs(p):.1f}%"
-                            else:
-                                pstr = "0%"
-                            st.markdown(
-                                f'<div style="margin:0;padding:0;min-width:0;">'
-                                f'<p style="{_lbl}">Lift (%)</p>'
-                                f'<p style="{_val}color:{pcol}">{pstr}</p>'
-                                f"</div>",
-                                unsafe_allow_html=True,
-                            )
-                        else:
-                            st.metric("Lift (%)", "—")
-            except (KeyError, TypeError, ValueError):
-                pass
-        if rec_opt is not None:
-            figb = go.Figure(
-                data=[
-                    go.Bar(
-                        name="Current (weekly $)",
-                        x=rec_opt["channel"],
-                        y=rec_opt["current_weekly_spend"],
-                    ),
-                    go.Bar(
-                        name="Optimized (weekly $)",
-                        x=rec_opt["channel"],
-                        y=rec_opt["optimized_weekly_spend"],
-                    ),
-                ]
-            )
-            figb.update_layout(
-                barmode="group",
-                title="Current vs optimized — weekly spend allocation",
-                yaxis_title="Weekly spend ($)",
-                xaxis_title="Channel",
-                showlegend=True,
-            )
-            st.plotly_chart(figb, use_container_width=True)
-            st.markdown(
-                "<p style='font-size:1.35rem;font-weight:600;margin:0.5rem 0 0.3rem 0;'>"
-                "Recommended reallocation (weekly, model suggestion)</p>",
-                unsafe_allow_html=True,
-            )
-            rec_html = _budget_recommendation_html(rec_opt)
-            if rec_html:
-                st.markdown(rec_html, unsafe_allow_html=True)
-            else:
-                st.caption("No per-channel text could be built from the optimization table.")
+        return
 
     p1, p2 = st.columns(2)
     with p1:
@@ -339,6 +217,64 @@ def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, A
                 use_container_width=True,
             )
 
+    if viz.get("spend_recommendation_df") is not None:
+        df0 = st.session_state.get("last_df")
+        n_weeks = max(1, int(len(df0))) if df0 is not None else 1
+        rec0 = pd.DataFrame(viz["spend_recommendation_df"])
+        if not rec0.empty and "spend_baseline" in rec0.columns and "channel" in rec0.columns:
+            rec_opt = rec0.copy()
+            rec_opt["current_weekly_spend"] = rec_opt["spend_baseline"] / n_weeks
+            rec_opt["optimized_weekly_spend"] = rec_opt["spend_optimized"] / n_weeks
+            rec_opt["change_pct"] = (
+                rec_opt["optimized_weekly_spend"] / (rec_opt["current_weekly_spend"] + 1e-9) - 1.0
+            ) * 100.0
+            st.markdown(
+                "<p style='font-size:1.35rem;font-weight:600;margin:0.5rem 0 0.3rem 0;'>"
+                "Recommended reallocation (weekly, model suggestion)</p>",
+                unsafe_allow_html=True,
+            )
+            rec_html = _budget_recommendation_html(rec_opt)
+            if rec_html:
+                st.markdown(rec_html, unsafe_allow_html=True)
+            else:
+                st.caption("No per-channel text could be built from the optimization table.")
+
+
+def _render_meridian_outputs(mmm: object, summ: Dict[str, Any], viz: Dict[str, Any]) -> None:
+    """Render result sections in clickable tabs at the top instead of stacked sections."""
+    st.markdown(
+        """
+        <style>
+        /* Remove default card / band background on this tab (metrics + row layout). */
+        div[data-testid="stMetric"] {
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stMetric"] > div,
+        [data-testid="stMetric"] [data-testid="stMetricValue"],
+        [data-testid="stMetric"] [data-testid="stMetricLabel"] {
+            background-color: transparent !important;
+        }
+        section.main div[data-testid="stHorizontalBlock"] {
+            background: transparent !important;
+            border: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    tab_fit, tab_roi, tab_opt = st.tabs(
+        ["Model fit & diagnostics", "Recovered media ROI", "Budget optimization"]
+    )
+    with tab_fit:
+        _render_fit_diagnostics_tab(mmm, summ, viz)
+    with tab_roi:
+        _render_roi_tab(mmm)
+    with tab_opt:
+        _render_optimization_tab(viz)
+
 
 def render_meridian_tab(schema: Dict[str, Any]) -> None:
     st.header("Bayesian MMM")
@@ -351,11 +287,12 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
             "The simulator tab still works; this tab needs the optional MMM stack (TensorFlow + Meridian)."
         )
         st.markdown(
-            "From the **project root**, with your venv activated (use **Python 3.11** if you can — Meridian’s supported range):\n\n"
+            "From the **project root**, install the optional stack **into the same venv** Streamlit uses:\n\n"
             "```\npip install -r requirements.txt\n"
             "pip install -r requirements-meridian.txt\n```\n\n"
-            "Or: `pip install -e \".[mmm]\"` if you use editable install from `pyproject.toml`.\n\n"
-            "**Restart Streamlit** after installing (same terminal / venv you use for `streamlit run`)."
+            "Or one line: `pip install -e \".[mmm]\"`\n\n"
+            "**Restart Streamlit with that interpreter**, e.g. `./scripts/run_streamlit.sh` or `.venv/bin/streamlit run app/streamlit_app.py` "
+            "(running plain `streamlit` can pick a different Python without Meridian)."
         )
         if mer_err:
             with st.expander("Import error details (for debugging)", expanded=False):
@@ -365,7 +302,15 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
     with st.expander("Optional: background on Bayesian MMM", expanded=False):
         st.markdown(MERIDIAN_HELP)
 
-    if st.button("Load synthetic data from current config", use_container_width=True, key="m_btn_load_data"):
+    if st.button(
+        "Load synthetic data from current config",
+        use_container_width=True,
+        key="m_btn_load_data",
+        help=(
+            "Re-run the Simulator pipeline using the current YAML / form configuration and load the "
+            "resulting weekly DataFrame here so the MMM uses fresh synthetic data."
+        ),
+    ):
         regen = True
     else:
         regen = False
@@ -407,103 +352,259 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
     if n_weeks < 20:
         st.caption("Short series: expect weak in-sample R² and wide CIs even if R̂ looks fine.")
 
-    st.markdown("##### ROI prior (lognormal on roi_m)")
-    st.caption(
-        "Lognormal **μ, σ** parameterize the prior on each channel’s **media ROI** in Meridian. "
-        "Use *Shared* for one prior for all channels, or *Independent* to type different μ, σ for each name below."
+    has_fit = (
+        st.session_state.get("meridian_mmm") is not None
+        and st.session_state.get("meridian_viz") is not None
     )
-    st.radio(
-        "Prior per channel",
-        [
-            "Shared (same lognormal for every channel)",
-            "Independent (lognormal μ and σ for each channel)",
-        ],
-        index=0,
-        key="m_roi_mode",
-    )
-    indep = st.session_state.get("m_roi_mode", "").startswith("Independent")
-    if not indep:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.number_input("Shared: lognormal μ", value=0.2, step=0.1, key="m_roi_mu")
-        with c2:
-            st.number_input("Shared: lognormal σ", value=0.9, min_value=0.01, step=0.1, key="m_roi_sig")
-    else:
-        st.caption("Per-channel lognormal **μ** and **σ** (names match your synthetic data).")
-        for i, ch in enumerate(chans):
-            a, b = st.columns(2)
-            a.number_input(f"{ch} — μ", value=0.2, step=0.1, key=f"m_pr_mu_{i}")
-            b.number_input(f"{ch} — σ", value=0.9, min_value=0.01, step=0.1, key=f"m_pr_sig_{i}")
-
-    st.markdown("##### MCMC (NUTS) sampling")
-    prof = st.selectbox(
-        "Profile",
-        [
-            "Custom (set every number below)",
-            "Fast (smaller, quicker)",
-            "Balanced",
-            "Slower (more reliable)",
-        ],
-        index=2,
-        key="m_mcmc_profile",
-        help="Chains: parallel NUTS. n_adapt: adapt step size. n_burnin: discarded warm-up. n_keep: kept draws per chain. Prior draws: sample_prior size.",
-    )
-    if prof in MCMC_PRESETS:
-        pr = MCMC_PRESETS[prof]
-        st.caption(
-            f"Using preset: **{prof}** → chains={pr[0]}, n_adapt={pr[1]}, n_burnin={pr[2]}, n_keep={pr[3]}, prior draws={pr[4]}"
-        )
-    a, b, c, d = st.columns(4)
-    with a:
-        st.number_input("Chains", min_value=1, max_value=32, value=2, step=1, key="m_n_chains", disabled=prof in MCMC_PRESETS)
-    with b:
-        st.number_input("n_adapt", min_value=100, max_value=20_000, value=500, step=100, key="m_n_adapt", disabled=prof in MCMC_PRESETS)
-    with c:
-        st.number_input("n_burnin", min_value=0, max_value=20_000, value=200, step=50, key="m_n_burnin", disabled=prof in MCMC_PRESETS)
-    with d:
-        st.number_input("n_keep", min_value=50, max_value=10_000, value=200, step=50, key="m_n_keep", disabled=prof in MCMC_PRESETS)
-    p1, p2, p3 = st.columns(3)
-    with p1:
-        st.number_input("Prior draws (sample_prior)", min_value=50, max_value=5_000, value=200, step=50, key="m_n_prior", disabled=prof in MCMC_PRESETS)
-    with p2:
-        st.number_input("MCMC seed", min_value=0, max_value=2_147_483_647, value=0, step=1, key="m_seed")
-    with p3:
-        st.checkbox("enable_aks (adaptive knots; often slower / GPU)", value=False, key="m_enable_aks")
-    st.number_input(
-        "Meridian analysis batch_size (lower if out-of-memory on CPU)",
-        min_value=20,
-        max_value=1000,
-        value=80,
-        step=20,
-        key="m_batch_size",
-    )
-
-    if st.session_state.get(_K_MMM_FIT_PENDING) and not mer_ok:
+    m_pending = bool(st.session_state.get(_K_MMM_FIT_PENDING, False))
+    if m_pending and not mer_ok:
+        m_pending = False
         st.session_state[_K_MMM_FIT_PENDING] = False
 
-    m_pending = bool(st.session_state.get(_K_MMM_FIT_PENDING, False))
+    # Inputs visibility:
+    # - During a pending run: always hidden (only the spinner shows).
+    # - Before any fit: visible so the user can configure.
+    # - Fit already exists: hidden until the user clicks "Edit settings & re-run".
+    st.session_state.setdefault("m_show_inputs", False)
     if m_pending:
-        st.button(
-            "⏳ Running model…",
-            type="secondary",
-            disabled=True,
-            use_container_width=True,
-            key="m_run_busy",
-            help="Sampling and optimization in progress — wait for this run to finish.",
-        )
+        show_inputs = False
+    elif not has_fit:
+        show_inputs = True
     else:
-        run_model = st.button(
-            "Run model",
-            type="primary",
+        show_inputs = bool(st.session_state.get("m_show_inputs", False))
+
+    if has_fit and not m_pending and not show_inputs:
+        if st.button(
+            "⚙ Edit settings & re-run",
+            key="m_edit_toggle",
             use_container_width=True,
-            key="m_run_go",
-        )
-        if run_model:
-            if not mer_ok:
-                st.error("Install `google-meridian` in this environment, then restart Streamlit.")
+            help="Bring back the ROI prior and MCMC settings so you can change them and re-run the model.",
+        ):
+            st.session_state["m_show_inputs"] = True
+            st.rerun()
+
+    # Wrap the input sections in an st.empty() slot so they can be cleared from the
+    # browser the moment "Run model" is clicked, instead of remaining visible until the
+    # next rerun renders past them.
+    inputs_slot = st.empty()
+    run_clicked = False
+    if show_inputs:
+        with inputs_slot.container():
+            st.markdown("##### ROI prior (lognormal on roi_m)")
+            st.caption(
+                "Lognormal **μ, σ** parameterize the prior on each channel’s **media ROI** in Meridian. "
+                "Use *Shared* for one prior for all channels, or *Independent* to type different μ, σ for each name below."
+            )
+            st.radio(
+                "Prior per channel",
+                [
+                    "Shared (same lognormal for every channel)",
+                    "Independent (lognormal μ and σ for each channel)",
+                ],
+                index=0,
+                key="m_roi_mode",
+                help=(
+                    "**Shared**: one lognormal prior used for every channel's ROI — fewer assumptions, faster "
+                    "and a sensible default. **Independent**: type a different μ and σ per channel when you have "
+                    "channel-specific beliefs (e.g. expect Search ROI ≫ Display)."
+                ),
+            )
+            indep = st.session_state.get("m_roi_mode", "").startswith("Independent")
+            if not indep:
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.number_input(
+                        "Shared: lognormal μ",
+                        value=0.2,
+                        step=0.1,
+                        key="m_roi_mu",
+                        help=(
+                            "Lognormal location (log-space mean) for prior media ROI. The implied prior **median** "
+                            "ROI is exp(μ); e.g. μ=0.2 → median ROI ≈ 1.22, μ=0 → median ROI = 1.0."
+                        ),
+                    )
+                with c2:
+                    st.number_input(
+                        "Shared: lognormal σ",
+                        value=0.9,
+                        min_value=0.01,
+                        step=0.1,
+                        key="m_roi_sig",
+                        help=(
+                            "Lognormal scale (log-space std) — controls how wide the prior is. Larger σ allows "
+                            "much higher / lower ROI a priori; σ≈0.5 is fairly tight, σ≈0.9 is broad."
+                        ),
+                    )
             else:
-                st.session_state[_K_MMM_FIT_PENDING] = True
-                st.rerun()
+                st.caption("Per-channel lognormal **μ** and **σ** (names match your synthetic data).")
+                for i, ch in enumerate(chans):
+                    a, b = st.columns(2)
+                    a.number_input(
+                        f"{ch} — μ",
+                        value=0.2,
+                        step=0.1,
+                        key=f"m_pr_mu_{i}",
+                        help=f"Lognormal μ for **{ch}** only. Implied prior median ROI ≈ exp(μ).",
+                    )
+                    b.number_input(
+                        f"{ch} — σ",
+                        value=0.9,
+                        min_value=0.01,
+                        step=0.1,
+                        key=f"m_pr_sig_{i}",
+                        help=f"Lognormal σ for **{ch}** only. Larger = more uncertainty about that channel's ROI.",
+                    )
+
+            st.markdown("##### MCMC (NUTS) sampling")
+            prof = st.selectbox(
+                "Profile",
+                [
+                    "Custom (set every number below)",
+                    "Fast (smaller, quicker)",
+                    "Balanced",
+                    "Slower (more reliable)",
+                ],
+                index=2,
+                key="m_mcmc_profile",
+                help=(
+                    "Pick a preset to fill chains / n_adapt / n_burnin / n_keep / prior draws automatically. "
+                    "**Fast** gets you a quick sanity check; **Balanced** is a sensible default; "
+                    "**Slower** runs more samples for tighter credible intervals at the cost of wall time. "
+                    "Choose **Custom** to set every number yourself."
+                ),
+            )
+            if prof in MCMC_PRESETS:
+                pr = MCMC_PRESETS[prof]
+                st.caption(
+                    f"Using preset: **{prof}** → chains={pr[0]}, n_adapt={pr[1]}, n_burnin={pr[2]}, n_keep={pr[3]}, prior draws={pr[4]}"
+                )
+            a, b, c, d = st.columns(4)
+            with a:
+                st.number_input(
+                    "Chains",
+                    min_value=1,
+                    max_value=32,
+                    value=2,
+                    step=1,
+                    key="m_n_chains",
+                    disabled=prof in MCMC_PRESETS,
+                    help=(
+                        "Number of independent NUTS chains run in parallel. More chains make R̂ more reliable "
+                        "and reveal multimodality, but linearly increase compute. 2–4 is typical."
+                    ),
+                )
+            with b:
+                st.number_input(
+                    "n_adapt",
+                    min_value=100,
+                    max_value=20_000,
+                    value=500,
+                    step=100,
+                    key="m_n_adapt",
+                    disabled=prof in MCMC_PRESETS,
+                    help=(
+                        "Adaptation iterations used by NUTS to tune the step size and mass matrix. Discarded "
+                        "from inference. More adaptation generally helps tricky posteriors but slows the run."
+                    ),
+                )
+            with c:
+                st.number_input(
+                    "n_burnin",
+                    min_value=0,
+                    max_value=20_000,
+                    value=200,
+                    step=50,
+                    key="m_n_burnin",
+                    disabled=prof in MCMC_PRESETS,
+                    help=(
+                        "Burn-in (warm-up) draws after adaptation that are discarded so the chain has time to "
+                        "reach the typical set of the posterior before samples are kept."
+                    ),
+                )
+            with d:
+                st.number_input(
+                    "n_keep",
+                    min_value=50,
+                    max_value=10_000,
+                    value=200,
+                    step=50,
+                    key="m_n_keep",
+                    disabled=prof in MCMC_PRESETS,
+                    help=(
+                        "Posterior draws **kept per chain** for inference. More draws → tighter credible "
+                        "intervals and more stable summaries, but proportionally slower."
+                    ),
+                )
+            p1, p2, p3 = st.columns(3)
+            with p1:
+                st.number_input(
+                    "Prior draws (sample_prior)",
+                    min_value=50,
+                    max_value=5_000,
+                    value=200,
+                    step=50,
+                    key="m_n_prior",
+                    disabled=prof in MCMC_PRESETS,
+                    help=(
+                        "Samples drawn directly from the **prior** (no data) and used by Meridian for prior "
+                        "predictive checks; usually small."
+                    ),
+                )
+            with p2:
+                st.number_input(
+                    "MCMC seed",
+                    min_value=0,
+                    max_value=2_147_483_647,
+                    value=0,
+                    step=1,
+                    key="m_seed",
+                    help="Random seed used for sampling. Fix it (any positive integer) for reproducible runs.",
+                )
+            with p3:
+                st.checkbox(
+                    "enable_aks (adaptive knots; often slower / GPU)",
+                    value=False,
+                    key="m_enable_aks",
+                    help=(
+                        "Adaptive Knot Saturation: lets the saturation curve flex more across knots. Often "
+                        "slower and is most practical with a GPU; leave off for quick CPU sanity checks."
+                    ),
+                )
+            st.number_input(
+                "Meridian analysis batch_size (lower if out-of-memory on CPU)",
+                min_value=20,
+                max_value=1000,
+                value=80,
+                step=20,
+                key="m_batch_size",
+                help=(
+                    "Batch size used by Meridian's Analyzer when computing posterior summaries / optimization. "
+                    "Lower this if you hit out-of-memory errors on CPU; higher is faster but uses more RAM."
+                ),
+            )
+
+            run_clicked = st.button(
+                "Run model",
+                type="primary",
+                use_container_width=True,
+                key="m_run_go",
+                help=(
+                    "Fit Meridian on the loaded synthetic data using the priors and MCMC settings above. "
+                    "Sampling + diagnostics + budget optimization can take many minutes on CPU."
+                ),
+            )
+
+    # Handle the click OUTSIDE the with block so we can clear the slot. Triggering the
+    # fit in the same script run (no st.rerun()) means the spinner below replaces the
+    # inputs immediately on screen instead of after the long-running fit completes.
+    if run_clicked:
+        if not mer_ok:
+            st.error("Install `google-meridian` in this environment, then restart Streamlit.")
+        else:
+            inputs_slot.empty()
+            st.session_state["m_show_inputs"] = False
+            st.session_state[_K_MMM_FIT_PENDING] = True
+            m_pending = True
 
     if m_pending and mer_ok:
         psel = st.session_state.get("m_mcmc_profile", "Balanced")
@@ -522,6 +623,7 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
             mus = [float(st.session_state.get(f"m_pr_mu_{i}", 0.2)) for i in range(len(chans))]
             sigs = [float(st.session_state.get(f"m_pr_sig_{i}", 0.9)) for i in range(len(chans))]
 
+        fit_succeeded = False
         with st.spinner("Sampling + diagnostics + budget optimization (can take many minutes on CPU)…"):
             try:
                 cfg = MeridianRunConfig(
@@ -544,6 +646,7 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
                 st.session_state["meridian_mmm"] = mmm
                 st.session_state["meridian_summary"] = summ
                 st.session_state["meridian_viz"] = viz
+                fit_succeeded = True
             except Exception as e:
                 st.error(f"Meridian failed: {e}")
                 st.session_state["meridian_mmm"] = None
@@ -551,6 +654,12 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
                 st.session_state["meridian_viz"] = None
             finally:
                 st.session_state[_K_MMM_FIT_PENDING] = False
+
+        if fit_succeeded:
+            # Hide the input sections automatically after a successful run; user can bring
+            # them back via the "⚙ Edit settings & re-run" button at the top of the tab.
+            st.session_state["m_show_inputs"] = False
+            st.rerun()
 
     mmm: Optional[object] = st.session_state.get("meridian_mmm")
     summ: Optional[Dict[str, Any]] = st.session_state.get("meridian_summary")

@@ -1,0 +1,155 @@
+/* Night mode: high-contrast text; avoid white buttons with invisible labels */
+
+.stApp {
+  background-color: #0b1220 !important;
+  background-image: none !important;
+}
+
+.block-container {
+  background: rgba(30, 41, 59, 0.92) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45) !important;
+  padding: 1rem 1.25rem 1.25rem 1.25rem !important;
+}
+
+section.main > div {
+  padding-top: 0.5rem !important;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  color: #f1f5f9 !important;
+}
+
+/* Body text & captions — readable grey, not washed out */
+p,
+label,
+.stMarkdown p,
+.stMarkdown span {
+  color: #cbd5e1 !important;
+}
+
+[data-testid="stCaption"] {
+  color: #94a3b8 !important;
+  font-size: 0.85rem !important;
+  line-height: 1.35 !important;
+  margin-bottom: 0.35rem !important;
+}
+
+/* Streamlit top bar (Deploy, ⋮ menu): keep a light strip so default navy text/icons stay visible */
+[data-testid="stHeader"] {
+  display: none !important;
+}
+
+[data-testid="stHeader"] a,
+[data-testid="stHeader"] button,
+[data-testid="stHeader"] span,
+[data-testid="stToolbar"] a,
+[data-testid="stToolbar"] button,
+[data-testid="stToolbar"] span,
+header[data-testid="stHeader"] * {
+  color: #0f172a !important;
+}
+
+[data-testid="stHeader"] svg,
+[data-testid="stToolbar"] svg {
+  fill: #0f172a !important;
+  color: #0f172a !important;
+  opacity: 1 !important;
+}
+
+/* Override global night paragraph color inside the Streamlit toolbar only */
+[data-testid="stHeader"] p,
+[data-testid="stToolbar"] p {
+  color: #0f172a !important;
+}
+
+[data-testid="stSidebar"] {
+  background: rgba(15, 23, 42, 0.98) !important;
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+  color: #f1f5f9 !important;
+}
+
+/* Sidebar: default buttons = dark fill + light text (no white-on-white) */
+[data-testid="stSidebar"] button {
+  background: #334155 !important;
+  color: #f8fafc !important;
+  border: 1px solid #475569 !important;
+  box-shadow: none !important;
+  border-radius: 999px !important;
+}
+
+[data-testid="stSidebar"] button:hover {
+  background: #475569 !important;
+  border-color: #64748b !important;
+  color: #ffffff !important;
+}
+
+[data-testid="stSidebar"] [data-testid="baseButton-primary"],
+[data-testid="stSidebar"] button[kind="primary"] {
+  background: #1d63ed !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+/* Widget labels (Streamlit) */
+[data-testid="stWidgetLabel"] p,
+label[data-testid="stWidgetLabel"] {
+  color: #e2e8f0 !important;
+}
+
+.stTextInput input,
+.stTextArea textarea,
+.stNumberInput input {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #475569 !important;
+}
+
+.stTextArea textarea {
+  font-family: ui-monospace, monospace !important;
+}
+
+/* Expanders: summary row readable */
+[data-testid="stExpander"] details {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+}
+
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary span {
+  color: #f1f5f9 !important;
+}
+
+[data-testid="stExpander"] summary {
+  background: #334155 !important;
+}
+
+div[data-testid="stExpanderDetails"] > div {
+  background: transparent !important;
+}
+
+[data-testid="stDataFrame"] {
+  background: rgba(15, 23, 42, 0.6) !important;
+}
+
+/* Info / success boxes */
+.stAlert {
+  color: #e2e8f0 !important;
+}
+
+/* Main area: secondary buttons (e.g. Apply YAML) — dark, not white */
+[data-testid="stMain"] button[kind="secondary"],
+[data-testid="stMain"] [data-testid="baseButton-secondary"] {
+  background: #334155 !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #475569 !important;
+  box-shadow: none !important;
+}

@@ -1,8 +1,27 @@
 # Optional: set number_of_channels (integer) to generate that many channels from default
+#
+# Optional budget_shifts (1-based weeks, same as CSV "week" column). Applied after base spend draw.
+#   - type: scale — multiply all channels' spend for each week in [start_week, end_week]
+#   - type: scale_channel — multiply one channel_name in [start_week, end_week]
+#   - type: reallocate — move fraction of from_channel spend to to_channel each week in [start_week, end_week]
+#     (omit end_week to mean from start_week through end of simulation)
+# budget_shifts:
+#   - type: scale
+#     start_week: 1
+#     end_week: 4
+#     factor: 1.1
+#   - type: reallocate
+#     start_week: 10
+#     from_channel: TikTok
+#     to_channel: LinkedIn
+#     fraction: 0.25
 
 run_identifier: Example Alpha
 week_range: 26
 seed: 133233
+# Optional: seed-append modes (expanded into budget_shifts / correlations when the sim loads).
+# budget_shifts_auto_mode: none   # none | global | global_and_channel
+# correlations_auto_mode: none    # none | random
 # number_of_channels: 3
 
 channel_list:
@@ -17,6 +36,8 @@ channel_list:
       true_roi: 3.1
       spend_range: [1500, 40000]
       baseline_revenue: 6000
+      trend_slope: 0
+      seasonality_config: {}
       saturation_config:
         type: linear
         slope: 1.0
@@ -40,6 +61,8 @@ channel_list:
       true_roi: 2.2
       spend_range: [3000, 60000]
       baseline_revenue: 9500
+      trend_slope: 0
+      seasonality_config: {}
       saturation_config:
         type: linear
         slope: 0.8
@@ -51,3 +74,26 @@ channel_list:
         lag: 7
         weights: [0.7, 0.2, 0.1]
       cpm: 10
+
+# Optional spend correlations (pairs + rho in [-1, 1]); configure in the Streamlit UI or add here, e.g.:
+# correlations:
+#   - channels: [TikTok, LinkedIn]
+#     rho: 0.7
+
+# Optional per-channel on/off toggles (see README section "Channel on/off toggles").
+# All fields below are optional; omitting them keeps channels and effects fully on.
+# Example forms:
+#   enabled: false                            # fully disable a channel for the whole run
+#   enabled:                                  # enabled, except for inclusive off week ranges
+#     default: true
+#     off_ranges:
+#       - start_week: 10
+#         end_week: 12
+#   adstock_enabled: false                    # disable adstock for this channel only
+#   saturation_enabled: false                 # disable saturation for this channel only
+#
+# Optional global kill-switches (turn off effect for every channel):
+# adstock:
+#   global: false
+# saturation:
+#   global: false

@@ -1,6 +1,13 @@
 run_identifier: Default
 week_range: 52
 
+# Optional: time-based spend adjustments (see example.yaml). Empty = no extra rules.
+budget_shifts: []
+# Seed-append modes (expanded at load time; see root README). none | global | global_and_channel
+budget_shifts_auto_mode: none
+# none | random — extra copula pairs derived from seed at load time
+correlations_auto_mode: none
+
 channel_list:
   - channel:
       channel_name: Channel 1
@@ -15,6 +22,8 @@ channel_list:
       true_roi: 2.5
       spend_range: [1000, 50000]
       baseline_revenue: 5000
+      trend_slope: 0.0
+      seasonality_config: {}
       saturation_config:
         type: linear
         slope: 1.0

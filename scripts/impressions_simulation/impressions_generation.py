@@ -62,6 +62,20 @@ def generate_impressions(config: InputConfigurations, spend_matrix: np.ndarray) 
     # Ensure non-negative impressions
     impressions = np.clip(impressions, a_min=0.0, a_max=None)
 
+    # Safety-net channel toggle masking. Spend is already masked upstream so
+    # base_impressions is zero on off weeks, but noise with scale=0 still draws
+    # from N(0, 0)=0 and should be fine. This guards against any future change
+    # where noise is not proportional to base impressions.
+    seed = config.get_seed()
+    for c, ch in enumerate(channels):
+        if ch.is_fully_disabled():
+            impressions[:, c] = 0.0
+            continue
+        mask = ch.spend_allowed_mask(num_weeks, channel_index=c, config_seed=seed)
+        if bool(np.all(mask)):
+            continue
+        impressions[~mask, c] = 0.0
+
     return impressions
 
 # # TEST

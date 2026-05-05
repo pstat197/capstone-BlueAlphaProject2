@@ -270,9 +270,10 @@ def load_config_from_dict(user_data: Dict[str, Any]) -> InputConfigurations:
     if num_channels_opt is not None and num_channels_opt > 0:
         target_count = int(num_channels_opt)
     if target_count is not None and target_count > len(channel_list):
-        for i in range(len(channel_list), target_count):
+        initial_channel_count = len(channel_list)
+        for i in range(initial_channel_count, target_count):
             noised = _add_noise_to_channel_template(default_channel, rng=merge_rng)
-            noised["channel_name"] = f"Generated Channel {i - len(channel_list) + 1}"
+            noised["channel_name"] = f"Generated Channel {i - initial_channel_count + 1}"
             channel_list.append({"channel": noised})
 
     merged["channel_list"] = channel_list

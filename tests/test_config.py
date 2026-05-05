@@ -122,8 +122,9 @@ def test_number_of_channels_generates_from_default():
         assert len(channels) == 3
         names = [c.get_channel_name() for c in channels]
         assert len(names) == 3
+        assert len(set(names)) == 3
         assert names[0] == "Channel 1"  # from default.yaml
-        assert names[1].startswith("Generated Channel ") and names[2].startswith("Generated Channel ")
+        assert names[1] == "Generated Channel 1" and names[2] == "Generated Channel 2"
         assert config.get_week_range() == 52  # from default
         for c in channels:
             assert c.get_spend_sampling_gamma_params()

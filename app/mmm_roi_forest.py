@@ -51,20 +51,20 @@ def meridian_posterior_roi_forest_rows(
     from meridian.analysis import visualizer
 
     true_map = true_map or {}
-    ms = visualizer.MediaSummary(mmm, use_kpi=False)
+    ms = visualizer.MediaSummary(mmm, use_kpi=False, confidence_level=0.5)
     ds = ms.get_paid_summary_metrics(aggregate_times=True)
     roi_da = ds["roi"].sel(distribution=c.POSTERIOR)
     channels = [str(x) for x in roi_da["channel"].values]
     out: List[dict] = []
     for ch in channels:
-        med = float(roi_da.sel(metric=c.MEDIAN, channel=ch).item())
+        mean = float(roi_da.sel(metric=c.MEAN, channel=ch).item())
         lo = float(roi_da.sel(metric=c.CI_LO, channel=ch).item())
         hi = float(roi_da.sel(metric=c.CI_HI, channel=ch).item())
         tr = _merge_true_roi(ch, true_map)
         out.append(
             {
                 "channel": ch,
-                "median": med,
+                "mean": mean,
                 "ci_low": lo,
                 "ci_high": hi,
                 "true_roi": tr,
@@ -140,7 +140,7 @@ def plot_mmm_roi_forest(
 
     for i, r in enumerate(rows):
         ch = str(r["channel"])
-        med = float(r["median"])
+        mean = float(r["mean"])
         lo = float(r["ci_low"])
         hi = float(r["ci_high"])
         w = hi - lo
@@ -163,7 +163,7 @@ def plot_mmm_roi_forest(
                 zorder=4,
             )
         ax.scatter(
-            med,
+            mean,
             y,
             s=95,
             c=_CI_BLUE,
@@ -196,7 +196,7 @@ def plot_mmm_roi_forest(
     ax.set_yticklabels([str(r["channel"]) for r in rows], fontsize=12)
     ax.set_xlabel("ROI ($ returned per $1 spent)", fontsize=11)
     ax.set_title(
-        "Recovered media ROI — posterior median with 90% credible interval",
+        "Recovered media ROI — posterior mean with 50% credible interval",
         fontsize=12,
     )
     ax.grid(axis="x", alpha=0.2)
@@ -215,10 +215,10 @@ def plot_mmm_roi_forest(
         markerfacecolor=_CI_BLUE,
         markeredgecolor="white",
         markersize=9,
-        label="Posterior median",
+        label="Posterior mean",
     )
     ci_patch = Patch(
-        facecolor=_CI_BLUE, alpha=0.35, edgecolor=_CI_BLUE, label="90% credible interval"
+        facecolor=_CI_BLUE, alpha=0.35, edgecolor=_CI_BLUE, label="50% credible interval"
     )
     leg_el = [med_line, ci_patch]
     if has_true:
@@ -267,10 +267,10 @@ def plotly_mmm_roi_forest_figure(
     true_legend_placed = False
     for i, r in enumerate(rows):
         ch = str(r["channel"])
-        med = float(r["median"])
+        mean = float(r["mean"])
         lo = float(r["ci_low"])
         hi = float(r["ci_high"])
-        # Shaded 90% band
+        # Shaded 50% band
         fig.add_shape(
             type="rect",
             x0=lo,
@@ -289,7 +289,7 @@ def plotly_mmm_roi_forest_figure(
                 mode="lines",
                 line=dict(color=_CI_BLUE, width=2.5),
                 showlegend=(i == 0),
-                name="90% credible interval",
+                name="50% credible interval",
                 legendgroup="ci",
             )
         )
@@ -327,17 +327,17 @@ def plotly_mmm_roi_forest_figure(
                 if k.strip().lower() == ch.lower():
                     rh = v
                     break
-        htext = f"{ch}<br>Median ROI: {med:.2f}<br>90% CI: [{lo:.2f}, {hi:.2f}]"
+        htext = f"{ch}<br>Mean ROI: {mean:.2f}<br>50% CI: [{lo:.2f}, {hi:.2f}]"
         if tr is not None and np.isfinite(float(tr)):
             htext += f"<br>True (YAML): {float(tr):.2f}"
         if rh is not None and np.isfinite(rh):
             htext += f"<br>R̂ (roi_m): {float(rh):.3f}"
         fig.add_trace(
             go.Scatter(
-                x=[med],
+                x=[mean],
                 y=[i],
                 mode="markers",
-                name="Posterior median",
+                name="Posterior mean",
                 showlegend=(i == 0),
                 legendgroup="med",
                 marker=dict(
@@ -374,7 +374,7 @@ def plotly_mmm_roi_forest_figure(
         showgrid=False,
     )
     fig.update_layout(
-        title="Recovered media ROI — posterior median with 90% credible interval",
+        title="Recovered media ROI — posterior mean with 50% credible interval",
         height=max(300, 80 * n + 120),
         template="plotly_white",
         margin=dict(l=24, r=24, t=64, b=64),

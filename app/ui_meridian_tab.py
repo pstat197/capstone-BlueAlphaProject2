@@ -179,7 +179,7 @@ def _render_fit_diagnostics_tab(mmm: object, summ: Dict[str, Any], viz: Dict[str
 def _render_roi_tab(mmm: object) -> None:
     """Tab content: posterior ROI forest plot per channel."""
     st.caption(
-        "Per-**channel** incremental ROI from the **fitted** model (90% credible interval). "
+        "Per-**channel** incremental ROI from the **fitted** model — posterior **mean** with 50% credible interval. "
         "Optional **true** ROI (red dashed) comes from your YAML. Hover a point for details. **R̂** for `roi_m` in hover when available."
     )
     try:
@@ -299,9 +299,6 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
                 st.code(mer_err or "", language="text")
         return
 
-    with st.expander("Optional: background on Bayesian MMM", expanded=False):
-        st.markdown(MERIDIAN_HELP)
-
     if st.button(
         "Load synthetic data from current config",
         use_container_width=True,
@@ -347,7 +344,8 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
     n_weeks = len(df)
     st.caption(
         f"**{n_weeks}** weeks · **{len(chans)}** channels: {', '.join(chans)}. "
-        "Priors apply to model **roi_m** (media treatment ROI; not raw simulator labels beyond these names)."
+        "Priors apply to model **roi_m** (media treatment ROI; not raw simulator labels beyond these names). "
+        "National model (single geo; population=1)."
     )
     if n_weeks < 20:
         st.caption("Short series: expect weak in-sample R² and wide CIs even if R̂ looks fine.")
@@ -393,67 +391,26 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
             st.markdown("##### ROI prior (lognormal on roi_m)")
             st.caption(
                 "Lognormal **μ, σ** parameterize the prior on each channel’s **media ROI** in Meridian. "
-                "Use *Shared* for one prior for all channels, or *Independent* to type different μ, σ for each name below."
+                "Enter different μ, σ per channel below (or keep defaults for a broad, uninformative prior)."
             )
-            st.radio(
-                "Prior per channel",
-                [
-                    "Shared (same lognormal for every channel)",
-                    "Independent (lognormal μ and σ for each channel)",
-                ],
-                index=0,
-                key="m_roi_mode",
-                help=(
-                    "**Shared**: one lognormal prior used for every channel's ROI — fewer assumptions, faster "
-                    "and a sensible default. **Independent**: type a different μ and σ per channel when you have "
-                    "channel-specific beliefs (e.g. expect Search ROI ≫ Display)."
-                ),
-            )
-            indep = st.session_state.get("m_roi_mode", "").startswith("Independent")
-            if not indep:
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.number_input(
-                        "Shared: lognormal μ",
-                        value=0.2,
-                        step=0.1,
-                        key="m_roi_mu",
-                        help=(
-                            "Lognormal location (log-space mean) for prior media ROI. The implied prior **median** "
-                            "ROI is exp(μ); e.g. μ=0.2 → median ROI ≈ 1.22, μ=0 → median ROI = 1.0."
-                        ),
-                    )
-                with c2:
-                    st.number_input(
-                        "Shared: lognormal σ",
-                        value=0.9,
-                        min_value=0.01,
-                        step=0.1,
-                        key="m_roi_sig",
-                        help=(
-                            "Lognormal scale (log-space std) — controls how wide the prior is. Larger σ allows "
-                            "much higher / lower ROI a priori; σ≈0.5 is fairly tight, σ≈0.9 is broad."
-                        ),
-                    )
-            else:
-                st.caption("Per-channel lognormal **μ** and **σ** (names match your synthetic data).")
-                for i, ch in enumerate(chans):
-                    a, b = st.columns(2)
-                    a.number_input(
-                        f"{ch} — μ",
-                        value=0.2,
-                        step=0.1,
-                        key=f"m_pr_mu_{i}",
-                        help=f"Lognormal μ for **{ch}** only. Implied prior median ROI ≈ exp(μ).",
-                    )
-                    b.number_input(
-                        f"{ch} — σ",
-                        value=0.9,
-                        min_value=0.01,
-                        step=0.1,
-                        key=f"m_pr_sig_{i}",
-                        help=f"Lognormal σ for **{ch}** only. Larger = more uncertainty about that channel's ROI.",
-                    )
+            st.caption("Per-channel lognormal **μ** and **σ** (names match your synthetic data).")
+            for i, ch in enumerate(chans):
+                a, b = st.columns(2)
+                a.number_input(
+                    f"{ch} — μ",
+                    value=0.2,
+                    step=0.1,
+                    key=f"m_pr_mu_{i}",
+                    help=f"Lognormal μ for **{ch}** only. Implied prior median ROI ≈ exp(μ).",
+                )
+                b.number_input(
+                    f"{ch} — σ",
+                    value=0.9,
+                    min_value=0.01,
+                    step=0.1,
+                    key=f"m_pr_sig_{i}",
+                    help=f"Lognormal σ for **{ch}** only. Larger = more uncertainty about that channel’s ROI.",
+                )
 
             st.markdown("##### MCMC (NUTS) sampling")
             prof = st.selectbox(
@@ -478,13 +435,18 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
                 st.caption(
                     f"Using preset: **{prof}** → chains={pr[0]}, n_adapt={pr[1]}, n_burnin={pr[2]}, n_keep={pr[3]}, prior draws={pr[4]}"
                 )
+                st.session_state["m_n_chains"] = pr[0]
+                st.session_state["m_n_adapt"] = pr[1]
+                st.session_state["m_n_burnin"] = pr[2]
+                st.session_state["m_n_keep"] = pr[3]
+                st.session_state["m_n_prior"] = pr[4]
             a, b, c, d = st.columns(4)
             with a:
                 st.number_input(
                     "Chains",
                     min_value=1,
                     max_value=32,
-                    value=2,
+                    value=4,
                     step=1,
                     key="m_n_chains",
                     disabled=prof in MCMC_PRESETS,
@@ -562,24 +524,26 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
                 )
             with p3:
                 st.checkbox(
-                    "enable_aks (adaptive knots; often slower / GPU)",
+                    "enable_aks (Automatic Knot Selection; slower, GPU recommended)",
                     value=False,
                     key="m_enable_aks",
                     help=(
-                        "Adaptive Knot Saturation: lets the saturation curve flex more across knots. Often "
-                        "slower and is most practical with a GPU; leave off for quick CPU sanity checks."
+                        "Meridian searches for the optimal number and placement of time-trend knots automatically. "
+                        "More flexible trend but much slower; best with a GPU. "
+                        "Mutually exclusive with the manual knots list below."
                     ),
                 )
-            st.number_input(
-                "Meridian analysis batch_size (lower if out-of-memory on CPU)",
-                min_value=20,
-                max_value=1000,
-                value=80,
-                step=20,
-                key="m_batch_size",
+            aks_on = bool(st.session_state.get("m_enable_aks", False))
+            st.text_input(
+                "Knots (comma-separated integer time indices, e.g. 0, 13, 26, 51; blank = Meridian default)",
+                value="",
+                key="m_knots_str",
+                disabled=aks_on,
                 help=(
-                    "Batch size used by Meridian's Analyzer when computing posterior summaries / optimization. "
-                    "Lower this if you hit out-of-memory errors on CPU; higher is faster but uses more RAM."
+                    "Time-period indices (0-based) where the trend spline may change slope. "
+                    "Meridian recommends including 0 and (n_weeks − 1). "
+                    "For a national model, leaving this blank uses a single knot (flat trend). "
+                    "Cannot be used together with enable_aks."
                 ),
             )
 
@@ -616,20 +580,19 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
             nb = int(st.session_state.get("m_n_burnin", 200))
             nk = int(st.session_state.get("m_n_keep", 200))
             npr0 = int(st.session_state.get("m_n_prior", 200))
-        per = bool(st.session_state.get("m_roi_mode", "").startswith("Independent"))
-        mus: Optional[List[float]] = None
-        sigs: Optional[List[float]] = None
-        if per:
-            mus = [float(st.session_state.get(f"m_pr_mu_{i}", 0.2)) for i in range(len(chans))]
-            sigs = [float(st.session_state.get(f"m_pr_sig_{i}", 0.9)) for i in range(len(chans))]
+        mus = [float(st.session_state.get(f"m_pr_mu_{i}", 0.2)) for i in range(len(chans))]
+        sigs = [float(st.session_state.get(f"m_pr_sig_{i}", 0.9)) for i in range(len(chans))]
+        knots_raw = st.session_state.get("m_knots_str", "").strip()
+        knots_list: Optional[List[int]] = (
+            [int(x.strip()) for x in knots_raw.split(",") if x.strip().lstrip("-").isdigit()]
+            if knots_raw else None
+        )
 
         fit_succeeded = False
         with st.spinner("Sampling + diagnostics + budget optimization (can take many minutes on CPU)…"):
             try:
                 cfg = MeridianRunConfig(
-                    roi_log_mu=float(st.session_state.get("m_roi_mu", 0.2)),
-                    roi_log_sigma=float(st.session_state.get("m_roi_sig", 0.9)),
-                    per_channel_roi_priors=per,
+                    per_channel_roi_priors=True,
                     channel_roi_mus=mus,
                     channel_roi_sigmas=sigs,
                     n_chains=nc,
@@ -639,10 +602,10 @@ def render_meridian_tab(schema: Dict[str, Any]) -> None:
                     n_prior=npr0,
                     seed=int(st.session_state.get("m_seed", 0)),
                     enable_aks=bool(st.session_state.get("m_enable_aks", False)),
+                    knots=knots_list,
                 )
                 mmm, summ = fit_meridian(df, cfg)
-                bsz = int(st.session_state.get("m_batch_size", 80))
-                viz = meridian_visualizations(mmm, analysis_batch_size=bsz)
+                viz = meridian_visualizations(mmm)
                 st.session_state["meridian_mmm"] = mmm
                 st.session_state["meridian_summary"] = summ
                 st.session_state["meridian_viz"] = viz

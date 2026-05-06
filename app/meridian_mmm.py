@@ -26,6 +26,7 @@ class MeridianRunConfig:
     n_prior: int = 500
     seed: int = 0
     enable_aks: bool = False
+    knots: Optional[List[int]] = None
 
 
 def meridian_import_status() -> tuple[bool, Optional[str]]:
@@ -149,7 +150,7 @@ def fit_meridian(
     prior = prior_distribution.PriorDistribution(
         roi_m=tfp.distributions.LogNormal(loc=loc, scale=scale, name=constants.ROI_M)
     )
-    model_spec = spec.ModelSpec(prior=prior, enable_aks=run_cfg.enable_aks)
+    model_spec = spec.ModelSpec(prior=prior, enable_aks=run_cfg.enable_aks, knots=run_cfg.knots)
     mmm = model.Meridian(input_data=data, model_spec=model_spec)
 
     mmm.sample_prior(int(run_cfg.n_prior))
@@ -194,8 +195,6 @@ def arviz_posterior_table(mmm: Any, max_rows: int = 40) -> Optional[pd.DataFrame
 
 def meridian_visualizations(
     mmm: Any,
-    *,
-    analysis_batch_size: int = 80,
 ) -> Dict[str, Any]:
     """Model fit metrics/charts + fixed-budget optimization plots (Altair), best-effort."""
     from meridian.analysis import visualizer
@@ -205,7 +204,7 @@ def meridian_visualizations(
 
     try:
         diag = visualizer.ModelDiagnostics(mmm, use_kpi=False)
-        out["fit_metrics"] = diag.predictive_accuracy_table(batch_size=analysis_batch_size)
+        out["fit_metrics"] = diag.predictive_accuracy_table(batch_size=100)
     except Exception as e:
         out["fit_metrics_error"] = str(e)
 
@@ -230,7 +229,7 @@ def meridian_visualizations(
             use_posterior=True,
             fixed_budget=True,
             budget=None,
-            batch_size=analysis_batch_size,
+            batch_size=100,
         )
         out["optimization"] = opt
         out["spend_recommendation_df"] = spend_recommendation_dataframe(opt)

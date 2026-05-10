@@ -3,6 +3,8 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 
+from scripts.synth_input_classes.channel_seeding import sticky_pause_seed_sequence
+
 
 WeekOffRange = Tuple[int, int]
 
@@ -144,7 +146,6 @@ class Channel:
         self,
         num_weeks: int,
         *,
-        channel_index: int,
         config_seed: Optional[int],
     ) -> np.ndarray:
         """
@@ -152,9 +153,11 @@ class Channel:
 
         Combines deterministic ``off_ranges`` with optional sticky stochastic
         pauses. Sticky draws use a dedicated ``numpy.random.SeedSequence`` branch
-        from ``(config_seed, channel_index)`` so this mask is identical whenever
-        recomputed (e.g. spend vs impressions) without consuming the global
-        simulation RNG used for gamma / noise draws.
+        keyed by ``(config_seed, channel_name)`` (name hashed to a uint32) so
+        reordering ``channel_list`` does not change pauses for the same
+        ``channel_name``, and the mask matches when recomputed (e.g. spend vs
+        impressions) without consuming the global simulation RNG used for gamma
+        / noise draws.
 
         Weeks follow 1-indexed convention (element 0 is week 1).
         """
@@ -165,9 +168,8 @@ class Channel:
         base = self.on_vector(num_weeks)
         if not self.sticky_pause_ranges:
             return base
-        seed_part = 0 if config_seed is None else int(config_seed)
         sticky_rng = np.random.default_rng(
-            np.random.SeedSequence([seed_part, int(channel_index), 0x53544B59])
+            sticky_pause_seed_sequence(config_seed, self.get_channel_name())
         )
         sticky_off = self._sticky_pause_off_mask(num_weeks, sticky_rng, base)
         return base & ~sticky_off

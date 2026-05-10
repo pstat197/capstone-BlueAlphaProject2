@@ -13,6 +13,52 @@ from scripts.config.noise import init_rng
 from scripts.spend_simulation.spend_generation import generate_spend
 
 
+def test_generate_spend_identical_per_channel_when_yaml_order_permuted():
+    """Same seed + same channels (by name) ⇒ same spend series per name regardless of list order."""
+    common_ch = {
+        "spend_sampling_gamma_params": {"shape": 2.2, "scale": 600},
+        "spend_range": [50, 50000],
+        "true_roi": 1.0,
+        "baseline_revenue": 0,
+        "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
+        "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
+        "noise_variance": {"revenue": 0.0},
+        "cpm": 10.0,
+    }
+    base = {
+        "run_identifier": "OrderInv",
+        "week_range": 24,
+        "seed": 2027,
+        "correlations": [{"channels": ["Alpha", "Zed"], "rho": 0.35}],
+    }
+    cfg_ab = InputConfigurations.from_yaml_dict(
+        {
+            **base,
+            "channel_list": [
+                {"channel": {"channel_name": "Alpha", **common_ch}},
+                {"channel": {"channel_name": "Zed", **common_ch}},
+            ],
+        }
+    )
+    cfg_ba = InputConfigurations.from_yaml_dict(
+        {
+            **base,
+            "channel_list": [
+                {"channel": {"channel_name": "Zed", **common_ch}},
+                {"channel": {"channel_name": "Alpha", **common_ch}},
+            ],
+        }
+    )
+    s_ab = generate_spend(cfg_ab)
+    s_ba = generate_spend(cfg_ba)
+    names_ab = [c.get_channel_name() for c in cfg_ab.get_channel_list()]
+    names_ba = [c.get_channel_name() for c in cfg_ba.get_channel_list()]
+    for nm in ("Alpha", "Zed"):
+        ia = names_ab.index(nm)
+        ib = names_ba.index(nm)
+        np.testing.assert_allclose(s_ab[:, ia], s_ba[:, ib], rtol=0, atol=0)
+
+
 def _project_root():
     return Path(__file__).resolve().parent.parent
 
@@ -598,6 +644,7 @@ def main():
     print("Spend generation tests...")
     test_generate_spend_shape()
     test_generate_spend_reproducible()
+    test_generate_spend_identical_per_channel_when_yaml_order_permuted()
     test_generate_spend_in_spend_range()
     test_generate_spend_non_negative_finite()
     test_generate_spend_default_gamma_params()

@@ -22,7 +22,7 @@ seed: 133233
 
 # Outcome-level baseline / trend / seasonality / revenue noise (MMM-style: one path for total revenue).
 # Omitted keys fall back to default.yaml. If this block is omitted entirely, the simulator uses the
-# first channel's baseline/trend/seasonality/noise for the outcome layer.
+# lexicographically first channel_name row's baseline/trend/seasonality/noise for the outcome layer.
 # outcome noise_variance.revenue = variance (σ²) of one N(0,σ²) shock per week on total revenue (KPI² units).
 outcome_revenue:
   baseline_revenue: 15500

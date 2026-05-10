@@ -52,7 +52,7 @@ def generate_impressions(config: InputConfigurations, spend_matrix: np.ndarray) 
         if ch.is_fully_disabled():
             impressions[:, c] = 0.0
             continue
-        mask = ch.spend_allowed_mask(num_weeks, channel_index=c, config_seed=seed)
+        mask = ch.spend_allowed_mask(num_weeks, config_seed=seed)
         if bool(np.all(mask)):
             continue
         impressions[~mask, c] = 0.0

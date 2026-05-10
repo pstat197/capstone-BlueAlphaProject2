@@ -255,14 +255,18 @@ def _resolve_outcome_revenue_params(
     data: Dict[str, Any],
     channels: List[Channel],
     default_channel_template: Optional[Dict[str, Any]],
-) -> Tuple[float, float, Dict[str, Any], Dict[str, float]]:
+) -> Tuple[float, float, Dict[str, Any], Dict[str, float], Optional[str]]:
     """
     Outcome-level baseline / trend / seasonality / noise for total revenue (MMM-style).
 
     If ``outcome_revenue`` is present and non-empty in ``data``, those values are used
     (missing sub-keys fall back to the default channel template). Otherwise values
-    are taken from the first channel in ``channels`` (after merge), or the template
-    when there are no channels.
+    are taken from the lexicographically earliest ``channel_name`` in ``channels``
+    (tie-break: earlier list index), or the template when there are no channels.
+
+    The fifth return value is that channel's ``channel_name`` when that branch
+    supplies outcome parameters (used to key random seasonality RNGs independently
+    of list order); otherwise ``None``.
     """
     tmpl = default_channel_template or get_default_channel_template()
     raw = data.get("outcome_revenue")
@@ -282,16 +286,20 @@ def _resolve_outcome_revenue_params(
             noise_variance = {
                 str(k): float(v) for k, v in (tmpl.get("noise_variance") or {}).items()
             }
-        return baseline, trend_slope, seasonality_config, noise_variance
+        return baseline, trend_slope, seasonality_config, noise_variance, None
 
     if channels:
-        fc = channels[0]
+        fc = min(
+            enumerate(channels),
+            key=lambda ic: (str(ic[1].get_channel_name()), ic[0]),
+        )[1]
         sea = dict(fc.get_seasonality_config() or {})
         return (
             float(fc.get_baseline_revenue()),
             float(fc.get_trend_slope()),
             normalize_seasonality_config(sea),
             {str(k): float(v) for k, v in (fc.get_noise_variance() or {}).items()},
+            str(fc.get_channel_name()),
         )
 
     seasonality_template = tmpl.get("seasonality_config") or {}
@@ -300,6 +308,7 @@ def _resolve_outcome_revenue_params(
         float(tmpl.get("trend_slope", 0.0)),
         normalize_seasonality_config(dict(seasonality_template)) if seasonality_template else {},
         {str(k): float(v) for k, v in (tmpl.get("noise_variance") or {}).items()},
+        None,
     )
 
 
@@ -499,6 +508,8 @@ class InputConfigurations:
     outcome_trend_slope: float = 0.0
     outcome_seasonality_config: Dict[str, Any] = field(default_factory=dict)
     outcome_noise_variance: Dict[str, float] = field(default_factory=dict)
+    # When outcome params come from the first channel row (no top-level outcome_revenue).
+    outcome_seasonality_seed_channel_name: Optional[str] = None
 
     @classmethod
     def from_yaml_dict(
@@ -599,7 +610,9 @@ class InputConfigurations:
         validate_budget_shifts_channel_refs(budget_shifts, known_channel_names=known_names)
 
         rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
-        ob, ot, osea, onv = _resolve_outcome_revenue_params(data, channels, default_channel_template)
+        ob, ot, osea, onv, osea_seed_ch = _resolve_outcome_revenue_params(
+            data, channels, default_channel_template
+        )
         validate_outcome_noise_variance(onv)
 
         week_range = int(data.get("week_range", 0))
@@ -620,6 +633,7 @@ class InputConfigurations:
             outcome_trend_slope=ot,
             outcome_seasonality_config=osea,
             outcome_noise_variance=onv,
+            outcome_seasonality_seed_channel_name=osea_seed_ch,
         )
 
     def get_run_identifier(self) -> str:
@@ -662,6 +676,10 @@ class InputConfigurations:
 
     def get_outcome_seasonality_config(self) -> Dict[str, Any]:
         return dict(self.outcome_seasonality_config)
+
+    def get_outcome_seasonality_seed_channel_name(self) -> Optional[str]:
+        """Channel name used to key outcome random seasonality when set; else ``None``."""
+        return self.outcome_seasonality_seed_channel_name
 
     def get_outcome_noise_variance(self) -> Dict[str, float]:
         return dict(self.outcome_noise_variance)

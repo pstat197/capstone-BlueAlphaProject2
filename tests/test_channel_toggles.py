@@ -194,9 +194,26 @@ def test_spend_allowed_mask_reproducible():
             StickyPauseRange(1, 10, 0.25, 0.75),
         ),
     )
-    m1 = ch.spend_allowed_mask(10, channel_index=0, config_seed=123)
-    m2 = ch.spend_allowed_mask(10, channel_index=0, config_seed=123)
+    m1 = ch.spend_allowed_mask(10, config_seed=123)
+    m2 = ch.spend_allowed_mask(10, config_seed=123)
     np.testing.assert_array_equal(m1, m2)
+
+
+def test_sticky_spend_allowed_mask_stable_when_channel_list_reordered():
+    """Sticky draws key off channel_name, not YAML list index."""
+    sticky = [{"start_week": 1, "end_week": 10, "start_probability": 0.35, "continue_probability": 0.55}]
+    ch_a = _make_channel_dict("A", sticky_pause_ranges=None)
+    ch_b = _make_channel_dict(
+        "B",
+        sticky_pause_ranges=sticky,
+    )
+    cfg_ab = _make_config([ch_a, ch_b], week_range=12, seed=77)
+    cfg_ba = _make_config([ch_b, ch_a], week_range=12, seed=77)
+    b_from_ab = next(ch for ch in cfg_ab.get_channel_list() if ch.get_channel_name() == "B")
+    b_from_ba = next(ch for ch in cfg_ba.get_channel_list() if ch.get_channel_name() == "B")
+    m_ab = b_from_ab.spend_allowed_mask(12, config_seed=77)
+    m_ba = b_from_ba.spend_allowed_mask(12, config_seed=77)
+    np.testing.assert_array_equal(m_ab, m_ba)
 
 
 def test_spend_allowed_mask_all_sticky_when_always_continue():
@@ -214,7 +231,7 @@ def test_spend_allowed_mask_all_sticky_when_always_continue():
             StickyPauseRange(1, 4, 1.0, 1.0),
         ),
     )
-    m = ch.spend_allowed_mask(8, channel_index=0, config_seed=7)
+    m = ch.spend_allowed_mask(8, config_seed=7)
     np.testing.assert_array_equal(m[:4], np.array([False] * 4))
     np.testing.assert_array_equal(m[4:], np.array([True] * 4))
 
@@ -234,7 +251,7 @@ def test_sticky_markov_alternating_when_continue_is_zero():
             StickyPauseRange(1, 5, 1.0, 0.0),
         ),
     )
-    m = ch.spend_allowed_mask(5, channel_index=0, config_seed=99)
+    m = ch.spend_allowed_mask(5, config_seed=99)
     expected = np.array([False, True, False, True, False])
     np.testing.assert_array_equal(m, expected)
 
@@ -255,7 +272,7 @@ def test_sticky_freezes_markov_state_across_deterministic_off_week():
             StickyPauseRange(2, 4, 1.0, 1.0),
         ),
     )
-    m = ch.spend_allowed_mask(5, channel_index=0, config_seed=1)
+    m = ch.spend_allowed_mask(5, config_seed=1)
     # Week 2 sticky off; week 3 hard off (skip sticky draw, prev stays True); week 4 uses continue 1 -> off
     expected = np.array([True, False, False, False, True])
     np.testing.assert_array_equal(m, expected)
@@ -737,6 +754,7 @@ def main():
     except Exception as e:
         raise AssertionError(f"negative num_weeks test failed: {e}")
     test_spend_allowed_mask_reproducible()
+    test_sticky_spend_allowed_mask_stable_when_channel_list_reordered()
     test_spend_allowed_mask_all_sticky_when_always_continue()
     test_sticky_markov_alternating_when_continue_is_zero()
     test_sticky_freezes_markov_state_across_deterministic_off_week()

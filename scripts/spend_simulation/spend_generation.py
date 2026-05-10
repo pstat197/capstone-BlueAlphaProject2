@@ -1,10 +1,31 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 import numpy as np
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 DEFAULT_GAMMA_SHAPE = 2.5
 DEFAULT_GAMMA_SCALE = 1000.0
+
+
+def _simulation_draw_order(channels: Sequence[Any]) -> List[int]:
+    """YAML column indices sorted by ``channel_name`` (then index) for order-invariant RNG."""
+    n = len(channels)
+    return sorted(range(n), key=lambda i: (channels[i].get_channel_name(), i))
+
+
+def _scatter_sorted_draws_to_yaml_order(
+    work: np.ndarray, draw_order: Sequence[int]
+) -> np.ndarray:
+    """Map draws with columns in ``draw_order`` back to YAML ``channel_list`` column order.
+
+    ``work[:, k]`` belongs to ``channels[draw_order[k]]``.
+    """
+    num_weeks, n = work.shape
+    out = np.zeros((num_weeks, n), dtype=float)
+    for k in range(n):
+        yaml_col = int(draw_order[k])
+        out[:, yaml_col] = work[:, k]
+    return out
 
 
 def _build_correlation_matrix(
@@ -41,48 +62,58 @@ def _generate_correlated_spend(config: InputConfigurations) -> np.ndarray:
     num_channels = len(channels)
     rng = config.get_rng()
 
-    channel_names = [ch.get_channel_name() for ch in channels]
+    draw_order = _simulation_draw_order(channels)
+    sorted_names = [channels[i].get_channel_name() for i in draw_order]
 
     mu = np.zeros(num_channels)
     sigma = np.zeros(num_channels)
 
-    for c, ch in enumerate(channels):
+    for k in range(num_channels):
+        ch = channels[draw_order[k]]
         params = ch.get_spend_sampling_gamma_params()
         shape = params.get("shape", DEFAULT_GAMMA_SHAPE)
         scale = params.get("scale", DEFAULT_GAMMA_SCALE)
         gamma_mean = shape * scale
         gamma_var = shape * (scale ** 2)
         # Lognormal parameterisation: match the gamma's mean and variance
-        mu[c] = np.log(gamma_mean ** 2 / np.sqrt(gamma_var + gamma_mean ** 2))
-        sigma[c] = np.sqrt(np.log(1 + gamma_var / gamma_mean ** 2))
+        mu[k] = np.log(gamma_mean ** 2 / np.sqrt(gamma_var + gamma_mean ** 2))
+        sigma[k] = np.sqrt(np.log(1 + gamma_var / gamma_mean ** 2))
 
-    corr = _build_correlation_matrix(channel_names, config.get_correlations())
+    corr = _build_correlation_matrix(sorted_names, config.get_correlations())
     cov = np.diag(sigma) @ corr @ np.diag(sigma)
 
-    log_spend = rng.multivariate_normal(mu, cov, size=num_weeks)
-    spend = np.exp(log_spend)
-    _clip_spend_to_ranges(spend, channels)
+    log_spend_sorted = rng.multivariate_normal(mu, cov, size=num_weeks)
+    work = np.exp(log_spend_sorted)
+    for k in range(num_channels):
+        ch = channels[draw_order[k]]
+        spend_range = ch.get_spend_range()
+        low = spend_range[0] if len(spend_range) >= 1 else 0.0
+        high = spend_range[1] if len(spend_range) >= 2 else np.inf
+        work[:, k] = np.clip(work[:, k], low, high)
+    spend = _scatter_sorted_draws_to_yaml_order(work, draw_order)
     return spend
 
 
 def _generate_independent_spend(config: InputConfigurations) -> np.ndarray:
-    """Original gamma-sampling path for independent channels."""
+    """Gamma-sampling path for independent channels (draw order by ``channel_name``)."""
     num_weeks = config.get_week_range()
     channels = config.get_channel_list()
     num_channels = len(channels)
     rng = config.get_rng()
 
-    out = np.zeros((num_weeks, num_channels))
-    for c in range(num_channels):
-        params = channels[c].get_spend_sampling_gamma_params()
+    draw_order = _simulation_draw_order(channels)
+    work = np.zeros((num_weeks, num_channels))
+    for k in range(num_channels):
+        ch = channels[draw_order[k]]
+        params = ch.get_spend_sampling_gamma_params()
         shape = params.get("shape", DEFAULT_GAMMA_SHAPE)
         scale = params.get("scale", DEFAULT_GAMMA_SCALE)
-        spend_range = channels[c].get_spend_range()
+        spend_range = ch.get_spend_range()
         low = spend_range[0] if len(spend_range) >= 1 else 0.0
         high = spend_range[1] if len(spend_range) >= 2 else np.inf
         draws = rng.gamma(shape, scale, size=num_weeks)
-        out[:, c] = np.clip(draws, low, high)
-    return out
+        work[:, k] = np.clip(draws, low, high)
+    return _scatter_sorted_draws_to_yaml_order(work, draw_order)
 
 
 def _apply_budget_shifts(spend: np.ndarray, config: InputConfigurations) -> None:
@@ -173,7 +204,7 @@ def _apply_channel_toggles(config: InputConfigurations, spend: np.ndarray) -> np
         if ch.is_fully_disabled():
             out[:, c] = 0.0
             continue
-        mask = ch.spend_allowed_mask(num_weeks, channel_index=c, config_seed=seed)
+        mask = ch.spend_allowed_mask(num_weeks, config_seed=seed)
         if bool(np.all(mask)):
             continue
         out[~mask, c] = 0.0

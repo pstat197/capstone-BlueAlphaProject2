@@ -8,8 +8,9 @@ from scripts.revenue_simulation.seasonality_fit import (
     fit_pattern_multipliers_to_fourier,
     normalize_seasonality_config,
 )
-from scripts.synth_input_classes.input_configurations import InputConfigurations
 from scripts.synth_input_classes.channel import Channel
+from scripts.synth_input_classes.channel_seeding import outcome_seasonality_fallback_seed
+from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 
 def _saturation_fn(impressions: np.ndarray, saturation_config: Dict) -> np.ndarray:
@@ -384,9 +385,8 @@ def generate_revenue(
         )
 
     media_sum = out.sum(axis=1)
-    seasonality_seed = int(
-        np.random.SeedSequence([0 if run_seed is None else int(run_seed), 0x0FFC0DE])
-        .generate_state(1)[0]
+    seasonality_seed = outcome_seasonality_fallback_seed(
+        run_seed, config.get_outcome_seasonality_seed_channel_name()
     )
     baseline_path = _generate_baseline_revenue(
         num_weeks,

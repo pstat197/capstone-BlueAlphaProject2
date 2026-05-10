@@ -479,8 +479,8 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
 
             st.markdown("##### Noise (simulation)")
             st.caption(
-                "Random variation in **impressions** (right after CPM) and in **revenue** (after all media math). "
-                "Both use √(your value) × a weekly level, so they scale with that week’s size — not fixed dollar noise."
+                "Random variation in **impressions** (right after CPM) uses √(value) × that week’s base impressions. "
+                "**Revenue** noise is one Gaussian shock per week on **total** revenue: √(value) is σ in **fixed** KPI units (see expander)."
             )
             with st.expander(
                 "How noise values work (click to open)",

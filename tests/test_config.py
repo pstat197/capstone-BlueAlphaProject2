@@ -63,7 +63,7 @@ def test_channel_tiktok(config: InputConfigurations):
     assert gamma["scale"] == 1000
     noise = tiktok.get_noise_variance()
     assert noise["impression"] == 0.1
-    assert noise["revenue"] == 0.15
+    assert noise["revenue"] == 1_000_000.0
     assert tiktok.get_cpm() == 25
 
 
@@ -86,7 +86,7 @@ def test_channel_linkedin(config: InputConfigurations):
     assert gamma["scale"] == 1000
     noise = linkedin.get_noise_variance()
     assert noise["impression"] == 0.0025
-    assert noise["revenue"] == 0.15
+    assert noise["revenue"] == 1_000_000.0
     assert linkedin.get_cpm() == 10
 
 

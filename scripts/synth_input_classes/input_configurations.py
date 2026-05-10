@@ -317,7 +317,7 @@ class InputConfigurations:
     media_transform_order: str = "adstock_first"
     budget_shifts: List[Dict[str, Any]] = field(default_factory=list)
     rng: np.random.Generator = field(default_factory=np.random.default_rng)
-    # Single outcome-level path for total revenue (baseline + linear trend × seasonality + noise).
+    # Single outcome-level path for total revenue (baseline + linear trend × seasonality + homoskedastic noise).
     outcome_baseline_revenue: float = 0.0
     outcome_trend_slope: float = 0.0
     outcome_seasonality_config: Dict[str, Any] = field(default_factory=dict)

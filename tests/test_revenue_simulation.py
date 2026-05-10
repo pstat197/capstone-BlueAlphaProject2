@@ -8,6 +8,7 @@ from scripts.config.loader import load_config, load_config_from_dict
 from scripts.impressions_simulation.impressions_generation import generate_impressions
 from scripts.revenue_simulation.revenue_generation import (
     _adstock_decay,
+    _outcome_revenue_noise,
     _saturation_fn,
     generate_revenue,
 )
@@ -30,6 +31,21 @@ def test_generate_revenue_shape_and_finite(example_config):
     assert revenue.total_revenue.shape == (config.get_week_range(),)
     assert np.all(np.isfinite(revenue.channel_media_revenue))
     assert np.all(np.isfinite(revenue.total_revenue))
+
+
+def test_outcome_revenue_noise_is_homoskedastic():
+    """Weekly shock σ = √(variance); std of residuals ~ σ regardless of revenue level."""
+    var_ = 4.0
+    sigma = 2.0
+    n = 8000
+    low = np.full(n, 50.0)
+    high = np.full(n, 1.0e6)
+    r0 = np.random.default_rng(0)
+    r1 = np.random.default_rng(1)
+    res_low = _outcome_revenue_noise(low, r0, revenue_variance=var_) - low
+    res_high = _outcome_revenue_noise(high, r1, revenue_variance=var_) - high
+    assert abs(float(np.std(res_low)) - sigma) < 0.05
+    assert abs(float(np.std(res_high)) - sigma) < 0.05
 
 
 def test_linear_saturation_scales_by_slope():
@@ -142,6 +158,7 @@ def test_generate_revenue_includes_trend_and_seasonality_baseline():
 def main():
     print("Revenue simulation tests...")
     test_generate_revenue_shape_and_finite()
+    test_outcome_revenue_noise_is_homoskedastic()
     test_linear_saturation_scales_by_slope()
     test_linear_adstock_uniform_moving_average_when_lag_positive()
     test_linear_adstock_lag_zero_is_identity()

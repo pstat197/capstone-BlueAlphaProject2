@@ -38,8 +38,8 @@ Both values are **non-negative**. **0** turns that noise off.
 
 **Revenue noise (outcome-level)** — applied **once** to **total** weekly revenue after summing all channels’ **media-only** contributions and adding the outcome baseline / trend / seasonality path.
 
-- Let `R` be that week’s total revenue **before** this noise step.
-- Random noise is Gaussian with **standard deviation = √(revenue noise) × |R|** (same relative-spread idea as before, but on the **total** series).
+- Each week, one draw **ε ~ N(0, σ²)** is added to that week’s total, with **σ = √(revenue noise)** in the **same units as revenue** (homoskedastic; σ does **not** scale with the level of `R`).
+- The value you enter is the **variance** σ² (squared KPI units), same naming as impression noise’s “variance” knob.
 
 Set **`outcome_revenue.noise_variance.revenue`** in YAML (or omit the whole ``outcome_revenue`` block to inherit the **first channel’s** revenue noise for the outcome step). Per-channel `noise_variance.revenue` no longer drives a separate noise draw per channel.
 """

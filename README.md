@@ -216,7 +216,7 @@ Fully disabled channels return **zeros** for the entire run (no media contributi
 After summing media across channels for each week:
 
 4. **Baseline + trend + seasonality:** one series from `outcome_baseline_revenue`, `outcome_trend_slope`, and `outcome_seasonality_config` on `InputConfigurations` (see [Seasonality and `seasonality_fit`](#seasonality-and-seasonality_fit) for multiplier semantics). Source of truth in YAML: optional top-level **`outcome_revenue`** with the same-shaped keys (`baseline_revenue`, `trend_slope`, `seasonality_config`, `noise_variance`); if that block is missing or empty, values are taken from the **first** channel in `channel_list` after merge (so single-channel configs behave as before without extra YAML).
-5. **Revenue noise (outcome):** Gaussian with standard deviation `sqrt(outcome_noise_variance["revenue"]) * abs(combined)` when that variance is positive, where `combined` = media sum + baseline path for that week.
+5. **Revenue noise (outcome):** one independent draw per week, **ε ~ N(0, σ²)** added to `combined` (media sum + baseline path), with **σ = sqrt(outcome_noise_variance["revenue"])** in the same units as revenue when that variance is positive (homoskedastic; σ does not scale with `combined`).
 
 `generate_revenue` returns **`RevenueGenerationResult`**: `channel_media_revenue` (matrix) and `total_revenue` (vector). The shared run **`rng`** is used for outcome noise (same generator as spend/impressions draws in order — keep seeds fixed for reproducible end-to-end runs).
 

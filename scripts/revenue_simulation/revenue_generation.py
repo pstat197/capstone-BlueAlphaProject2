@@ -229,14 +229,21 @@ def _outcome_revenue_noise(
     *,
     revenue_variance: float,
 ) -> np.ndarray:
+    """
+    One independent Gaussian draw per week on **total** revenue (Meridian-style additive error).
+
+    ``revenue_variance`` is the variance of that shock in **squared KPI units** (same units as
+    revenue squared); standard deviation is ``sqrt(revenue_variance)`` and does **not** scale
+    with the level of revenue that week.
+    """
     if revenue_variance < 0:
         raise ValueError(
             f"Outcome revenue noise variance must be non-negative, got {revenue_variance}."
         )
     if revenue_variance <= 0:
         return base_series
-    sigma = np.sqrt(revenue_variance) * np.abs(base_series)
-    noise = rng.normal(loc=0.0, scale=sigma)
+    sigma = float(np.sqrt(revenue_variance))
+    noise = rng.normal(loc=0.0, scale=sigma, size=base_series.shape)
     return base_series + noise
 
 
@@ -298,8 +305,9 @@ def generate_revenue(
     """
     Map impressions to weekly **media** revenue per channel and one **total** revenue series.
 
-    Total revenue = sum_c(media_c) + outcome baseline/trend/seasonality + outcome-level
-    revenue noise (see ``InputConfigurations`` outcome fields / YAML ``outcome_revenue``).
+    Total revenue = sum_c(media_c) + outcome baseline/trend/seasonality + one independent
+    outcome-level Gaussian shock per week (see ``InputConfigurations`` / YAML ``outcome_revenue``:
+    ``noise_variance.revenue`` is the shock **variance** in squared KPI units, not scaled by |R|).
 
     Parameters
     ----------

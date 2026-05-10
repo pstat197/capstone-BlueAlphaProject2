@@ -67,7 +67,7 @@ per_channel_sliders:
   - path: channel.noise_variance.revenue
     group: noise
     label: "Revenue noise"
-    help: "Outcome noise on **total** weekly revenue (same first-channel / `outcome_revenue` rule as baseline). Std dev = √(this) × |total before noise|. Open the Noise reference expander for detail."
+    help: "Outcome noise on **total** weekly revenue (first-channel / `outcome_revenue` rule). This field is **variance** σ² of a weekly N(0,σ²) shock in squared KPI units (σ does not scale with total). Open the Noise reference expander."
     min: 0.0
     max: 1.0
     step: 0.01

@@ -450,8 +450,8 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
             st.markdown("##### Spend & ROI")
             st.caption(
                 "Spend range and gamma sampling drive weekly spend; CPM maps spend to impressions. "
-                "True ROI scales effective (saturated, adstocked) media into revenue. "
-                "Baseline revenue is added each week regardless of media."
+                "True ROI scales media after the enabled adstock/saturation steps (order is under **Advanced → "
+                "Media response order**). Baseline revenue is added each week regardless of media."
             )
             core = grouped.get("core", [])
             if len(core) >= 2:

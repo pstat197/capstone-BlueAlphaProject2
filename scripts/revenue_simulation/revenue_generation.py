@@ -226,18 +226,21 @@ def _calculate_channel_revenue(
     *,
     adstock_global: bool = True,
     saturation_global: bool = True,
+    saturation_before_adstock: bool = False,
     seasonality_seed: int | None = None,
 ) -> np.ndarray:
     """
     Compute weekly revenue contribution for a single channel.
 
-    Pipeline:
+    Pipeline (default ``saturation_before_adstock=False``):
       impressions
-        → saturation (optional per-channel / global toggle)
         → adstock (optional per-channel / global toggle)
+        → saturation (optional per-channel / global toggle)
         → ROI scaling (true_roi)
         → + baseline_revenue
         → + Gaussian noise (variance from noise_variance['revenue'])
+
+    If ``saturation_before_adstock=True``, adstock and saturation steps are swapped.
 
     On/off semantics (Policy A - "soft off"):
       - Fully disabled channels (`enabled=False`) contribute zero across the
@@ -252,9 +255,14 @@ def _calculate_channel_revenue(
 
     saturation_on = saturation_global and channel.saturation_enabled
     adstock_on = adstock_global and channel.adstock_enabled
+    imp_f = impressions.astype(float, copy=True)
 
-    x = _saturation_fn(impressions, channel.saturation_config) if saturation_on else impressions.astype(float, copy=True)
-    transformed_imp = _adstock_decay(x, channel.adstock_decay_config) if adstock_on else x
+    if saturation_before_adstock:
+        x = _saturation_fn(imp_f, channel.saturation_config) if saturation_on else imp_f
+        transformed_imp = _adstock_decay(x, channel.adstock_decay_config) if adstock_on else x
+    else:
+        x = _adstock_decay(imp_f, channel.adstock_decay_config) if adstock_on else imp_f
+        transformed_imp = _saturation_fn(x, channel.saturation_config) if saturation_on else x
     revenue = transformed_imp * float(channel.true_roi)
     trend_slope = float(getattr(channel, "trend_slope", 0.0))
     seasonality_config = getattr(channel, "seasonality_config", None)
@@ -311,6 +319,7 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
     rng = config.get_rng()
     adstock_global = config.get_adstock_global()
     saturation_global = config.get_saturation_global()
+    saturation_before_adstock = config.get_media_transform_order() == "saturation_first"
     run_seed = config.get_seed()
     out = np.zeros((num_weeks, num_channels), dtype=float)
 
@@ -327,6 +336,7 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
             rng,
             adstock_global=adstock_global,
             saturation_global=saturation_global,
+            saturation_before_adstock=saturation_before_adstock,
             seasonality_seed=seasonality_seed,
         )
 

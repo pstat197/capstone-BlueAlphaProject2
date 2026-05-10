@@ -78,9 +78,17 @@ def _pause_rule_count(ch: Dict[str, Any]) -> int:
     return n_fixed + n_sticky
 
 
+def _media_order_short(merged: Dict[str, Any]) -> str:
+    raw = str(merged.get("media_transform_order", "adstock_first")).strip().lower()
+    if raw == "saturation_first":
+        return "Saturation → adstock"
+    return "Adstock → saturation"
+
+
 def build_run_summary_table(merged: Dict[str, Any]) -> pd.DataFrame:
     """Compact table of per-channel settings as they will be merged for the next run."""
     rows: List[Dict[str, Any]] = []
+    order_s = _media_order_short(merged)
     ch_list = merged.get("channel_list") or []
     for i, _item in enumerate(ch_list):
         ch = _channel_dict_at(merged, i)
@@ -98,6 +106,7 @@ def build_run_summary_table(merged: Dict[str, Any]) -> pd.DataFrame:
             {
                 "Channel": name,
                 "Active": active,
+                "Media order": order_s,
                 "Adstock": ads_s,
                 "Saturation": sat_s,
                 "Pause rules": _pause_rule_count(ch),
@@ -107,7 +116,16 @@ def build_run_summary_table(merged: Dict[str, Any]) -> pd.DataFrame:
         )
     if not rows:
         return pd.DataFrame(
-            columns=["Channel", "Active", "Adstock", "Saturation", "Pause rules", "ROI", "Baseline"]
+            columns=[
+                "Channel",
+                "Active",
+                "Media order",
+                "Adstock",
+                "Saturation",
+                "Pause rules",
+                "ROI",
+                "Baseline",
+            ]
         )
     return pd.DataFrame(rows)
 

@@ -11,7 +11,7 @@ import copy
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import streamlit as st
 import yaml
@@ -58,6 +58,21 @@ from app.ui_seed_extras import render_seed_extra_controls, sync_seed_extra_modes
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
 
 
+def _canonical_media_transform_order(cfg: Dict[str, Any]) -> str:
+    raw = str((cfg or {}).get("media_transform_order", "adstock_first")).strip().lower()
+    return "saturation_first" if raw == "saturation_first" else "adstock_first"
+
+
+_MEDIA_ORDER_LABELS = {
+    "adstock_first": "Adstock → saturation (default)",
+    "saturation_first": "Saturation → adstock",
+}
+
+
+def _media_order_radio_label(value: str) -> str:
+    return _MEDIA_ORDER_LABELS.get(str(value), str(value))
+
+
 def _resync_form_from_sim_config() -> None:
     """Reset form widget state so it mirrors the current ``sim_config``.
 
@@ -92,6 +107,10 @@ def main() -> None:
 
     if "sim_config" not in st.session_state:
         st.session_state.sim_config = yaml.safe_load(load_example_text()) or {}
+    if "media_transform_order" not in st.session_state:
+        st.session_state.media_transform_order = _canonical_media_transform_order(
+            st.session_state.sim_config
+        )
     if "config_collapsed" not in st.session_state:
         st.session_state.config_collapsed = False
     if "yaml_manual_edit" not in st.session_state:
@@ -120,6 +139,9 @@ def main() -> None:
         )
         s = st.session_state.sim_config.get("seed")
         st.session_state.seed_input = int(s) if s is not None else 0
+        st.session_state.media_transform_order = _canonical_media_transform_order(
+            st.session_state.sim_config
+        )
 
     pending_yaml = st.session_state.pop("pending_yaml_dump", None)
     if pending_yaml is not None:
@@ -185,6 +207,9 @@ def main() -> None:
             )
             s = st.session_state.sim_config.get("seed")
             st.session_state.seed_input = int(s) if s is not None else 0
+            st.session_state.media_transform_order = _canonical_media_transform_order(
+                st.session_state.sim_config
+            )
             st.session_state["pending_yaml_dump"] = yaml_dump(st.session_state.sim_config)
             st.session_state.yaml_manual_edit = False
             st.rerun()
@@ -317,6 +342,30 @@ def main() -> None:
             render_budget_shifts_section(user_dict, n_channels)
 
         with tab_adv:
+            st.markdown("##### Media response order")
+            st.caption(
+                "Controls whether **adstock** (carry-over / lag smoothing) runs on raw weekly impressions "
+                "before **saturation** (response curve), or the reverse. Written to YAML as `media_transform_order`."
+            )
+            st.radio(
+                "Weekly transform sequence",
+                options=["adstock_first", "saturation_first"],
+                key="media_transform_order",
+                format_func=_media_order_radio_label,
+                horizontal=True,
+                on_change=yaml_sync_from_form,
+            )
+            with st.expander("When to use each order", expanded=False):
+                st.markdown(
+                    """
+**Adstock → saturation (default)**  
+Lag structure applies to **weekly impressions** first, then the saturation curve maps the smoothed series into “effective” media for ROI. Choose this when you treat carry-over as **memory in exposure or reach** (common in many MMM-style specs: smooth the input, then a nonlinear response).
+
+**Saturation → adstock**  
+The curve turns each week’s impressions into an immediate incremental response, then adstock **spreads that response** across weeks. Choose this when you want diminishing returns to act **within the week first**, and memory to apply to the **post-curve** signal (useful for teaching, sensitivity checks, or matching some legacy simulators).
+"""
+                )
+            st.divider()
             st.caption(
                 "Edit the full YAML directly. Stays in sync with the form unless you edit here—"
                 "then click **Apply YAML to form** to load it. Editing fields in Channels, Correlations, "

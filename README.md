@@ -1,6 +1,6 @@
 # capstone-BlueAlphaProject2
 
-Marketing media simulation: sample weekly spend per channel, map spend to impressions, apply saturation and adstock, add baseline revenue with optional trend and seasonality, add noise, and export a wide CSV. A Streamlit app edits the same YAML-shaped config, merges widget state, runs the pipeline with disk caching, and plots results.
+Marketing media simulation: sample weekly spend per channel, map spend to impressions, apply adstock and saturation in a configurable order (default adstock then saturation; `media_transform_order` in YAML or **Advanced → Media response order** in the app), add baseline revenue with optional trend and seasonality, add noise, and export a wide CSV. A Streamlit app edits the same YAML-shaped config, merges widget state, runs the pipeline with disk caching, and plots results.
 
 Additional narrative (Google Doc): [Documentation of Code](https://docs.google.com/document/d/1glQWezaB3eBH13Mxp2eR0Y7SM1zAaVAaS1qHFy2uu-o/edit?usp=sharing)
 
@@ -12,7 +12,7 @@ Additional narrative (Google Doc): [Documentation of Code](https://docs.google.c
 |------|------|
 | `scripts/config/` | `default.yaml`, `loader.py` (`load_config`, `load_config_from_dict`, `apply_seed_append_expansion`), `defaults.py`, RNG helpers. Merges user YAML over defaults, fills missing channel fields, optional `number_of_channels` expansion, expands **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** into lists, validates `correlations`. |
 | `scripts/synth_input_classes/` | `InputConfigurations` and `Channel` dataclasses: parsing from dict, `normalize_seasonality_config` on each channel, global adstock/saturation flags. |
-| `scripts/revenue_simulation/` | `revenue_generation.py` (saturation, adstock, ROI, baseline, seasonality, noise), `seasonality_fit.py` (Fourier fit, sin to Fourier, evaluation). |
+| `scripts/revenue_simulation/` | `revenue_generation.py` (adstock, saturation, ROI, baseline, seasonality, noise), `seasonality_fit.py` (Fourier fit, sin to Fourier, evaluation). |
 | `scripts/spend_simulation/` | `spend_generation.py` (independent gamma per cell **or** correlated lognormal draw from YAML `correlations`, then `budget_shifts`, then toggle masks), `correlation_analysis.py`, `pairwise_summary.py`. |
 | `scripts/impressions_simulation/` | `impressions_generation.py` (CPM, impression noise, masks). |
 | `scripts/main.py` | `run_simulation`, `construct_csv`, CLI entry that reads YAML (see [Config loading paths](#config-loading-paths)). |

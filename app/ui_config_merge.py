@@ -202,6 +202,7 @@ def clear_widget_keys() -> None:
             "bs_"
         ) or k in (
             "new_channel_name",
+            "media_transform_order",
             "advanced_yaml",
             "corr_ui_rows",
             "corr_next_id",
@@ -227,6 +228,9 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
     merged["week_range"] = int(st.session_state.get("week_range_num", 52))
     merged["run_identifier"] = str(st.session_state.get("run_identifier_input", "run")).strip() or "run"
     merged["seed"] = int(st.session_state.get("seed_input", 0))
+
+    _mo = str(st.session_state.get("media_transform_order", "adstock_first")).strip().lower()
+    merged["media_transform_order"] = "saturation_first" if _mo == "saturation_first" else "adstock_first"
 
     from app.ui_seasonality_panel import ensure_seasonality_widgets_warmed
 

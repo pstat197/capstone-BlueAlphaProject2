@@ -68,6 +68,36 @@ def test_generate_revenue_reproducible_with_seed(example_config_path):
     assert rev1.shape[1] == len(config1.get_channel_list())
 
 
+def test_media_transform_order_swaps_pipeline():
+    """saturation_first vs adstock_first changes revenue when both curves are active."""
+    ch = {
+        "channel_name": "A",
+        "true_roi": 2.0,
+        "spend_range": [0, 0],
+        "baseline_revenue": 0.0,
+        "trend_slope": 0.0,
+        "seasonality_config": {},
+        "saturation_config": {"type": "hill", "slope": 1.0, "K": 5000.0},
+        "adstock_decay_config": {"type": "geometric", "lambda": 0.6, "lag": 4},
+        "spend_sampling_gamma_params": {"shape": 1.0, "scale": 1.0},
+        "noise_variance": {"impression": 0.0, "revenue": 0.0},
+        "cpm": 10.0,
+    }
+    common = {
+        "run_identifier": "order_test",
+        "week_range": 12,
+        "seed": 42,
+        "channel_list": [{"channel": ch}],
+    }
+    cfg_ad = load_config_from_dict({**common, "media_transform_order": "adstock_first"})
+    cfg_sat = load_config_from_dict({**common, "media_transform_order": "saturation_first"})
+    rng = np.random.default_rng(0)
+    impressions = rng.integers(100, 5000, size=(12, 1)).astype(float)
+    r_ad = generate_revenue(cfg_ad, impressions)
+    r_sat = generate_revenue(cfg_sat, impressions)
+    assert not np.allclose(r_ad, r_sat)
+
+
 def test_generate_revenue_includes_trend_and_seasonality_baseline():
     """Seasonality/trend fields from config affect baseline revenue end-to-end."""
     cfg = load_config_from_dict(
@@ -110,6 +140,7 @@ def main():
     test_linear_adstock_uniform_moving_average_when_lag_positive()
     test_linear_adstock_lag_zero_is_identity()
     test_generate_revenue_reproducible_with_seed()
+    test_media_transform_order_swaps_pipeline()
     test_generate_revenue_includes_trend_and_seasonality_baseline()
     print("Revenue simulation tests passed.")
 

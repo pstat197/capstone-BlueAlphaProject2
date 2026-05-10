@@ -23,6 +23,19 @@ def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _parse_media_transform_order(raw: Any) -> str:
+    """Return ``adstock_first`` or ``saturation_first`` (fail-open default: adstock first)."""
+    if raw is None:
+        return "adstock_first"
+    s = str(raw).strip().lower().replace("-", "_")
+    if s in ("saturation_first", "saturation_before_adstock"):
+        return "saturation_first"
+    if s in ("adstock_first", "adstock_before_saturation", ""):
+        return "adstock_first"
+    # Unknown label: keep runs working; YAML authors can fix typos when they notice defaults.
+    return "adstock_first"
+
+
 def _coerce_bool(value: Any, *, context: str, default: bool = True) -> bool:
     if value is None:
         return default
@@ -248,6 +261,8 @@ class InputConfigurations:
     # Global kill-switches for modeling effects. Fail-open defaults: everything on.
     adstock_global: bool = True
     saturation_global: bool = True
+    # Weekly media → revenue: apply adstock then saturation (default), or saturation then adstock.
+    media_transform_order: str = "adstock_first"
     budget_shifts: List[Dict[str, Any]] = field(default_factory=list)
     rng: np.random.Generator = field(default_factory=np.random.default_rng)
 
@@ -341,6 +356,8 @@ class InputConfigurations:
             default=True,
         )
 
+        media_transform_order = _parse_media_transform_order(data.get("media_transform_order"))
+
         budget_shifts = _normalize_budget_shifts(data.get("budget_shifts"))
         rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
         return cls(
@@ -351,6 +368,7 @@ class InputConfigurations:
             correlations=correlations,
             adstock_global=adstock_global,
             saturation_global=saturation_global,
+            media_transform_order=media_transform_order,
             budget_shifts=budget_shifts,
             rng=rng,
         )
@@ -375,6 +393,10 @@ class InputConfigurations:
 
     def get_saturation_global(self) -> bool:
         return self.saturation_global
+
+    def get_media_transform_order(self) -> str:
+        """``adstock_first`` or ``saturation_first``."""
+        return self.media_transform_order
 
     def get_budget_shifts(self) -> List[Dict[str, Any]]:
         return self.budget_shifts

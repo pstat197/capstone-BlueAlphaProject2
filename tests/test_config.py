@@ -35,6 +35,7 @@ def test_config_getters(config: InputConfigurations):
     """Check InputConfigurations getters match example.yaml."""
     assert config.get_run_identifier() == "Example Alpha"
     assert config.get_week_range() == 26
+    assert config.get_media_transform_order() == "adstock_first"
 
 
 def test_channel_list(config: InputConfigurations):

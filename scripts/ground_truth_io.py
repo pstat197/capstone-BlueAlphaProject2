@@ -79,6 +79,7 @@ def extract_ground_truth(config: InputConfigurations) -> Dict[str, Any]:
             "global_toggles": {
                 "adstock_global": bool(config.get_adstock_global()),
                 "saturation_global": bool(config.get_saturation_global()),
+                "media_transform_order": str(config.get_media_transform_order()),
             },
             "correlations": config.get_correlations(),
             "budget_shifts": config.get_budget_shifts(),

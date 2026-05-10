@@ -1,7 +1,7 @@
 """Long-form markdown shown in channel configuration expanders."""
 
 SATURATION_TYPES_GUIDE_MD = """
-**Order in the simulator:** saturation runs **first** (impressions → effective media), then adstock, then ROI scaling.
+**Order in the simulator (default):** adstock runs **first** (lag / carry-over on raw impressions), then saturation, then ROI scaling. You can switch to saturation-first under **Advanced → Media response order** in the app or set top-level YAML ``media_transform_order: saturation_first``.
 
 - **`linear`** — Pick for a **simple proportional** link: response grows in line with impressions (good baseline or teaching runs).  
   **Formula:** `slope × impressions`. `slope = 1` is “no curve”; higher amplifies, lower dampens. There is **no** built-in ceiling.
@@ -14,7 +14,7 @@ SATURATION_TYPES_GUIDE_MD = """
 """
 
 ADSTOCK_TYPES_GUIDE_MD = """
-**Order in the simulator:** adstock runs **after** saturation; it **spreads** each week’s effective response over neighboring weeks (carry-over).
+**Order in the simulator (default):** adstock runs **before** saturation; it **spreads** each week’s impressions over neighboring weeks (carry-over), then saturation maps that to effective response. Reversible via **Advanced → Media response order** / ``media_transform_order`` in YAML.
 
 - **`linear`** — Pick when memory should be a **flat** average over a fixed window.  
   **Uniform** moving average over **lag + 1** weeks (this week + **lag** prior). **Lag 0** = no carry-over (this week only).
@@ -23,7 +23,7 @@ ADSTOCK_TYPES_GUIDE_MD = """
   Pick for **exponential decay** of ad effects. **λ** closer to **1** → longer memory; closer to **0** → mostly immediate.
 
 - **`weighted`** — Pick when you need a **custom** lag shape (e.g. delayed peak).  
-  Enter **comma-separated** weights from **oldest** lag → **newest**; the simulator convolves that kernel with the saturated series.
+  Enter **comma-separated** weights from **oldest** lag → **newest**; the simulator convolves that kernel with the weekly impression series.
 """
 
 NOISE_PARAMETERS_GUIDE_MD = """
@@ -36,7 +36,7 @@ Both values are **non-negative**. **0** turns that noise off.
 - So the number you enter controls how large random swings are **relative to that week’s expected impressions** — busy weeks get proportionally wider noise.
 - Impressions are clipped at **0** after noise.
 
-**Revenue noise** (applied **last** for the channel: after saturation, adstock, ROI, and baseline)
+**Revenue noise** (applied **last** for the channel: after the enabled adstock/saturation steps in the chosen order, then ROI and baseline)
 
 - Let `R` be that week’s channel revenue **before** this noise step.
 - Random noise is Gaussian with **standard deviation = √(revenue noise) × |R|**.

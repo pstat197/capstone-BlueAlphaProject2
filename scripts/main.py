@@ -27,7 +27,7 @@ def construct_csv(
     Construct a DataFrame: each row corresponds to a week.
     Columns:
       - 'week': week number (starting from 1)
-      - 'revenue': total weekly revenue (media sum + outcome baseline/trend/seasonality/noise)
+      - 'revenue': total weekly revenue (Meridian additive mean: μ_t^sim + media sum + noise; μ_t^sim = (baseline+trend·t)×σ_t per revenue_generation / ground truth)
       - For each channel: f"{channel}_impressions", f"{channel}_spend", f"{channel}_revenue"
         (channel revenue is **media-only** incremental contribution)
       - 'total_impressions', 'total_spend'

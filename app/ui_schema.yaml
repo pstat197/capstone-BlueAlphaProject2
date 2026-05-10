@@ -23,7 +23,7 @@ per_channel_sliders:
   - path: channel.baseline_revenue
     group: core
     label: "Baseline revenue †"
-    help: "SIM outcome layer: weekly non-media level before trend/seasonality. If YAML has no top-level `outcome_revenue`, the **first** channel’s baseline/trend/seasonality/noise drive that single path; other rows’ values do not add to totals. CSV `{name}_revenue` is media-only."
+    help: "SIM μ_t^sim slot: (baseline + trend/week)×seasonality σ_t; mean total = μ_t^sim + media sum + noise (additive like Meridian). Meridian’s doc μ_t is knot-interpolated; this app uses that closed form for synthesis. First-channel / `outcome_revenue` rule applies. CSV `{name}_revenue` is media-only."
     min: 0.0
     max: 100000.0
     step: 100.0

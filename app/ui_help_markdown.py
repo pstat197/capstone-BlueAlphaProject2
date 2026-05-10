@@ -29,7 +29,7 @@ ADSTOCK_TYPES_GUIDE_MD = """
 NOISE_PARAMETERS_GUIDE_MD = """
 The value is **non-negative**. **0** turns outcome revenue noise off.
 
-**Revenue noise (outcome-level)** — applied **once** to **total** weekly revenue after summing all channels’ **media-only** contributions and adding the outcome baseline / trend / seasonality path.
+**Revenue noise (outcome-level)** — applied **once** to **total** weekly revenue after forming `media sum + (baseline + trend) × outcome seasonality` (additive structure per [Meridian model spec](https://developers.google.com/meridian/docs/advanced-modeling/model-spec)).
 
 - Each week, one draw **ε ~ N(0, σ²)** is added to that week’s total, with **σ = √(revenue noise)** in the **same units as revenue** (homoskedastic; σ does **not** scale with the level of `R`).
 - The field is the shock **variance** σ² (squared KPI units).
@@ -38,7 +38,7 @@ Set **`outcome_revenue.noise_variance.revenue`** in YAML (or omit the whole ``ou
 """
 
 SEASONALITY_OVERVIEW_MD = """
-**How it fits in:** Outcome seasonality multiplies the **outcome-level** baseline each week (after optional linear **trend**), i.e. the single non-media path that is added to summed media contributions. It does **not** change spend or impressions.
+**How it fits in:** Meridian’s **μ_t** is a knot-interpolated time-varying intercept (see [Model specification — μ_t parameters](https://developers.google.com/meridian/docs/advanced-modeling/model-spec)). Here, **μ_t^sim** = `(baseline + trend)` × your outcome seasonality multiplier **σ_t**; total mean revenue is **μ_t^sim + sum of media contributions** (+ noise). It does **not** change spend or impressions.
 """
 
 SEASONALITY_TYPES_GUIDE_MD = """

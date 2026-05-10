@@ -240,19 +240,42 @@ def _seasonality(
 
     raise ValueError(f'Unknown seasonality type "{stype}"')
 
-def _generate_baseline_revenue(
-    week_range,
-    base_revenue,
-    trend_slope,
-    seasonality_config,
+def _outcome_baseline_plus_trend(
+    week_range: int, base_revenue: float, trend_slope: float
+) -> np.ndarray:
+    """Weekly linear ramp ``baseline + trend_slope * t`` with ``t`` in ``0 .. week_range-1``."""
+    t = np.arange(week_range, dtype=float)
+    return base_revenue + trend_slope * t
+
+
+def _simulator_outcome_mu_t(
+    baseline_trend: np.ndarray,
+    t: np.ndarray,
+    seasonality_config: Dict,
     *,
-    seasonality_seed: int | None = None,
-):
-    t = np.arange(week_range)
-    baseline = base_revenue + trend_slope * t
-    if seasonality_config:
-        baseline *= _seasonality(t, seasonality_config, fallback_seed=seasonality_seed)
-    return baseline
+    fallback_seed: int | None,
+) -> np.ndarray:
+    """
+    Time-varying intercept ``μ_t`` used in this simulator's additive revenue mean.
+
+    **Meridian (reference):** ``μ_t`` is a time-varying intercept from knot values
+    ``b_1,…,b_K`` at times ``s_1,…,s_K``, with linear interpolation between the two
+    bracketing knots:
+    ``μ_t = w(t) b_{ℓ(t)} + (1 - w(t)) b_{u(t)}`` (see Meridian model spec, § μ_t
+    parameters).
+
+    **This simulator:** we do not draw or interpolate knot values. For synthetic
+    ground truth we set
+
+    ``μ_t^sim = (baseline + trend·t) · σ_t``,
+
+    where ``σ_t`` is the outcome seasonality multiplier from YAML (≈ 1 when
+    disabled) and ``t`` is the same 0-based week index as ``baseline_trend``.
+    The **mean** weekly KPI still follows Meridian's **additive** layout
+    ``y_t ≈ μ_t^sim + Σ_c M_{c,t}`` before homoskedastic Gaussian noise.
+    """
+    sigma_t = _seasonality(t, seasonality_config, fallback_seed=fallback_seed)
+    return baseline_trend * sigma_t
 
 
 def _outcome_revenue_noise(
@@ -337,9 +360,20 @@ def generate_revenue(
     """
     Map impressions to weekly **media** revenue per channel and one **total** revenue series.
 
-    Total revenue = sum_c(media_c) + outcome baseline/trend/seasonality + one independent
-    outcome-level Gaussian shock per week (see ``InputConfigurations`` / YAML ``outcome_revenue``:
-    ``noise_variance.revenue`` is the shock **variance** in squared KPI units, not scaled by |R|).
+    **Meridian mean structure** (same additive *shape* as in the model spec):
+    ``y_{g,t} = μ_t + … + (\\text{media terms}) + ε`` (as referenced in https://developers.google.com/meridian/docs/advanced-modeling/model-spec).
+
+    **Meridian’s μ_t:** knot values ``b_k`` at times ``s_k``, with
+    ``μ_t = w(t) b_{ℓ(t)} + (1 - w(t)) b_{u(t)}`` (linear interpolation between
+    neighboring knots).
+
+    **This simulator’s μ_t:** closed-form ``μ_t^sim`` from
+    :func:`_simulator_outcome_mu_t` — ``(baseline + trend·t) · σ_t`` where ``σ_t``
+    is the YAML outcome seasonality multiplier (not knot-based). Week index ``t``
+    runs ``0 … T-1`` (``T = week_range``).
+
+    Weekly **mean** before noise: ``Σ_c media_c[t] + μ_t^sim``. Noise uses
+    ``noise_variance.revenue`` as shock variance (homoskedastic).
 
     Parameters
     ----------
@@ -385,17 +419,22 @@ def generate_revenue(
         )
 
     media_sum = out.sum(axis=1)
+    t = np.arange(num_weeks, dtype=float)
     seasonality_seed = outcome_seasonality_fallback_seed(
         run_seed, config.get_outcome_seasonality_seed_channel_name()
     )
-    baseline_path = _generate_baseline_revenue(
+    baseline_trend = _outcome_baseline_plus_trend(
         num_weeks,
         config.get_outcome_baseline_revenue(),
         config.get_outcome_trend_slope(),
-        config.get_outcome_seasonality_config(),
-        seasonality_seed=seasonality_seed,
     )
-    combined = media_sum + baseline_path
+    outcome_mu_t = _simulator_outcome_mu_t(
+        baseline_trend,
+        t,
+        config.get_outcome_seasonality_config(),
+        fallback_seed=seasonality_seed,
+    )
+    combined = media_sum + outcome_mu_t
     var_rev = float(config.get_outcome_noise_variance().get("revenue", 0.0))
     total = _outcome_revenue_noise(combined, rng, revenue_variance=var_rev)
 

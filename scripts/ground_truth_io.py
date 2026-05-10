@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
+from scripts.revenue_simulation.revenue_generation import MERIDIAN_MODEL_SPEC_URL
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 
@@ -71,7 +72,7 @@ def extract_ground_truth(config: InputConfigurations) -> Dict[str, Any]:
 
     return _to_jsonable(
         {
-            "ground_truth_version": 1,
+            "ground_truth_version": 3,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "run_identifier": config.get_run_identifier(),
             "week_range": int(config.get_week_range()),
@@ -81,6 +82,27 @@ def extract_ground_truth(config: InputConfigurations) -> Dict[str, Any]:
                 "trend_slope": float(config.get_outcome_trend_slope()),
                 "seasonality_config": _to_jsonable(config.get_outcome_seasonality_config()),
                 "noise_variance": _to_jsonable(config.get_outcome_noise_variance()),
+                "total_revenue_mechanism": {
+                    "meridian_model_spec_url": MERIDIAN_MODEL_SPEC_URL,
+                    "meridian_mu_t_definition": (
+                        "Per Meridian § μ_t parameters: μ_t = w(t)*b_l(t) + (1-w(t))*b_u(t) "
+                        "from knot values b_k at knot times s_k (linear interpolation between "
+                        "neighboring knots; knot prior and placement from model config)."
+                    ),
+                    "simulator_mu_t_substitute": (
+                        "This synthetic pipeline does not implement knot-based μ_t. "
+                        "The time-varying intercept used in the mean is "
+                        "μ_t^sim(t) = (baseline_revenue + trend_slope * t) * "
+                        "seasonality_multiplier_t, with t in [0, week_range) (0-based week index) "
+                        "and seasonality_multiplier_t from outcome seasonality_config (~1 when empty). "
+                        "Mean revenue before noise: sum_c channel_media_revenue[c,t] + μ_t^sim(t)."
+                    ),
+                    "additive_mean_matches_meridian_equation_shape": (
+                        "Same additive layout as Meridian model spec: "
+                        "y_t = μ_t + sum(media contributions) + ε_t, with ε_t homoskedastic Gaussian "
+                        "from outcome noise_variance.revenue (variance)."
+                    ),
+                },
             },
             "global_toggles": {
                 "adstock_global": bool(config.get_adstock_global()),

@@ -10,6 +10,7 @@ import pytest
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 from scripts.synth_input_classes.channel import Channel
 from scripts.config.loader import apply_seed_append_expansion, load_config, load_config_from_dict
+from scripts.ground_truth_io import extract_ground_truth
 
 
 def _project_root():
@@ -551,6 +552,18 @@ def test_validation_rejects_negative_adstock_lag():
     data = {"run_identifier": "BadLag", "week_range": 4, "channel_list": [{"channel": base}]}
     with pytest.raises(ValueError, match="lag"):
         InputConfigurations.from_yaml_dict(data)
+
+
+def test_extract_ground_truth_records_total_revenue_mechanism(config: InputConfigurations):
+    """Ground truth JSON documents Meridian μ_t vs simulator μ_t^sim and additive mean."""
+    gt = extract_ground_truth(config)
+    assert gt["ground_truth_version"] == 3
+    mech = gt["outcome_revenue"]["total_revenue_mechanism"]
+    assert "meridian_model_spec_url" in mech
+    assert "meridian_mu_t_definition" in mech
+    assert "w(t)*b_l" in mech["meridian_mu_t_definition"] or "w(t)" in mech["meridian_mu_t_definition"]
+    assert "simulator_mu_t_substitute" in mech
+    assert "μ_t^sim" in mech["simulator_mu_t_substitute"]
 
 
 def main():

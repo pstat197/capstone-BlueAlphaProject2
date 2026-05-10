@@ -10,8 +10,10 @@ from scripts.revenue_simulation.revenue_generation import (
     _adstock_decay,
     _outcome_revenue_noise,
     _saturation_fn,
+    _seasonality,
     generate_revenue,
 )
+from scripts.synth_input_classes.channel_seeding import outcome_seasonality_fallback_seed
 from scripts.spend_simulation.spend_generation import generate_spend
 
 
@@ -140,7 +142,7 @@ def test_media_transform_order_swaps_pipeline():
 
 
 def test_generate_revenue_includes_trend_and_seasonality_baseline():
-    """Outcome seasonality/trend affect total revenue; media-only columns stay zero with zero impressions."""
+    """Outcome seasonality μ_t and trend scale total revenue; with zero media, (baseline+trend)×μ_t matches totals."""
     cfg = load_config_from_dict(
         {
             "run_identifier": "SeasonalityE2E",
@@ -175,6 +177,54 @@ def test_generate_revenue_includes_trend_and_seasonality_baseline():
     np.testing.assert_allclose(rev.channel_media_revenue[:, 0], np.zeros(4))
 
 
+def test_outcome_revenue_meridian_additive_intercept_plus_media():
+    """Total = media + (baseline + trend)*seasonality (Meridian additive y = mu_t + media + eps)."""
+    cfg = load_config_from_dict(
+        {
+            "run_identifier": "MeridianAdditiveTotal",
+            "week_range": 2,
+            "seed": 7,
+            "channel_list": [
+                {
+                    "channel": {
+                        "channel_name": "A",
+                        "true_roi": 1.0,
+                        "spend_range": [0, 0],
+                        "baseline_revenue": 100.0,
+                        "trend_slope": 0.0,
+                        "seasonality_config": {
+                            "type": "categorical",
+                            "pattern": [2.0, 1.0],
+                        },
+                        "saturation_config": {"type": "linear", "slope": 1.0},
+                        "adstock_decay_config": {"type": "linear", "lag": 0},
+                        "spend_sampling_gamma_params": {"shape": 1.0, "scale": 1.0},
+                        "noise_variance": {"revenue": 0.0},
+                        "cpm": 10.0,
+                    }
+                }
+            ],
+        }
+    )
+    impressions = np.array([[50.0], [50.0]], dtype=float)
+    rev = generate_revenue(cfg, impressions)
+    t = np.arange(2, dtype=float)
+    sea = cfg.get_outcome_seasonality_config()
+    seed_ch = cfg.get_outcome_seasonality_seed_channel_name()
+    mu = _seasonality(
+        t,
+        sea,
+        fallback_seed=outcome_seasonality_fallback_seed(cfg.get_seed(), seed_ch),
+    )
+    base = cfg.get_outcome_baseline_revenue()
+    tr = cfg.get_outcome_trend_slope()
+    media = rev.channel_media_revenue[:, 0]
+    expected = media + (base + tr * t) * mu
+    np.testing.assert_allclose(rev.total_revenue, expected)
+    wrong_scale_all = (media + base + tr * t) * mu
+    assert not np.allclose(rev.total_revenue, wrong_scale_all)
+
+
 def main():
     print("Revenue simulation tests...")
     test_generate_revenue_shape_and_finite()
@@ -185,6 +235,7 @@ def main():
     test_generate_revenue_reproducible_with_seed()
     test_media_transform_order_swaps_pipeline()
     test_generate_revenue_includes_trend_and_seasonality_baseline()
+    test_outcome_revenue_meridian_additive_intercept_plus_media()
     print("Revenue simulation tests passed.")
 
 

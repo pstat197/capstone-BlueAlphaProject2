@@ -259,6 +259,10 @@ def _resolve_outcome_revenue_params(
     """
     Outcome-level baseline / trend / seasonality / noise for total revenue (MMM-style).
 
+    These fields parameterize the simulator's **μ_t substitute** ``μ_t^sim`` in
+    ``scripts.revenue_simulation.revenue_generation`` (Meridian uses knot-based ``μ_t``;
+    see Meridian model spec § μ_t parameters).
+
     If ``outcome_revenue`` is present and non-empty in ``data``, those values are used
     (missing sub-keys fall back to the default channel template). Otherwise values
     are taken from the lexicographically earliest ``channel_name`` in ``channels``
@@ -503,7 +507,7 @@ class InputConfigurations:
     media_transform_order: str = "adstock_first"
     budget_shifts: List[Dict[str, Any]] = field(default_factory=list)
     rng: np.random.Generator = field(default_factory=np.random.default_rng)
-    # Single outcome-level path for total revenue (baseline + linear trend × seasonality + homoskedastic noise).
+    # Outcome path: y ≈ μ_t^sim + sum(media); μ_t^sim = (baseline + trend*t)*σ_t (Meridian: knot μ_t).
     outcome_baseline_revenue: float = 0.0
     outcome_trend_slope: float = 0.0
     outcome_seasonality_config: Dict[str, Any] = field(default_factory=dict)

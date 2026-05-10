@@ -22,6 +22,7 @@ from app.ui_form_state import (
     adstock_slider_visible,
     adstock_weights_key,
     effective_curve_type,
+    parse_optional_num,
     pc_field_key,
     saturation_slider_visible,
     select_session_key,
@@ -202,6 +203,41 @@ def _render_adstock_weights_field(i: int, data: Dict[str, Any]) -> None:
 
 
 _SLIDER_GROUPS = {"saturation", "adstock", "noise"}
+
+
+def _live_float_channel_field(
+    i: int,
+    data: Dict[str, Any],
+    path_suffix: str,
+    list_index: Optional[int],
+) -> Optional[float]:
+    """Current widget value if set, else YAML on ``data`` for ``channel_list.{i}.{path_suffix}``."""
+    key = pc_field_key(i, path_suffix, list_index)
+    raw = st.session_state.get(key, "")
+    val, ok = parse_optional_num(raw, as_int=False)
+    if ok and val is not None:
+        return float(val)
+    parts = path_string_to_parts(f"channel_list.{i}.{path_suffix}")
+    if list_index is not None:
+        lst = get_at(data, parts)
+        if isinstance(lst, list) and len(lst) > list_index:
+            try:
+                return float(lst[list_index])
+            except (TypeError, ValueError):
+                return None
+        return None
+    cur = get_at(data, parts)
+    try:
+        return float(cur) if cur is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _hill_k_slider_schema(schema: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    for it in schema.get("per_channel_sliders", []):
+        if it.get("path") == "channel.saturation_config.K":
+            return it
+    return None
 
 
 def _resolve_cur_and_default(
@@ -520,6 +556,49 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
                     for it in grouped.get("saturation", [])
                     if saturation_slider_visible(it, eff_sat)
                 ]
+                if eff_sat == "hill":
+                    st.caption(
+                        "Hill **K** is in **weekly impression** units (same as spend ÷ CPM × 1000). "
+                        "If **K** is much smaller than typical impressions, the curve stays near 1."
+                    )
+                    k_schema = _hill_k_slider_schema(schema)
+                    cpm_v = _live_float_channel_field(i, data, "channel.cpm", None)
+                    smin = _live_float_channel_field(i, data, "channel.spend_range", 0)
+                    smax = _live_float_channel_field(i, data, "channel.spend_range", 1)
+                    k_err: Optional[str] = None
+                    raw_k: Optional[float] = None
+                    if cpm_v is None or cpm_v <= 0:
+                        k_err = "need a positive CPM"
+                    elif smin is None or smax is None:
+                        k_err = "need spend min and max"
+                    else:
+                        mid_spend = (float(smin) + float(smax)) / 2.0
+                        if mid_spend <= 0:
+                            k_err = "midpoint spend must be positive"
+                        else:
+                            raw_k = mid_spend / float(cpm_v) * 1000.0
+                    if k_schema is not None and raw_k is not None:
+                        mn_k = float(k_schema["min"])
+                        mx_k = float(k_schema["max"])
+                        clamped_k = max(mn_k, min(mx_k, float(raw_k)))
+                        k_key = pc_field_key(i, "channel.saturation_config.K", None)
+                        hint = (
+                            f"Proposed **K ≈ {raw_k:,.0f}** impressions "
+                            f"((spend_min+spend_max)/2 ÷ CPM × 1000)."
+                        )
+                        if clamped_k != raw_k:
+                            hint += f" Clamped to slider range [{mn_k:,.0f}, {mx_k:,.0f}]."
+                        st.caption(hint)
+                        if st.button(
+                            "Suggest K from spend & CPM",
+                            key=f"suggest_hill_k_{i}",
+                            help="Sets the Hill K slider from midpoint weekly spend and CPM (impression units).",
+                        ):
+                            st.session_state[k_key] = clamped_k
+                            yaml_sync_from_form()
+                            st.rerun()
+                    elif k_err:
+                        st.caption(f"Suggest K unavailable: {k_err}.")
                 _render_pc_fields_flex(i, sat, data)
                 if sat_opts:
                     render_saturation_preview(i, data, sat_opts)

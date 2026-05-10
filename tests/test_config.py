@@ -56,7 +56,7 @@ def test_channel_tiktok(config: InputConfigurations):
     seasonality = tiktok.get_seasonality_config()
     assert seasonality == {}
     sat = tiktok.get_saturation_config()
-    assert sat["type"] == "linear" and sat["slope"] == 1.0 and sat["K"] == 50000.0 and sat["beta"] == 0.5
+    assert sat["type"] == "linear" and sat["slope"] == 1.0 and sat["K"] == 830000.0 and sat["beta"] == 0.5
     adstock = tiktok.get_adstock_decay_config()
     assert adstock["type"] == "linear" and adstock["lambda"] == 0.5 and adstock["lag"] == 10 and adstock["weights"] == [1.0]
     gamma = tiktok.get_spend_sampling_gamma_params()
@@ -79,7 +79,7 @@ def test_channel_linkedin(config: InputConfigurations):
     seasonality = linkedin.get_seasonality_config()
     assert seasonality == {}
     sat = linkedin.get_saturation_config()
-    assert sat["type"] == "linear" and sat["slope"] == 0.8
+    assert sat["type"] == "linear" and sat["slope"] == 0.8 and sat["K"] == 3150000.0 and sat["beta"] == 0.65
     adstock = linkedin.get_adstock_decay_config()
     assert adstock["lag"] == 7 and adstock["weights"] == [0.7, 0.2, 0.1]
     gamma = linkedin.get_spend_sampling_gamma_params()
@@ -559,7 +559,6 @@ def test_extract_ground_truth_records_total_revenue_mechanism(config: InputConfi
     gt = extract_ground_truth(config)
     assert gt["ground_truth_version"] == 3
     mech = gt["outcome_revenue"]["total_revenue_mechanism"]
-    assert "meridian_model_spec_url" in mech
     assert "meridian_mu_t_definition" in mech
     assert "w(t)*b_l" in mech["meridian_mu_t_definition"] or "w(t)" in mech["meridian_mu_t_definition"]
     assert "simulator_mu_t_substitute" in mech

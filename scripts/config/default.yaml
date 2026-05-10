@@ -30,7 +30,8 @@ channel_list:
       saturation_config:
         type: linear
         slope: 1.0
-        K: 50000.0
+        # Hill K is in weekly impression units (spend/CPM×1000); ~midpoint for spend_range & cpm below.
+        K: 2550000.0
         beta: 0.5
       adstock_decay_config:
         type: geometric

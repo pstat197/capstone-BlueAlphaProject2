@@ -28,7 +28,7 @@ def default_channel_dict() -> Dict[str, Any]:
             "saturation_config": {
                 "type": "linear",
                 "slope": 1.0,
-                "K": 50000.0,
+                "K": 2550000.0,
                 "beta": 0.5,
             },
             "adstock_decay_config": {

@@ -7,7 +7,7 @@ SATURATION_TYPES_GUIDE_MD = """
   **Formula:** `slope × impressions`. `slope = 1` is “no curve”; higher amplifies, lower dampens. There is **no** built-in ceiling.
 
 - **`hill`** — Pick when you want a **clear ceiling** and an S-shaped / saturating curve at high volume.  
-  **Formula:** `x^slope / (x^slope + K^slope)` (then multiplied by ROI later). **K** sets the **impression scale** where the curve bends (larger K → need more weekly impressions before flattening). **Slope** controls how **sharp** the transition is.
+  **Formula:** `x^slope / (x^slope + K^slope)` (Meridian-style Hill; then multiplied by ROI later). **`K` must use the same units as weekly impressions** in this simulator: impressions = `(weekly spend) / CPM × 1000`. At `slope = 1`, response is **half** of its ceiling when weekly impressions equal **`K`**. If **`K` is far below** typical weekly impressions, the curve stays **≈ 1** (saturation looks like a constant). Example: spend **50,000** with **CPM 10** → about **5,000,000** impressions/week — choose **`K`** on that order (e.g. millions), not **50,000**. Use **Suggest K** in the Channels tab (Hill selected) to fill **`K`** from midpoint spend and CPM. **Slope** controls how **sharp** the transition is.
 
 - **`diminishing_returns`** — Pick for a smooth **concave** curve with one main shape parameter (no separate K like Hill).  
   **Formula:** `impressions / (1 + β × impressions)`. Larger **β** → stronger diminishing returns sooner; **β = 0** → no saturation (raw impressions through).

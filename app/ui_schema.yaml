@@ -76,10 +76,10 @@ per_channel_sliders:
     group: saturation
     saturation_types: [hill]
     label: "K"
-    help: "Hill only: impression scale where the curve bends (larger K = need more impressions before flattening)."
+    help: "Hill only: half-saturation scale in weekly impression units (same as spend/CPM×1000). Too small vs. typical impressions ⇒ curve ≈ 1. Use Suggest K from spend & CPM."
     min: 1.0
-    max: 200000.0
-    step: 1000.0
+    max: 15000000.0
+    step: 50000.0
   - path: channel.saturation_config.beta
     group: saturation
     saturation_types: [diminishing_returns]

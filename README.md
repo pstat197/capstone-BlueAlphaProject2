@@ -14,7 +14,7 @@ Additional narrative (Google Doc): [Documentation of Code](https://docs.google.c
 | `scripts/synth_input_classes/` | `InputConfigurations` and `Channel` dataclasses: parsing from dict, `normalize_seasonality_config` on each channel, global adstock/saturation flags, resolved **outcome** baseline/trend/seasonality/noise fields (`outcome_revenue` YAML or first-channel fallback). |
 | `scripts/revenue_simulation/` | `revenue_generation.py` (per-channel adstock, saturation, ROI → media revenue; one outcome baseline/trend/seasonality + noise on total), `seasonality_fit.py` (Fourier fit, sin to Fourier, evaluation). |
 | `scripts/spend_simulation/` | `spend_generation.py` (independent gamma per cell **or** correlated lognormal draw from YAML `correlations`, then `budget_shifts`, then toggle masks), `correlation_analysis.py`, `pairwise_summary.py`. |
-| `scripts/impressions_simulation/` | `impressions_generation.py` (CPM, impression noise, masks). |
+| `scripts/impressions_simulation/` | `impressions_generation.py` (CPM, masks). |
 | `scripts/main.py` | `run_simulation`, `construct_csv`, CLI entry that reads YAML (see [Config loading paths](#config-loading-paths)). |
 | `app/` | `streamlit_app.py` (layout, tabs, run/cache), `ui_channel_form.py`, `ui_config_merge.py`, `ui_seed_extras.py` (simulation-settings seed-append modes), `ui_seasonality_panel.py`, `ui_correlations.py`, `ui_budget_shifts.py`, `ui_results.py` (charts, correlation panel, data preview), `ui_help_markdown.py`, `ui_schema.yaml`, `theme.py`, `default_channel.py`, `cache.py`, `pipeline_runner.py` (calls `load_config_from_dict` + `run_simulation`, no Streamlit). |
 | `tests/` | Pytest modules mirroring config, spend, impressions, revenue, pipeline, toggles, correlations, seasonality merge/fit, UI toggle helpers. |
@@ -191,7 +191,7 @@ After **Run simulation**, `sim_config` and the results YAML snapshot use a **dee
 
 **Code:** `scripts/impressions_simulation/impressions_generation.py`
 
-For each channel `c` and week `w`: **`base = (spend[w,c] / CPM[c]) * 1000`**. Noise is **`Normal(0, sigma^2)`** with **`sigma = sqrt(noise_variance["impression"]) * base`** (0 variance gives zero noise). **`impressions = max(base + noise, 0)`**. The same spend-allowed mask as in spend generation is applied again as a safety net for off weeks and fully disabled channels.
+For each channel `c` and week `w`: **`impressions[w,c] = (spend[w,c] / CPM[c]) * 1000`**, clipped non‑negative. The same spend-allowed mask as in spend generation is applied again as a safety net for off weeks and fully disabled channels.
 
 ---
 
@@ -218,7 +218,7 @@ After summing media across channels for each week:
 4. **Baseline + trend + seasonality:** one series from `outcome_baseline_revenue`, `outcome_trend_slope`, and `outcome_seasonality_config` on `InputConfigurations` (see [Seasonality and `seasonality_fit`](#seasonality-and-seasonality_fit) for multiplier semantics). Source of truth in YAML: optional top-level **`outcome_revenue`** with the same-shaped keys (`baseline_revenue`, `trend_slope`, `seasonality_config`, `noise_variance`); if that block is missing or empty, values are taken from the **first** channel in `channel_list` after merge (so single-channel configs behave as before without extra YAML).
 5. **Revenue noise (outcome):** one independent draw per week, **ε ~ N(0, σ²)** added to `combined` (media sum + baseline path), with **σ = sqrt(outcome_noise_variance["revenue"])** in the same units as revenue when that variance is positive (homoskedastic; σ does not scale with `combined`).
 
-`generate_revenue` returns **`RevenueGenerationResult`**: `channel_media_revenue` (matrix) and `total_revenue` (vector). The shared run **`rng`** is used for outcome noise (same generator as spend/impressions draws in order — keep seeds fixed for reproducible end-to-end runs).
+`generate_revenue` returns **`RevenueGenerationResult`**: `channel_media_revenue` (matrix) and `total_revenue` (vector). The shared run **`rng`** is used for spend sampling and outcome revenue noise (keep seeds fixed for reproducible end-to-end runs).
 
 ---
 

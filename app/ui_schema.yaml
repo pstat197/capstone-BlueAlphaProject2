@@ -57,13 +57,6 @@ per_channel_sliders:
     min: 0.0
     max: 200000.0
     step: 500.0
-  - path: channel.noise_variance.impression
-    group: noise
-    label: "Impression noise"
-    help: "Scales random wobble on weekly impressions. Std dev = √(this) × base impressions (base = spend/CPM×1000). 0 = no impression noise. Open the Noise reference expander for detail."
-    min: 0.0
-    max: 1.0
-    step: 0.01
   - path: channel.noise_variance.revenue
     group: noise
     label: "Revenue noise"

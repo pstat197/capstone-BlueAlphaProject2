@@ -37,7 +37,7 @@ class Channel:
     saturation_config: Dict[str, Any]
     adstock_decay_config: Dict[str, Any]
     spend_sampling_gamma_params: Dict[str, float]
-    noise_variance: Dict[str, float]
+    noise_variance: Dict[str, float]  # e.g. {"revenue": σ²} for outcome-noise fallback; no impression noise
     cpm: float
     trend_slope: float = 0.0
     seasonality_config: Dict[str, Any] = field(default_factory=dict)

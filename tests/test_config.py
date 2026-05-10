@@ -62,7 +62,7 @@ def test_channel_tiktok(config: InputConfigurations):
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
     noise = tiktok.get_noise_variance()
-    assert noise["impression"] == 0.1
+    assert "impression" not in noise
     assert noise["revenue"] == 1_000_000.0
     assert tiktok.get_cpm() == 25
 
@@ -85,7 +85,7 @@ def test_channel_linkedin(config: InputConfigurations):
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
     noise = linkedin.get_noise_variance()
-    assert noise["impression"] == 0.0025
+    assert "impression" not in noise
     assert noise["revenue"] == 1_000_000.0
     assert linkedin.get_cpm() == 10
 
@@ -264,7 +264,7 @@ def _minimal_channel(name: str) -> dict:
             "saturation_config": {"type": "linear", "slope": 1.0},
             "adstock_decay_config": {"type": "linear", "lag": 0},
             "spend_sampling_gamma_params": {"shape": 1.0, "scale": 100.0},
-            "noise_variance": {"impression": 0.0, "revenue": 0.0},
+            "noise_variance": {"revenue": 0.0},
             "cpm": 10.0,
         }
     }
@@ -386,7 +386,7 @@ def test_load_config_from_dict_preserves_callers_budget_shifts_list():
                     "saturation_config": {"type": "linear", "slope": 1.0},
                     "adstock_decay_config": {"type": "linear", "lag": 0},
                     "spend_sampling_gamma_params": {"shape": 1.0, "scale": 100.0},
-                    "noise_variance": {"impression": 0.0, "revenue": 0.0},
+                    "noise_variance": {"revenue": 0.0},
                     "cpm": 10.0,
                 }
             }
@@ -523,6 +523,25 @@ def test_validation_rejects_negative_outcome_revenue_variance():
         },
     }
     with pytest.raises(ValueError, match="outcome noise_variance"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_channel_noise_variance_impression_key():
+    ch = dict(_minimal_channel("A")["channel"])
+    ch["noise_variance"] = {"impression": 0.1, "revenue": 1.0}
+    data = {"run_identifier": "BadImp", "week_range": 4, "channel_list": [{"channel": ch}]}
+    with pytest.raises(ValueError, match="no longer supported"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_outcome_noise_variance_impression_key():
+    data = {
+        "run_identifier": "BadOutImp",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("A")],
+        "outcome_revenue": {"noise_variance": {"impression": 0.1, "revenue": 1.0}},
+    }
+    with pytest.raises(ValueError, match="no longer supported"):
         InputConfigurations.from_yaml_dict(data)
 
 

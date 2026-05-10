@@ -27,21 +27,14 @@ ADSTOCK_TYPES_GUIDE_MD = """
 """
 
 NOISE_PARAMETERS_GUIDE_MD = """
-Both values are **non-negative**. **0** turns that noise off.
-
-**Impression noise** (applied right after spend → CPM → **base impressions** each week)
-
-- For each week, `base_impressions = (spend / CPM) × 1000`.
-- Random noise is Gaussian with **standard deviation = √(impression noise) × base_impressions** for that week.
-- So the number you enter controls how large random swings are **relative to that week’s expected impressions** — busy weeks get proportionally wider noise.
-- Impressions are clipped at **0** after noise.
+The value is **non-negative**. **0** turns outcome revenue noise off.
 
 **Revenue noise (outcome-level)** — applied **once** to **total** weekly revenue after summing all channels’ **media-only** contributions and adding the outcome baseline / trend / seasonality path.
 
 - Each week, one draw **ε ~ N(0, σ²)** is added to that week’s total, with **σ = √(revenue noise)** in the **same units as revenue** (homoskedastic; σ does **not** scale with the level of `R`).
-- The value you enter is the **variance** σ² (squared KPI units), same naming as impression noise’s “variance” knob.
+- The field is the shock **variance** σ² (squared KPI units).
 
-Set **`outcome_revenue.noise_variance.revenue`** in YAML (or omit the whole ``outcome_revenue`` block to inherit the **first channel’s** revenue noise for the outcome step). Per-channel `noise_variance.revenue` no longer drives a separate noise draw per channel.
+Set **`outcome_revenue.noise_variance.revenue`** in YAML (or omit the whole ``outcome_revenue`` block to inherit the **first channel’s** revenue noise for the outcome step). Per-channel `noise_variance.revenue` is the fallback source for that single outcome draw, not a separate shock per channel.
 """
 
 SEASONALITY_OVERVIEW_MD = """

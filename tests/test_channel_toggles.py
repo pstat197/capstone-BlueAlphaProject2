@@ -44,7 +44,6 @@ def _make_channel_dict(
     baseline_revenue: float = 0.0,
     spend_range=(1000, 10000),
     gamma=(2.5, 1000),
-    impression_noise: float = 0.0,
     revenue_noise: float = 0.0,
     saturation=None,
     adstock=None,
@@ -58,7 +57,7 @@ def _make_channel_dict(
         "spend_range": list(spend_range),
         "baseline_revenue": baseline_revenue,
         "spend_sampling_gamma_params": {"shape": gamma[0], "scale": gamma[1]},
-        "noise_variance": {"impression": impression_noise, "revenue": revenue_noise},
+        "noise_variance": {"revenue": revenue_noise},
         "saturation_config": saturation or {"type": "linear", "slope": 1.0},
         "adstock_decay_config": adstock or {"type": "linear", "lag": 0},
     }
@@ -110,7 +109,7 @@ def test_channel_toggle_defaults_fail_open():
         saturation_config={"type": "linear"},
         adstock_decay_config={"type": "linear", "lag": 0},
         spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
-        noise_variance={"impression": 0.0, "revenue": 0.0},
+        noise_variance={"revenue": 0.0},
         cpm=10.0,
     )
     assert ch.enabled is True
@@ -129,7 +128,7 @@ def test_channel_is_on_handles_off_ranges_inclusively():
         channel_name="X", true_roi=1.0, spend_range=[0, 1], baseline_revenue=0.0,
         saturation_config={}, adstock_decay_config={"lag": 0},
         spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
-        noise_variance={"impression": 0.0, "revenue": 0.0}, cpm=10.0,
+        noise_variance={"revenue": 0.0}, cpm=10.0,
         off_ranges=((3, 5), (8, 8)),
     )
     assert ch.is_on(2) is True
@@ -147,7 +146,7 @@ def test_channel_fully_disabled_is_always_off():
         channel_name="X", true_roi=1.0, spend_range=[0, 1], baseline_revenue=0.0,
         saturation_config={}, adstock_decay_config={"lag": 0},
         spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
-        noise_variance={"impression": 0.0, "revenue": 0.0}, cpm=10.0,
+        noise_variance={"revenue": 0.0}, cpm=10.0,
         enabled=False,
     )
     assert ch.is_fully_disabled() is True
@@ -160,7 +159,7 @@ def test_channel_on_vector_matches_is_on():
         channel_name="X", true_roi=1.0, spend_range=[0, 1], baseline_revenue=0.0,
         saturation_config={}, adstock_decay_config={"lag": 0},
         spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
-        noise_variance={"impression": 0.0, "revenue": 0.0}, cpm=10.0,
+        noise_variance={"revenue": 0.0}, cpm=10.0,
         off_ranges=((2, 3), (7, 9)),
     )
     mask = ch.on_vector(10)
@@ -174,7 +173,7 @@ def test_channel_on_vector_rejects_negative_num_weeks():
         channel_name="X", true_roi=1.0, spend_range=[0, 1], baseline_revenue=0.0,
         saturation_config={}, adstock_decay_config={"lag": 0},
         spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
-        noise_variance={"impression": 0.0, "revenue": 0.0}, cpm=10.0,
+        noise_variance={"revenue": 0.0}, cpm=10.0,
     )
     with pytest.raises(ValueError):
         ch.on_vector(-1)
@@ -189,7 +188,7 @@ def test_spend_allowed_mask_reproducible():
         saturation_config={},
         adstock_decay_config={"lag": 0},
         spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
-        noise_variance={"impression": 0.0, "revenue": 0.0},
+        noise_variance={"revenue": 0.0},
         cpm=10.0,
         sticky_pause_ranges=(
             StickyPauseRange(1, 10, 0.25, 0.75),
@@ -209,7 +208,7 @@ def test_spend_allowed_mask_all_sticky_when_always_continue():
         saturation_config={},
         adstock_decay_config={"lag": 0},
         spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
-        noise_variance={"impression": 0.0, "revenue": 0.0},
+        noise_variance={"revenue": 0.0},
         cpm=10.0,
         sticky_pause_ranges=(
             StickyPauseRange(1, 4, 1.0, 1.0),
@@ -229,7 +228,7 @@ def test_sticky_markov_alternating_when_continue_is_zero():
         saturation_config={},
         adstock_decay_config={"lag": 0},
         spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
-        noise_variance={"impression": 0.0, "revenue": 0.0},
+        noise_variance={"revenue": 0.0},
         cpm=10.0,
         sticky_pause_ranges=(
             StickyPauseRange(1, 5, 1.0, 0.0),
@@ -249,7 +248,7 @@ def test_sticky_freezes_markov_state_across_deterministic_off_week():
         saturation_config={},
         adstock_decay_config={"lag": 0},
         spend_sampling_gamma_params={"shape": 1.0, "scale": 1.0},
-        noise_variance={"impression": 0.0, "revenue": 0.0},
+        noise_variance={"revenue": 0.0},
         cpm=10.0,
         off_ranges=((3, 3),),
         sticky_pause_ranges=(
@@ -423,7 +422,6 @@ def test_generate_impressions_zeros_off_week_rows():
         _make_channel_dict(
             "A",
             enabled={"default": True, "off_ranges": [{"start_week": 2, "end_week": 3}]},
-            impression_noise=0.05,
         )
     ], week_range=6)
 
@@ -435,7 +433,7 @@ def test_generate_impressions_zeros_off_week_rows():
 def test_generate_impressions_zeros_fully_disabled_channel():
     cfg = _make_config([
         _make_channel_dict("A"),
-        _make_channel_dict("B", enabled=False, impression_noise=0.05),
+        _make_channel_dict("B", enabled=False),
     ], week_range=5)
     spend = generate_spend(cfg)
     imp = generate_impressions(cfg, spend)
@@ -476,7 +474,6 @@ def test_revenue_policy_a_preserves_adstock_echo_on_off_weeks():
             baseline_revenue=0.0,
             adstock={"type": "exponential", "lambda": 0.5, "lag": 5},
             saturation={"type": "linear", "slope": 1.0},
-            impression_noise=0.0,
             revenue_noise=0.0,
         )
     ], week_range=10, seed=101)
@@ -510,7 +507,6 @@ def test_revenue_adstock_disabled_per_channel_skips_echo():
             enabled={"default": True, "off_ranges": [{"start_week": 5, "end_week": 6}]},
             adstock_enabled=False,
             baseline_revenue=baseline,
-            impression_noise=0.0,
             revenue_noise=0.0,
             adstock={"type": "exponential", "lambda": 0.5, "lag": 5},
             saturation={"type": "linear", "slope": 1.0},
@@ -534,7 +530,6 @@ def test_revenue_global_adstock_off_disables_adstock_everywhere():
                 "A",
                 enabled={"default": True, "off_ranges": [{"start_week": 3, "end_week": 4}]},
                 baseline_revenue=baseline,
-                impression_noise=0.0,
                 revenue_noise=0.0,
                 adstock={"type": "exponential", "lambda": 0.5, "lag": 5},
                 saturation={"type": "linear", "slope": 1.0},
@@ -564,7 +559,6 @@ def test_revenue_saturation_disabled_uses_raw_impressions():
             saturation_enabled=False,
             true_roi=3.0,
             baseline_revenue=0.0,
-            impression_noise=0.0,
             revenue_noise=0.0,
             adstock={"type": "linear", "lag": 0},
             saturation={"type": "hill", "slope": 2.0, "K": 1.0},  # would squash values
@@ -590,7 +584,6 @@ def test_construct_csv_totals_reflect_masked_matrices():
         _make_channel_dict(
             "A",
             enabled={"default": True, "off_ranges": [{"start_week": 2, "end_week": 3}]},
-            impression_noise=0.0,
             revenue_noise=0.0,
             adstock={"type": "exponential", "lambda": 0.5, "lag": 3},
             saturation={"type": "linear", "slope": 1.0},
@@ -684,7 +677,6 @@ def test_generate_impressions_matches_sticky_spend_mask():
                         "continue_probability": 1.0,
                     },
                 ],
-                impression_noise=0.0,
             )
         ],
         week_range=5,
@@ -704,8 +696,8 @@ def test_backward_compat_no_toggle_fields_identical_output():
     generate_* call starts from the same state.
     """
     channels = [
-        _make_channel_dict("A", impression_noise=0.0, revenue_noise=0.0),
-        _make_channel_dict("B", impression_noise=0.0, revenue_noise=0.0),
+        _make_channel_dict("A", revenue_noise=0.0),
+        _make_channel_dict("B", revenue_noise=0.0),
     ]
 
     cfg1 = _make_config(channels, week_range=8, seed=99)

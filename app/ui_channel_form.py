@@ -479,7 +479,6 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
 
             st.markdown("##### Noise (simulation)")
             st.caption(
-                "Random variation in **impressions** (right after CPM) uses √(value) × that week’s base impressions. "
                 "**Revenue** noise is one Gaussian shock per week on **total** revenue: √(value) is σ in **fixed** KPI units (see expander)."
             )
             with st.expander(
@@ -489,12 +488,15 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
             ):
                 st.markdown(NOISE_PARAMETERS_GUIDE_MD)
             noise = grouped.get("noise", [])
-            if len(noise) >= 2:
-                n1, n2 = st.columns(2)
-                with n1:
+            if len(noise) >= 1:
+                if len(noise) >= 2:
+                    n1, n2 = st.columns(2)
+                    with n1:
+                        _render_one_pc_field(i, noise[0], data)
+                    with n2:
+                        _render_one_pc_field(i, noise[1], data)
+                else:
                     _render_one_pc_field(i, noise[0], data)
-                with n2:
-                    _render_one_pc_field(i, noise[1], data)
 
             st.markdown("##### Saturation")
             st.caption(

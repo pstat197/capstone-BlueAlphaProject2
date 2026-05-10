@@ -121,7 +121,7 @@ def test_media_transform_order_swaps_pipeline():
         "saturation_config": {"type": "hill", "slope": 1.0, "K": 5000.0},
         "adstock_decay_config": {"type": "geometric", "lambda": 0.6, "lag": 4},
         "spend_sampling_gamma_params": {"shape": 1.0, "scale": 1.0},
-        "noise_variance": {"impression": 0.0, "revenue": 0.0},
+        "noise_variance": {"revenue": 0.0},
         "cpm": 10.0,
     }
     common = {
@@ -161,7 +161,7 @@ def test_generate_revenue_includes_trend_and_seasonality_baseline():
                         "saturation_config": {"type": "linear", "slope": 1.0},
                         "adstock_decay_config": {"type": "linear", "lag": 0},
                         "spend_sampling_gamma_params": {"shape": 1.0, "scale": 1.0},
-                        "noise_variance": {"impression": 0.0, "revenue": 0.0},
+                        "noise_variance": {"revenue": 0.0},
                         "cpm": 10.0,
                     }
                 }

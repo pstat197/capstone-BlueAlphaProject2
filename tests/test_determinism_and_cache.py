@@ -20,7 +20,7 @@ def _minimal_channel(name: str, *, enabled=None, seasonality_config=None) -> dic
         "saturation_config": {"type": "linear", "slope": 1.0},
         "adstock_decay_config": {"type": "linear", "lag": 0},
         "spend_sampling_gamma_params": {"shape": 2.0, "scale": 300.0},
-        "noise_variance": {"impression": 0.0, "revenue": 0.0},
+        "noise_variance": {"revenue": 0.0},
         "cpm": 10.0,
     }
     if enabled is not None:

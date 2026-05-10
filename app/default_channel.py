@@ -21,7 +21,7 @@ def default_channel_dict() -> Dict[str, Any]:
             "channel_name": "New channel",
             "cpm": 10.0,
             "spend_sampling_gamma_params": {"shape": 2.5, "scale": 1000},
-            "noise_variance": {"impression": 0.0225, "revenue": 1000000.0},
+            "noise_variance": {"revenue": 1000000.0},
             "true_roi": 2.5,
             "spend_range": [1000, 50000],
             "baseline_revenue": 5000,

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 # Bump when simulation outputs change for the same YAML (invalidate old cache files).
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 
 _CACHE_ROOT = Path(__file__).resolve().parent / ".cache" / "runs"
 

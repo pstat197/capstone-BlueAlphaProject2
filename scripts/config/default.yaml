@@ -20,7 +20,6 @@ channel_list:
         shape: 2.5
         scale: 1000
       noise_variance:
-        impression: 0.0225
         # Revenue: variance of weekly additive shock on total revenue (σ = sqrt; same units as KPI²).
         revenue: 1000000.0
       true_roi: 2.5

@@ -22,14 +22,13 @@ def generate_impressions(config: InputConfigurations, spend_matrix: np.ndarray) 
     Map weekly spend per channel to impressions per channel.
 
     For each channel c and week w:
-        base_impressions[w, c] = (spend[w, c] / cpm[c]) * 1000
-        noise ~ N(0, sigma^2), sigma = sqrt(noise_impression) * base_impressions[w, c]
-        impressions = max(base_impressions + noise, 0)
+        impressions[w, c] = (spend[w, c] / cpm[c]) * 1000
 
-    This respects:
-      - per-channel CPM from the config
-      - per-channel impression noise variance
-      - global RNG seeded via the config loader
+    Outcome-level revenue noise is applied later in ``generate_revenue``; impressions
+    stay deterministic given spend and CPM.
+
+    This respects per-channel CPM from the config and the same spend-allowed masks
+    as spend generation (fully disabled channels and off weeks).
     """
     num_weeks = config.get_week_range()
     channels = config.get_channel_list()
@@ -41,31 +40,13 @@ def generate_impressions(config: InputConfigurations, spend_matrix: np.ndarray) 
             f"(week_range={num_weeks}, num_channels={num_channels})."
         )
 
-    rng = config.get_rng()
-
     cpms = _channel_cpm_list(config)  # shape (num_channels,)
     # base_impressions: weeks x channels
     base_impressions = (spend_matrix / cpms[None, :]) * 1000.0
-
-    noise_std = np.zeros_like(base_impressions, dtype=float)
-    for c, ch in enumerate(channels):
-        noise_cfg = ch.get_noise_variance() or {}
-        var_imp = float(noise_cfg.get("impression", 0.0))
-        if var_imp < 0:
-            raise ValueError(
-                f"Impression noise variance for channel {ch.get_channel_name()} must be non-negative, got {var_imp}."
-            )
-        noise_std[:, c] = np.sqrt(var_imp) * base_impressions[:, c]
-
-    noise = rng.normal(loc=0.0, scale=noise_std)
-    impressions = base_impressions + noise
-    # Ensure non-negative impressions
-    impressions = np.clip(impressions, a_min=0.0, a_max=None)
+    impressions = np.clip(base_impressions.astype(float, copy=True), a_min=0.0, a_max=None)
 
     # Safety-net channel toggle masking. Spend is already masked upstream so
-    # base_impressions is zero on off weeks, but noise with scale=0 still draws
-    # from N(0, 0)=0 and should be fine. This guards against any future change
-    # where noise is not proportional to base impressions.
+    # base_impressions is zero on off weeks.
     seed = config.get_seed()
     for c, ch in enumerate(channels):
         if ch.is_fully_disabled():

@@ -342,6 +342,10 @@ def validate_budget_shifts_channel_refs(
 
 def validate_outcome_noise_variance(noise_variance: Dict[str, float]) -> None:
     """Outcome-level shock variances must be finite and non-negative (same rules as revenue path runtime)."""
+    if "impression" in noise_variance:
+        raise ValueError(
+            "outcome noise_variance.impression is no longer supported; remove the 'impression' key."
+        )
     for k, v in noise_variance.items():
         if not math.isfinite(float(v)):
             raise ValueError(
@@ -436,6 +440,11 @@ def validate_channel_list_for_simulation(channels: List[Channel]) -> None:
             )
 
         nv = ch.get_noise_variance() or {}
+        if "impression" in nv:
+            raise ValueError(
+                f"Channel {name!r}: noise_variance.impression is no longer supported; "
+                "remove the 'impression' key from channel YAML."
+            )
         for nk, nv_val in nv.items():
             v = float(nv_val)
             if not math.isfinite(v):

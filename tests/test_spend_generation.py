@@ -489,7 +489,7 @@ def _make_correlated_config(seed=42, rho=0.7, num_weeks=200):
                 "baseline_revenue": 5000,
                 "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
                 "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
-                "noise_variance": {"impression": 0.02, "revenue": 0.1},
+                "noise_variance": {"revenue": 0.1},
                 "cpm": 10.0,
             }},
             {"channel": {
@@ -500,7 +500,7 @@ def _make_correlated_config(seed=42, rho=0.7, num_weeks=200):
                 "baseline_revenue": 3000,
                 "saturation_config": {"type": "linear", "slope": 1.0, "K": 50000.0, "beta": 0.5},
                 "adstock_decay_config": {"type": "linear", "lambda": 0.5, "lag": 10, "weights": [1.0]},
-                "noise_variance": {"impression": 0.02, "revenue": 0.1},
+                "noise_variance": {"revenue": 0.1},
                 "cpm": 15.0,
             }},
         ],

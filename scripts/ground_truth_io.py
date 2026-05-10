@@ -76,6 +76,12 @@ def extract_ground_truth(config: InputConfigurations) -> Dict[str, Any]:
             "run_identifier": config.get_run_identifier(),
             "week_range": int(config.get_week_range()),
             "seed": config.get_seed(),
+            "outcome_revenue": {
+                "baseline_revenue": float(config.get_outcome_baseline_revenue()),
+                "trend_slope": float(config.get_outcome_trend_slope()),
+                "seasonality_config": _to_jsonable(config.get_outcome_seasonality_config()),
+                "noise_variance": _to_jsonable(config.get_outcome_noise_variance()),
+            },
             "global_toggles": {
                 "adstock_global": bool(config.get_adstock_global()),
                 "saturation_global": bool(config.get_saturation_global()),

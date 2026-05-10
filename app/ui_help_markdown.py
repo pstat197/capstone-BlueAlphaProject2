@@ -36,15 +36,16 @@ Both values are **non-negative**. **0** turns that noise off.
 - So the number you enter controls how large random swings are **relative to that week’s expected impressions** — busy weeks get proportionally wider noise.
 - Impressions are clipped at **0** after noise.
 
-**Revenue noise** (applied **last** for the channel: after the enabled adstock/saturation steps in the chosen order, then ROI and baseline)
+**Revenue noise (outcome-level)** — applied **once** to **total** weekly revenue after summing all channels’ **media-only** contributions and adding the outcome baseline / trend / seasonality path.
 
-- Let `R` be that week’s channel revenue **before** this noise step.
-- Random noise is Gaussian with **standard deviation = √(revenue noise) × |R|**.
-- So noise scales with **how big the channel’s contribution already is** that week; small `R` → small absolute noise, large `R` → larger absolute noise (same relative spread).
+- Let `R` be that week’s total revenue **before** this noise step.
+- Random noise is Gaussian with **standard deviation = √(revenue noise) × |R|** (same relative-spread idea as before, but on the **total** series).
+
+Set **`outcome_revenue.noise_variance.revenue`** in YAML (or omit the whole ``outcome_revenue`` block to inherit the **first channel’s** revenue noise for the outcome step). Per-channel `noise_variance.revenue` no longer drives a separate noise draw per channel.
 """
 
 SEASONALITY_OVERVIEW_MD = """
-**How it fits in:** Seasonality multiplies **baseline revenue** each week (after optional linear **trend**). It does **not** change spend or impressions.
+**How it fits in:** Outcome seasonality multiplies the **outcome-level** baseline each week (after optional linear **trend**), i.e. the single non-media path that is added to summed media contributions. It does **not** change spend or impressions.
 """
 
 SEASONALITY_TYPES_GUIDE_MD = """

@@ -1,5 +1,7 @@
 # group: layout. † = loader may jitter when auto-filling (excludes saturation/adstock dicts).
 # Paths are relative to channel_list.{i}.
+# Optional top-level YAML ``outcome_revenue`` (baseline_revenue, trend_slope, seasonality_config,
+# noise_variance) overrides the first-channel fallback for the single MMM-style outcome path; not listed as sliders here.
 #
 # Top-level ``budget_shifts`` (optional list): manual rows in the **Budget shifts** tab (``ui_budget_shifts.py``).
 # Rules: ``type: scale``, ``type: scale_channel`` (``channel_name``), ``type: reallocate`` (week window,
@@ -21,14 +23,14 @@ per_channel_sliders:
   - path: channel.baseline_revenue
     group: core
     label: "Baseline revenue †"
-    help: "Weekly revenue not explained by media (added after ROI scaling)."
+    help: "SIM outcome layer: weekly non-media level before trend/seasonality. If YAML has no top-level `outcome_revenue`, the **first** channel’s baseline/trend/seasonality/noise drive that single path; other rows’ values do not add to totals. CSV `{name}_revenue` is media-only."
     min: 0.0
     max: 100000.0
     step: 100.0
   - path: channel.trend_slope
     group: core
     label: "Baseline trend / week †"
-    help: "Linear slope added to baseline each week before seasonality multiplier."
+    help: "Outcome linear trend (same first-channel / `outcome_revenue` rule as baseline)."
     min: -5000.0
     max: 5000.0
     step: 10.0
@@ -65,7 +67,7 @@ per_channel_sliders:
   - path: channel.noise_variance.revenue
     group: noise
     label: "Revenue noise"
-    help: "Scales random wobble on weekly revenue after media math. Std dev = √(this) × |revenue before noise|. 0 = no revenue noise. Open the Noise reference expander for detail."
+    help: "Outcome noise on **total** weekly revenue (same first-channel / `outcome_revenue` rule as baseline). Std dev = √(this) × |total before noise|. Open the Noise reference expander for detail."
     min: 0.0
     max: 1.0
     step: 0.01

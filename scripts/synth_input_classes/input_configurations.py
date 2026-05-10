@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
+from scripts.config.defaults import get_default_channel_template
 from scripts.revenue_simulation.seasonality_fit import normalize_seasonality_config
 
 from .channel import Channel, StickyPauseRange, WeekOffRange
@@ -10,7 +11,6 @@ from .channel import Channel, StickyPauseRange, WeekOffRange
 
 def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Resolve per-channel config defaults from injected template or default.yaml."""
-    from scripts.config.defaults import get_default_channel_template
     resolved_template = template or get_default_channel_template()
     return {
         "saturation_config": dict(resolved_template.get("saturation_config") or {}),
@@ -251,6 +251,58 @@ def _normalize_budget_shifts(raw: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def _resolve_outcome_revenue_params(
+    data: Dict[str, Any],
+    channels: List[Channel],
+    default_channel_template: Optional[Dict[str, Any]],
+) -> Tuple[float, float, Dict[str, Any], Dict[str, float]]:
+    """
+    Outcome-level baseline / trend / seasonality / noise for total revenue (MMM-style).
+
+    If ``outcome_revenue`` is present and non-empty in ``data``, those values are used
+    (missing sub-keys fall back to the default channel template). Otherwise values
+    are taken from the first channel in ``channels`` (after merge), or the template
+    when there are no channels.
+    """
+    tmpl = default_channel_template or get_default_channel_template()
+    raw = data.get("outcome_revenue")
+    if isinstance(raw, Mapping) and raw:
+        baseline = float(raw.get("baseline_revenue", tmpl.get("baseline_revenue", 0.0)))
+        trend_slope = float(raw.get("trend_slope", tmpl.get("trend_slope", 0.0)))
+        sea_raw = raw.get("seasonality_config")
+        if isinstance(sea_raw, dict) and sea_raw:
+            seasonality_config = normalize_seasonality_config(dict(sea_raw))
+        else:
+            sc = tmpl.get("seasonality_config") or {}
+            seasonality_config = normalize_seasonality_config(dict(sc)) if sc else {}
+        nv_raw = raw.get("noise_variance")
+        if isinstance(nv_raw, dict) and nv_raw:
+            noise_variance = {str(k): float(v) for k, v in nv_raw.items()}
+        else:
+            noise_variance = {
+                str(k): float(v) for k, v in (tmpl.get("noise_variance") or {}).items()
+            }
+        return baseline, trend_slope, seasonality_config, noise_variance
+
+    if channels:
+        fc = channels[0]
+        sea = dict(fc.get_seasonality_config() or {})
+        return (
+            float(fc.get_baseline_revenue()),
+            float(fc.get_trend_slope()),
+            normalize_seasonality_config(sea),
+            {str(k): float(v) for k, v in (fc.get_noise_variance() or {}).items()},
+        )
+
+    seasonality_template = tmpl.get("seasonality_config") or {}
+    return (
+        float(tmpl.get("baseline_revenue", 0.0)),
+        float(tmpl.get("trend_slope", 0.0)),
+        normalize_seasonality_config(dict(seasonality_template)) if seasonality_template else {},
+        {str(k): float(v) for k, v in (tmpl.get("noise_variance") or {}).items()},
+    )
+
+
 @dataclass
 class InputConfigurations:
     run_identifier: str
@@ -265,6 +317,11 @@ class InputConfigurations:
     media_transform_order: str = "adstock_first"
     budget_shifts: List[Dict[str, Any]] = field(default_factory=list)
     rng: np.random.Generator = field(default_factory=np.random.default_rng)
+    # Single outcome-level path for total revenue (baseline + linear trend × seasonality + noise).
+    outcome_baseline_revenue: float = 0.0
+    outcome_trend_slope: float = 0.0
+    outcome_seasonality_config: Dict[str, Any] = field(default_factory=dict)
+    outcome_noise_variance: Dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def from_yaml_dict(
@@ -360,6 +417,7 @@ class InputConfigurations:
 
         budget_shifts = _normalize_budget_shifts(data.get("budget_shifts"))
         rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
+        ob, ot, osea, onv = _resolve_outcome_revenue_params(data, channels, default_channel_template)
         return cls(
             run_identifier=str(data.get("run_identifier", "")),
             week_range=int(data.get("week_range", 0)),
@@ -371,6 +429,10 @@ class InputConfigurations:
             media_transform_order=media_transform_order,
             budget_shifts=budget_shifts,
             rng=rng,
+            outcome_baseline_revenue=ob,
+            outcome_trend_slope=ot,
+            outcome_seasonality_config=osea,
+            outcome_noise_variance=onv,
         )
 
     def get_run_identifier(self) -> str:
@@ -404,3 +466,15 @@ class InputConfigurations:
     def get_rng(self) -> np.random.Generator:
         """Return this run's dedicated RNG instance."""
         return self.rng
+
+    def get_outcome_baseline_revenue(self) -> float:
+        return float(self.outcome_baseline_revenue)
+
+    def get_outcome_trend_slope(self) -> float:
+        return float(self.outcome_trend_slope)
+
+    def get_outcome_seasonality_config(self) -> Dict[str, Any]:
+        return dict(self.outcome_seasonality_config)
+
+    def get_outcome_noise_variance(self) -> Dict[str, float]:
+        return dict(self.outcome_noise_variance)

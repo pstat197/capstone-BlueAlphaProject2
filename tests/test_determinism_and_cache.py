@@ -72,7 +72,8 @@ def test_random_fourier_without_explicit_seed_is_reproducible_from_run_seed() ->
     imp2 = generate_impressions(cfg2, np.full((16, 1), 500.0, dtype=float))
     rev2 = generate_revenue(cfg2, imp2)
 
-    np.testing.assert_allclose(rev1, rev2)
+    np.testing.assert_allclose(rev1.channel_media_revenue, rev2.channel_media_revenue)
+    np.testing.assert_allclose(rev1.total_revenue, rev2.total_revenue)
 
 
 def test_cache_hash_is_stable_for_numpy_scalar_equivalents() -> None:

@@ -15,17 +15,21 @@ from scripts.spend_simulation.spend_generation import generate_spend
 
 
 def test_generate_revenue_shape_and_finite(example_config):
-    """generate_revenue returns (num_weeks, num_channels) with finite values."""
+    """generate_revenue returns media matrix + total vector with finite values."""
     config = example_config
     spend = generate_spend(config)
     impressions = generate_impressions(config, spend)
 
     revenue = generate_revenue(config, impressions)
 
-    assert isinstance(revenue, np.ndarray)
-    assert revenue.ndim == 2
-    assert revenue.shape == (config.get_week_range(), len(config.get_channel_list()))
-    assert np.all(np.isfinite(revenue))
+    assert revenue.channel_media_revenue.ndim == 2
+    assert revenue.channel_media_revenue.shape == (
+        config.get_week_range(),
+        len(config.get_channel_list()),
+    )
+    assert revenue.total_revenue.shape == (config.get_week_range(),)
+    assert np.all(np.isfinite(revenue.channel_media_revenue))
+    assert np.all(np.isfinite(revenue.total_revenue))
 
 
 def test_linear_saturation_scales_by_slope():
@@ -64,8 +68,9 @@ def test_generate_revenue_reproducible_with_seed(example_config_path):
 
     np.testing.assert_array_almost_equal(spend1, spend2)
     np.testing.assert_array_almost_equal(imps1, imps2)
-    np.testing.assert_array_almost_equal(rev1, rev2)
-    assert rev1.shape[1] == len(config1.get_channel_list())
+    np.testing.assert_array_almost_equal(rev1.channel_media_revenue, rev2.channel_media_revenue)
+    np.testing.assert_array_almost_equal(rev1.total_revenue, rev2.total_revenue)
+    assert rev1.channel_media_revenue.shape[1] == len(config1.get_channel_list())
 
 
 def test_media_transform_order_swaps_pipeline():
@@ -95,11 +100,11 @@ def test_media_transform_order_swaps_pipeline():
     impressions = rng.integers(100, 5000, size=(12, 1)).astype(float)
     r_ad = generate_revenue(cfg_ad, impressions)
     r_sat = generate_revenue(cfg_sat, impressions)
-    assert not np.allclose(r_ad, r_sat)
+    assert not np.allclose(r_ad.channel_media_revenue, r_sat.channel_media_revenue)
 
 
 def test_generate_revenue_includes_trend_and_seasonality_baseline():
-    """Seasonality/trend fields from config affect baseline revenue end-to-end."""
+    """Outcome seasonality/trend affect total revenue; media-only columns stay zero with zero impressions."""
     cfg = load_config_from_dict(
         {
             "run_identifier": "SeasonalityE2E",
@@ -130,7 +135,8 @@ def test_generate_revenue_includes_trend_and_seasonality_baseline():
     impressions = np.zeros((4, 1), dtype=float)
     rev = generate_revenue(cfg, impressions)
     expected = np.array([100.0, 220.0, 120.0, 260.0])
-    np.testing.assert_allclose(rev[:, 0], expected)
+    np.testing.assert_allclose(rev.total_revenue, expected)
+    np.testing.assert_allclose(rev.channel_media_revenue[:, 0], np.zeros(4))
 
 
 def main():

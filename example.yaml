@@ -19,6 +19,17 @@
 run_identifier: Example Alpha
 week_range: 26
 seed: 133233
+
+# Outcome-level baseline / trend / seasonality / revenue noise (MMM-style: one path for total revenue).
+# Omitted keys fall back to default.yaml. If this block is omitted entirely, the simulator uses the
+# first channel's baseline/trend/seasonality/noise for the outcome layer.
+outcome_revenue:
+  baseline_revenue: 15500
+  trend_slope: 0
+  seasonality_config: {}
+  noise_variance:
+    impression: 0.0
+    revenue: 0.15
 # Optional: adstock_first (default) | saturation_first — see Advanced tab in the app.
 # media_transform_order: adstock_first
 # Optional: seed-append modes (expanded into budget_shifts / correlations when the sim loads).

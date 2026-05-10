@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from typing import Dict
+
 import numpy as np
 
 from scripts.revenue_simulation.seasonality_fit import (
@@ -220,37 +222,51 @@ def _generate_baseline_revenue(
         baseline *= _seasonality(t, seasonality_config, fallback_seed=seasonality_seed)
     return baseline
 
-def _calculate_channel_revenue(
+
+def _outcome_revenue_noise(
+    base_series: np.ndarray,
+    rng: np.random.Generator,
+    *,
+    revenue_variance: float,
+) -> np.ndarray:
+    if revenue_variance < 0:
+        raise ValueError(
+            f"Outcome revenue noise variance must be non-negative, got {revenue_variance}."
+        )
+    if revenue_variance <= 0:
+        return base_series
+    sigma = np.sqrt(revenue_variance) * np.abs(base_series)
+    noise = rng.normal(loc=0.0, scale=sigma)
+    return base_series + noise
+
+
+def _calculate_channel_media_revenue(
     channel: Channel,
     num_weeks: int,
     impressions: np.ndarray,
-    rng: np.random.Generator,
     *,
     adstock_global: bool = True,
     saturation_global: bool = True,
     saturation_before_adstock: bool = False,
-    seasonality_seed: int | None = None,
 ) -> np.ndarray:
     """
-    Compute weekly revenue contribution for a single channel.
+    Weekly **media-only** revenue for one channel (no baseline, seasonality, trend, or noise).
 
     Pipeline (default ``saturation_before_adstock=False``):
       impressions
         → adstock (optional per-channel / global toggle)
         → saturation (optional per-channel / global toggle)
         → ROI scaling (true_roi)
-        → + baseline_revenue
-        → + Gaussian noise (variance from noise_variance['revenue'])
 
     If ``saturation_before_adstock=True``, adstock and saturation steps are swapped.
 
     On/off semantics (Policy A - "soft off"):
       - Fully disabled channels (`enabled=False`) contribute zero across the
-        entire run: no baseline, no noise, no adstock echo.
+        entire run: no adstock echo.
       - Channels with per-week off ranges have impressions of zero on off
         weeks (masked upstream). Adstock carry-over from prior active weeks
-        is intentionally preserved, so off-week rows may still show revenue
-        from the decaying tail plus baseline + noise.
+        is intentionally preserved, so off-week rows may still show non-zero
+        media revenue from the decaying tail.
     """
     if channel.is_fully_disabled():
         return np.zeros_like(impressions, dtype=float)
@@ -265,45 +281,37 @@ def _calculate_channel_revenue(
     else:
         x = _adstock_decay(imp_f, channel.adstock_decay_config) if adstock_on else imp_f
         transformed_imp = _saturation_fn(x, channel.saturation_config) if saturation_on else x
-    revenue = transformed_imp * float(channel.true_roi)
-    trend_slope = float(getattr(channel, "trend_slope", 0.0))
-    seasonality_config = getattr(channel, "seasonality_config", None)
-    revenue += _generate_baseline_revenue(
-        num_weeks,
-        channel.baseline_revenue,
-        trend_slope,
-        seasonality_config,
-        seasonality_seed=seasonality_seed,
-    )
+    return transformed_imp * float(channel.true_roi)
 
-    noise_cfg = channel.noise_variance or {}
-    var_rev = float(noise_cfg.get("revenue", 0.0))
-    if var_rev < 0:
-        raise ValueError(
-            f"Revenue noise variance for channel {channel.channel_name} must be non-negative, got {var_rev}."
-        )
-    if var_rev > 0:
-        sigma = np.sqrt(var_rev) * np.abs(revenue)
-        noise = rng.normal(loc=0.0, scale=sigma)
-        revenue = revenue + noise
 
-    return revenue
+@dataclass(frozen=True)
+class RevenueGenerationResult:
+    """Media contributions per channel plus total weekly revenue (MMM-style)."""
 
-def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray) -> np.ndarray:
+    channel_media_revenue: np.ndarray
+    total_revenue: np.ndarray
+
+
+def generate_revenue(
+    config: InputConfigurations, impressions_matrix: np.ndarray
+) -> RevenueGenerationResult:
     """
-    Map impressions to weekly revenue per channel and total.
+    Map impressions to weekly **media** revenue per channel and one **total** revenue series.
+
+    Total revenue = sum_c(media_c) + outcome baseline/trend/seasonality + outcome-level
+    revenue noise (see ``InputConfigurations`` outcome fields / YAML ``outcome_revenue``).
 
     Parameters
     ----------
     config : InputConfigurations
-        Configuration with channel list, week_range, and RNG.
+        Configuration with channel list, week_range, RNG, and outcome revenue parameters.
     impressions_matrix : np.ndarray, shape (num_weeks, num_channels)
         Impressions per channel per week, as produced by generate_impressions.
 
     Returns
     -------
-    revenue_matrix : np.ndarray, shape (num_weeks, num_channels)
-        Weekly revenue attributed to each channel.
+    RevenueGenerationResult
+        ``channel_media_revenue`` shape (num_weeks, num_channels); ``total_revenue`` shape (num_weeks,).
     """
     num_weeks, num_channels = impressions_matrix.shape
     expected_weeks = config.get_week_range()
@@ -327,19 +335,29 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
 
     for c, channel in enumerate(channels):
         channel_impressions = impressions_matrix[:, c].astype(float)
-        seasonality_seed = int(
-            np.random.SeedSequence([0 if run_seed is None else int(run_seed), int(c), 0x5EA50A1])
-            .generate_state(1)[0]
-        )
-        out[:, c] = _calculate_channel_revenue(
+        out[:, c] = _calculate_channel_media_revenue(
             channel,
             num_weeks,
             channel_impressions,
-            rng,
             adstock_global=adstock_global,
             saturation_global=saturation_global,
             saturation_before_adstock=saturation_before_adstock,
-            seasonality_seed=seasonality_seed,
         )
 
-    return out
+    media_sum = out.sum(axis=1)
+    seasonality_seed = int(
+        np.random.SeedSequence([0 if run_seed is None else int(run_seed), 0x0FFC0DE])
+        .generate_state(1)[0]
+    )
+    baseline_path = _generate_baseline_revenue(
+        num_weeks,
+        config.get_outcome_baseline_revenue(),
+        config.get_outcome_trend_slope(),
+        config.get_outcome_seasonality_config(),
+        seasonality_seed=seasonality_seed,
+    )
+    combined = media_sum + baseline_path
+    var_rev = float(config.get_outcome_noise_variance().get("revenue", 0.0))
+    total = _outcome_revenue_noise(combined, rng, revenue_variance=var_rev)
+
+    return RevenueGenerationResult(channel_media_revenue=out, total_revenue=total)

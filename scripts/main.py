@@ -11,7 +11,7 @@ from scripts.config.loader import load_config
 from scripts.spend_simulation.spend_generation import generate_spend_with_details
 from scripts.spend_simulation.correlation_analysis import analyze_spend_correlations, print_correlation_report
 from scripts.impressions_simulation.impressions_generation import generate_impressions
-from scripts.revenue_simulation.revenue_generation import generate_revenue
+from scripts.revenue_simulation.revenue_generation import RevenueGenerationResult, generate_revenue
 
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 from scripts.ground_truth_io import extract_ground_truth, write_ground_truth_json
@@ -21,14 +21,15 @@ def construct_csv(
     config: InputConfigurations,
     spend_matrix: np.ndarray,  # matrix: weeks x channels
     impressions_matrix: np.ndarray,  # matrix: weeks x channels
-    revenue_matrix: np.ndarray,  # matrix: weeks x channels
+    revenue_result: RevenueGenerationResult,
 ) -> pd.DataFrame:
     """
     Construct a DataFrame: each row corresponds to a week.
     Columns:
       - 'week': week number (starting from 1)
-      - 'revenue': total revenue for the week (sum across channels)
+      - 'revenue': total weekly revenue (media sum + outcome baseline/trend/seasonality/noise)
       - For each channel: f"{channel}_impressions", f"{channel}_spend", f"{channel}_revenue"
+        (channel revenue is **media-only** incremental contribution)
       - 'total_impressions', 'total_spend'
     """
     # Get channel names and week count
@@ -43,14 +44,14 @@ def construct_csv(
 
     data: Dict[str, Any] = {
         "week": np.arange(1, num_weeks + 1, dtype=int),
-        "revenue": revenue_matrix.sum(axis=1).astype(float),
+        "revenue": revenue_result.total_revenue.astype(float),
         "total_impressions": impressions_matrix.sum(axis=1).astype(float),
         "total_spend": spend_matrix.sum(axis=1).astype(float),
     }
     for i in range(num_channels):
         data[channel_impression_cols[i]] = impressions_matrix[:, i].astype(float)
         data[channel_spend_cols[i]] = spend_matrix[:, i].astype(float)
-        data[channel_revenue_cols[i]] = revenue_matrix[:, i].astype(float)
+        data[channel_revenue_cols[i]] = revenue_result.channel_media_revenue[:, i].astype(float)
 
     columns = ["week", "revenue"]
     for i in range(num_channels):
@@ -86,8 +87,8 @@ def run_simulation(
         }
 
     impressions_matrix = generate_impressions(config, spend_matrix)
-    revenue_by_channel = generate_revenue(config, impressions_matrix)
-    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel)
+    revenue_result = generate_revenue(config, impressions_matrix)
+    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_result)
     return df, corr_results
 
 

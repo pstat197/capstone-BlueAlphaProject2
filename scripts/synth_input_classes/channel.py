@@ -83,7 +83,7 @@ class Channel:
         return self.cpm
 
     def is_fully_disabled(self) -> bool:
-        """Channel is fully off for the entire run (no spend, no baseline, no noise)."""
+        """Channel is fully off for the entire run (no spend, no media revenue contribution)."""
         return not self.enabled
 
     def is_on(self, week: int) -> bool:

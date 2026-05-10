@@ -1,6 +1,6 @@
 # capstone-BlueAlphaProject2
 
-Marketing media simulation: sample weekly spend per channel, map spend to impressions, apply adstock and saturation in a configurable order (default adstock then saturation; `media_transform_order` in YAML or **Advanced → Media response order** in the app), add baseline revenue with optional trend and seasonality, add noise, and export a wide CSV. A Streamlit app edits the same YAML-shaped config, merges widget state, runs the pipeline with disk caching, and plots results.
+Marketing media simulation: sample weekly spend per channel, map spend to impressions, apply adstock and saturation in a configurable order (default adstock then saturation; `media_transform_order` in YAML or **Advanced → Media response order** in the app), combine per-channel **media** contributions, add **one** outcome-level baseline with optional trend and seasonality plus outcome revenue noise (MMM-style), and export a wide CSV. A Streamlit app edits the same YAML-shaped config, merges widget state, runs the pipeline with disk caching, and plots results.
 
 Additional narrative (Google Doc): [Documentation of Code](https://docs.google.com/document/d/1glQWezaB3eBH13Mxp2eR0Y7SM1zAaVAaS1qHFy2uu-o/edit?usp=sharing)
 
@@ -11,8 +11,8 @@ Additional narrative (Google Doc): [Documentation of Code](https://docs.google.c
 | Area | Role |
 |------|------|
 | `scripts/config/` | `default.yaml`, `loader.py` (`load_config`, `load_config_from_dict`, `apply_seed_append_expansion`), `defaults.py`, RNG helpers. Merges user YAML over defaults, fills missing channel fields, optional `number_of_channels` expansion, expands **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** into lists, validates `correlations`. |
-| `scripts/synth_input_classes/` | `InputConfigurations` and `Channel` dataclasses: parsing from dict, `normalize_seasonality_config` on each channel, global adstock/saturation flags. |
-| `scripts/revenue_simulation/` | `revenue_generation.py` (adstock, saturation, ROI, baseline, seasonality, noise), `seasonality_fit.py` (Fourier fit, sin to Fourier, evaluation). |
+| `scripts/synth_input_classes/` | `InputConfigurations` and `Channel` dataclasses: parsing from dict, `normalize_seasonality_config` on each channel, global adstock/saturation flags, resolved **outcome** baseline/trend/seasonality/noise fields (`outcome_revenue` YAML or first-channel fallback). |
+| `scripts/revenue_simulation/` | `revenue_generation.py` (per-channel adstock, saturation, ROI → media revenue; one outcome baseline/trend/seasonality + noise on total), `seasonality_fit.py` (Fourier fit, sin to Fourier, evaluation). |
 | `scripts/spend_simulation/` | `spend_generation.py` (independent gamma per cell **or** correlated lognormal draw from YAML `correlations`, then `budget_shifts`, then toggle masks), `correlation_analysis.py`, `pairwise_summary.py`. |
 | `scripts/impressions_simulation/` | `impressions_generation.py` (CPM, impression noise, masks). |
 | `scripts/main.py` | `run_simulation`, `construct_csv`, CLI entry that reads YAML (see [Config loading paths](#config-loading-paths)). |
@@ -129,9 +129,9 @@ InputConfigurations
         → impressions_matrix [weeks × channels]
 
     → generate_revenue(config, impressions_matrix)
-        → revenue_matrix [weeks × channels]
+        → RevenueGenerationResult: channel_media_revenue [weeks × channels], total_revenue [weeks]
 
-    → construct_csv(config, spend_matrix, impressions_matrix, revenue_matrix)
+    → construct_csv(config, spend_matrix, impressions_matrix, revenue_result)
         → pandas DataFrame → CSV (CLI: output/; UI: cache + download)
 ```
 
@@ -143,8 +143,8 @@ InputConfigurations
 
 ## Configuration and YAML
 
-- **Top-level keys** typically include `run_identifier`, `week_range`, `seed`, `channel_list`, optional `correlations`, optional **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** (seed-append intent; expanded in the loader), optional `adstock` / `saturation` global sections, optional `number_of_channels`, and optional **`budget_shifts`** (manual rules applied after the base spend draw: `type: scale` multiplies all channels in an inclusive 1-based week range; `type: scale_channel` multiplies one `channel_name` in a week range; `type: reallocate` moves a fraction from `from_channel` to `to_channel` each week in `[start_week, end_week]` when `end_week` is set, otherwise from `start_week` through the end of the horizon). See `example.yaml` comments and `tests/test_spend_generation.py`.
-- **Each channel** (under `channel_list` as `- channel: { ... }`) includes at least: `channel_name`, `cpm`, `spend_range`, `true_roi`, `baseline_revenue`, `trend_slope` (linear drift on baseline per week), `seasonality_config` (often `{}`), `saturation_config`, `adstock_decay_config`, `spend_sampling_gamma_params`, `noise_variance`, plus optional availability and effect toggles (see [Channel availability and effect toggles](#channel-availability-and-effect-toggles)).
+- **Top-level keys** typically include `run_identifier`, `week_range`, `seed`, `channel_list`, optional **`outcome_revenue`** (baseline/trend/seasonality/noise for **total** weekly revenue — see [Stage: revenue](#stage-revenue)), optional `correlations`, optional **`budget_shifts_auto_mode`** / **`correlations_auto_mode`** (seed-append intent; expanded in the loader), optional `adstock` / `saturation` global sections, optional `number_of_channels`, and optional **`budget_shifts`** (manual rules applied after the base spend draw: `type: scale` multiplies all channels in an inclusive 1-based week range; `type: scale_channel` multiplies one `channel_name` in a week range; `type: reallocate` moves a fraction from `from_channel` to `to_channel` each week in `[start_week, end_week]` when `end_week` is set, otherwise from `start_week` through the end of the horizon). See `example.yaml` comments and `tests/test_spend_generation.py`.
+- **Each channel** (under `channel_list` as `- channel: { ... }`) includes at least: `channel_name`, `cpm`, `spend_range`, `true_roi`, `baseline_revenue`, `trend_slope`, `seasonality_config` (often `{}`), `saturation_config`, `adstock_decay_config`, `spend_sampling_gamma_params`, `noise_variance`, plus optional availability and effect toggles (see [Channel availability and effect toggles](#channel-availability-and-effect-toggles)). Those baseline/trend/seasonality/revenue-noise fields still exist on every channel for the UI and for **fallback**: if YAML has no `outcome_revenue` block, the **first** channel’s values (after merge) define the single outcome path used in simulation.
 - **`scripts/config/default.yaml`** is the canonical default channel template used by the loader for fills and generated channels.
 
 ---
@@ -199,15 +199,26 @@ For each channel `c` and week `w`: **`base = (spend[w,c] / CPM[c]) * 1000`**. No
 
 **Code:** `scripts/revenue_simulation/revenue_generation.py`
 
-For each channel and week, pipeline order on the impression series is:
+The simulator separates **incremental media revenue** (per channel) from **one outcome-level** non-media path (baseline + linear trend, then a multiplicative seasonality series), then applies **revenue noise once** to the weekly **total**. This matches a standard MMM-style decomposition: total ≈ non-media baseline path (including trend and seasonality) plus sum of media contributions, with noise applied to that weekly total inside `generate_revenue`.
 
-1. **Saturation** (if global and per-channel saturation are on): `linear` (default slope 1 scales impressions), `hill`, or `diminishing_returns` as configured in `saturation_config`.
-2. **Adstock** (if global and per-channel adstock are on): `linear` (uniform window of length `lag+1`), `geometric` / `exponential` decay kernel, or `weighted` custom FIR.
-3. **ROI scaling:** `transformed_impressions * true_roi` (this is the media-attributed component).
-4. **Baseline:** `baseline_revenue + trend_slope * week_index`, then multiplied by the **seasonality** multiplier series when `seasonality_config` is non-empty (see [Seasonality and `seasonality_fit`](#seasonality-and-seasonality_fit)).
-5. **Revenue noise:** Gaussian with standard deviation `sqrt(noise_variance["revenue"]) * abs(revenue)` when variance is positive.
+### Per channel and week (media only)
 
-Fully disabled channels return zeros for the entire run (no baseline, no noise, no echo). Deterministic off weeks zero spend and impressions upstream; adstock can still carry past activity forward, so off weeks may show non-zero revenue from decay plus baseline and noise (Policy A in the toggle documentation below).
+Pipeline order on the impression series (default **adstock** then **saturation**; reversible via `media_transform_order` / **Advanced → Media response order**):
+
+1. **Adstock** (if global and per-channel adstock are on): `linear` (uniform window of length `lag+1`), `geometric` / `exponential` decay kernel, or `weighted` custom FIR.
+2. **Saturation** (if global and per-channel saturation are on): `linear` (default slope 1 scales impressions), `hill`, or `diminishing_returns` as configured in `saturation_config`.
+3. **ROI scaling:** `transformed_impressions * true_roi` → stored as that channel’s column in `RevenueGenerationResult.channel_media_revenue`.
+
+Fully disabled channels return **zeros** for the entire run (no media contribution, no adstock echo). Deterministic off weeks zero spend and impressions upstream; adstock can still carry past activity forward, so off weeks may show **non-zero per-channel media revenue** from decay (Policy A — see [Channel availability and effect toggles](#channel-availability-and-effect-toggles)).
+
+### Outcome layer (total series)
+
+After summing media across channels for each week:
+
+4. **Baseline + trend + seasonality:** one series from `outcome_baseline_revenue`, `outcome_trend_slope`, and `outcome_seasonality_config` on `InputConfigurations` (see [Seasonality and `seasonality_fit`](#seasonality-and-seasonality_fit) for multiplier semantics). Source of truth in YAML: optional top-level **`outcome_revenue`** with the same-shaped keys (`baseline_revenue`, `trend_slope`, `seasonality_config`, `noise_variance`); if that block is missing or empty, values are taken from the **first** channel in `channel_list` after merge (so single-channel configs behave as before without extra YAML).
+5. **Revenue noise (outcome):** Gaussian with standard deviation `sqrt(outcome_noise_variance["revenue"]) * abs(combined)` when that variance is positive, where `combined` = media sum + baseline path for that week.
+
+`generate_revenue` returns **`RevenueGenerationResult`**: `channel_media_revenue` (matrix) and `total_revenue` (vector). The shared run **`rng`** is used for outcome noise (same generator as spend/impressions draws in order — keep seeds fixed for reproducible end-to-end runs).
 
 ---
 
@@ -215,9 +226,9 @@ Fully disabled channels return zeros for the entire run (no baseline, no noise, 
 
 **Code:** `scripts/revenue_simulation/seasonality_fit.py`, used from `input_configurations.py` (normalize on load) and from the Streamlit merge path for table and pattern inputs.
 
-**Role in the model:** Seasonality multiplies the **baseline** path only (after trend). It does not change spend or impressions.
+**Role in the model:** For **total revenue**, seasonality multiplies the **outcome** baseline path only (after linear trend in week index). It does not change spend or impressions. Per-channel `seasonality_config` in YAML is still edited in the UI and normalized on load; only the **resolved outcome** seasonality (from `outcome_revenue` or the first channel) affects the simulated total.
 
-**Normalization at load:** `sin` and `categorical` (comma-separated pattern) specs in YAML are converted to **deterministic Fourier** configs (`type: fourier` with `period`, `intercept`, and `coefficients` harmonics) so simulation stays reproducible. Random Fourier (`K`, `scale`, no precomputed coefficients) remains stochastic in shape, but now uses per-channel deterministic seed fallback from the run seed when `seasonality_config.seed` is not set.
+**Normalization at load:** `sin` and `categorical` (comma-separated pattern) specs in YAML are converted to **deterministic Fourier** configs (`type: fourier` with `period`, `intercept`, and `coefficients` harmonics) so simulation stays reproducible. Random Fourier (`K`, `scale`, no precomputed coefficients) remains stochastic in shape when used for the outcome path; the outcome seasonality draw uses a deterministic seed branch derived from the run `seed` (see `revenue_generation.py`).
 
 **Runtime (`_seasonality` in `revenue_generation.py`):** Supports normalized `fourier` (deterministic evaluation or random draw), `hybrid` components, and defensively still accepts `sin` / `categorical` dicts by re-normalizing and recursing. Evaluation of fitted curves uses `evaluate_deterministic_fourier`.
 
@@ -229,7 +240,7 @@ Fully disabled channels return zeros for the entire run (no baseline, no noise, 
 
 **Code:** `scripts/main.py` (`construct_csv`)
 
-Each row is one week. Columns include `week`, total `revenue` (sum of per-channel revenue that week), for each channel `{name}_impressions`, `{name}_spend`, `{name}_revenue`, then `total_impressions` and `total_spend`. Channel blocks are ordered consistently for readability.
+Each row is one week. Columns include `week`, total **`revenue`** (= `total_revenue` from `generate_revenue`: media sum + outcome baseline/trend/seasonality + outcome noise), for each channel `{name}_impressions`, `{name}_spend`, `{name}_revenue` (**media-only** incremental contribution that week), then `total_impressions` and `total_spend`. Unless outcome baseline and noise are both zero, **`revenue`** is generally **not** equal to the sum of `{name}_revenue` columns. Channel blocks are ordered consistently for readability.
 
 ---
 
@@ -332,7 +343,7 @@ Rules:
 
 - Weeks are **1-indexed**; `off_ranges` entries are **inclusive** (`start_week <= end_week`).
 - `enabled` may be a boolean or a `{ default, off_ranges }` mapping.
-- Fully disabled channels (`enabled: false`) contribute **zero** revenue for the full run (no spend, impressions, adstock echo, baseline, or noise).
+- Fully disabled channels (`enabled: false`) contribute **zero** media revenue for the full run (no spend, impressions, or adstock echo). The outcome baseline/total series is unchanged (it is not attributed to that channel’s column).
 - Globals override per-channel flags when set to false.
 
 ### Off-week semantics (Policy A)
@@ -341,7 +352,7 @@ On weeks inside an `off_ranges` window for an otherwise enabled channel:
 
 - **Spend** is zeroed in `generate_spend`.
 - **Impressions** are zeroed in `generate_impressions`.
-- **Revenue** is not forced to zero: adstock carry-over from earlier active weeks still flows, and baseline plus revenue noise still apply. A row can show non-zero `{channel}_revenue` with zero spend and impressions; that reflects decay from prior weeks.
+- **`{channel}_revenue`** (media only) is not forced to zero: adstock carry-over from earlier active weeks still flows. A row can show non-zero `{channel}_revenue` with zero spend and impressions; that reflects decay from prior weeks. The CSV **`revenue`** column also includes the shared outcome baseline/trend/seasonality and outcome noise each week.
 
 ### Sticky random pauses
 
@@ -353,8 +364,8 @@ Optional `sticky_pause_ranges` lists objects with `start_week`, `end_week`, `sta
 |-------|----------|
 | `generate_spend` | Zeros spend for fully disabled channels; zeros cells where deterministic or sticky rules disallow spend. |
 | `generate_impressions` | Inherits zeros from spend; applies the same spend-allowed mask. |
-| `generate_revenue` | Short-circuits fully disabled channels to zero. Honors adstock/saturation gates. Keeps adstock echo on off weeks. |
-| `construct_csv` | No extra masking; matrices already reflect rules. |
+| `generate_revenue` | Per-channel **media-only** revenue; returns ``RevenueGenerationResult`` with ``total_revenue`` = media sum + one outcome-level baseline/trend/seasonality + outcome revenue noise. |
+| `construct_csv` | ``revenue`` column uses ``total_revenue``; per-channel columns are incremental media contributions. |
 
 ### Minimal toggle example
 

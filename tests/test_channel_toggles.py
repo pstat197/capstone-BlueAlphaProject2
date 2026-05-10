@@ -459,8 +459,8 @@ def test_revenue_fully_disabled_channel_is_zero_everywhere():
     spend = generate_spend(cfg)
     imp = generate_impressions(cfg, spend)
     rev = generate_revenue(cfg, imp)
-    # No spend, no impressions, no baseline, no noise for fully-disabled channels.
-    np.testing.assert_array_equal(rev[:, 0], np.zeros(8))
+    # No spend, no impressions, no media revenue for fully-disabled channels.
+    np.testing.assert_array_equal(rev.channel_media_revenue[:, 0], np.zeros(8))
 
 
 def test_revenue_policy_a_preserves_adstock_echo_on_off_weeks():
@@ -489,19 +489,20 @@ def test_revenue_policy_a_preserves_adstock_echo_on_off_weeks():
     np.testing.assert_array_equal(spend[4:7, 0], np.zeros(3))
     np.testing.assert_array_equal(imp[4:7, 0], np.zeros(3))
 
-    # Revenue on the first off week must still be positive (adstock echo).
-    assert rev[4, 0] > 0, "Policy A: week 5 should have non-zero echo revenue"
+    # Media revenue on the first off week must still be positive (adstock echo).
+    m = rev.channel_media_revenue
+    assert m[4, 0] > 0, "Policy A: week 5 should have non-zero echo revenue"
     # Echo should decay while no new spend arrives.
-    assert rev[4, 0] > rev[5, 0] > rev[6, 0], (
-        f"echo should decay across off weeks, got {rev[4:7, 0]}"
+    assert m[4, 0] > m[5, 0] > m[6, 0], (
+        f"echo should decay across off weeks, got {m[4:7, 0]}"
     )
-    # After spend resumes (week 8 = row 7), revenue should be higher again
+    # After spend resumes (week 8 = row 7), media revenue should be higher again
     # (new spend + residual echo >= echo-only tail).
-    assert rev[7, 0] > rev[6, 0]
+    assert m[7, 0] > m[6, 0]
 
 
 def test_revenue_adstock_disabled_per_channel_skips_echo():
-    """With adstock_enabled: false, off-week rows only carry baseline (+ noise)."""
+    """With adstock_enabled: false, off-week rows have zero media; total still carries outcome baseline."""
     baseline = 1000.0
     cfg = _make_config([
         _make_channel_dict(
@@ -520,12 +521,13 @@ def test_revenue_adstock_disabled_per_channel_skips_echo():
     imp = generate_impressions(cfg, spend)
     rev = generate_revenue(cfg, imp)
 
-    # Off weeks: impressions are 0, adstock is off → transformed_imp=0 → revenue = baseline.
-    np.testing.assert_allclose(rev[4:6, 0], np.array([baseline, baseline]))
+    # Off weeks: impressions are 0, adstock is off → zero media; outcome baseline is flat.
+    np.testing.assert_allclose(rev.channel_media_revenue[4:6, 0], np.zeros(2))
+    np.testing.assert_allclose(rev.total_revenue[4:6], np.array([baseline, baseline]))
 
 
 def test_revenue_global_adstock_off_disables_adstock_everywhere():
-    baseline = 500.0
+    baseline = 500.0  # outcome baseline (inherited from first channel)
     cfg = _make_config(
         [
             _make_channel_dict(
@@ -546,8 +548,9 @@ def test_revenue_global_adstock_off_disables_adstock_everywhere():
     imp = generate_impressions(cfg, spend)
     rev = generate_revenue(cfg, imp)
 
-    # Adstock is globally off → on off weeks revenue collapses to baseline.
-    np.testing.assert_allclose(rev[2:4, 0], np.array([baseline, baseline]))
+    # Adstock is globally off → on off weeks media is zero; total equals outcome baseline.
+    np.testing.assert_allclose(rev.channel_media_revenue[2:4, 0], np.zeros(2))
+    np.testing.assert_allclose(rev.total_revenue[2:4], np.array([baseline, baseline]))
 
 
 def test_revenue_saturation_disabled_uses_raw_impressions():
@@ -573,8 +576,8 @@ def test_revenue_saturation_disabled_uses_raw_impressions():
     rev = generate_revenue(cfg, imp)
 
     # If saturation were on, a hill with K=1 and large impressions saturates to ~roi.
-    # With saturation off we should get revenue == impressions * 3.0 exactly.
-    np.testing.assert_allclose(rev[:, 0], imp[:, 0] * 3.0)
+    # With saturation off we should get media revenue == impressions * 3.0 exactly.
+    np.testing.assert_allclose(rev.channel_media_revenue[:, 0], imp[:, 0] * 3.0)
 
 
 # ---------------------------------------------------------------------------
@@ -621,9 +624,10 @@ def test_construct_csv_totals_reflect_masked_matrices():
         df["total_impressions"].to_numpy(),
         (df["A_impressions"] + df["B_impressions"]).to_numpy(),
     )
+    np.testing.assert_allclose(df["revenue"].to_numpy(), rev.total_revenue)
     np.testing.assert_allclose(
-        df["revenue"].to_numpy(),
         (df["A_revenue"] + df["B_revenue"]).to_numpy(),
+        rev.channel_media_revenue.sum(axis=1),
     )
 
 
@@ -716,7 +720,8 @@ def test_backward_compat_no_toggle_fields_identical_output():
 
     np.testing.assert_allclose(s1, s2)
     np.testing.assert_allclose(i1, i2)
-    np.testing.assert_allclose(r1, r2)
+    np.testing.assert_allclose(r1.channel_media_revenue, r2.channel_media_revenue)
+    np.testing.assert_allclose(r1.total_revenue, r2.total_revenue)
 
     # No off-week masking was applied (all spend should be positive).
     assert (s1 > 0).all()

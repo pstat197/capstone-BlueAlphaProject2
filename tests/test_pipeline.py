@@ -56,11 +56,12 @@ def test_full_pipeline_construct_csv_and_shapes(tmp_path, example_config):
     np.testing.assert_allclose(df["total_impressions"].to_numpy(), total_impressions)
     np.testing.assert_allclose(df["total_spend"].to_numpy(), total_spend)
 
-    rev_sum = np.zeros(num_weeks)
+    media_sum = np.zeros(num_weeks)
     for ch in channels:
         name = ch.get_channel_name()
-        rev_sum += df[f"{name}_revenue"].to_numpy()
-    np.testing.assert_allclose(df["revenue"].to_numpy(), rev_sum)
+        media_sum += df[f"{name}_revenue"].to_numpy()
+    np.testing.assert_allclose(df["revenue"].to_numpy(), revenue.total_revenue)
+    np.testing.assert_allclose(media_sum, revenue.channel_media_revenue.sum(axis=1))
 
     # week column is 1..num_weeks
     assert list(df["week"]) == list(range(1, num_weeks + 1))

@@ -1,6 +1,16 @@
 run_identifier: Default
 week_range: 52
 
+# adstock_first (default) | saturation_first — order of weekly media transforms before ROI.
+media_transform_order: adstock_first
+
+# Optional: time-based spend adjustments (see example.yaml). Empty = no extra rules.
+budget_shifts: []
+# Seed-append modes (expanded at load time; see root README). none | global | global_and_channel
+budget_shifts_auto_mode: none
+# none | random — extra copula pairs derived from seed at load time
+correlations_auto_mode: none
+
 channel_list:
   - channel:
       channel_name: Channel 1
@@ -10,18 +20,21 @@ channel_list:
         shape: 2.5
         scale: 1000
       noise_variance:
-        impression: 0.0225
-        revenue: 0.1
+        # Revenue: variance of weekly additive shock on total revenue (σ = sqrt; same units as KPI²).
+        revenue: 1000000.0
       true_roi: 2.5
       spend_range: [1000, 50000]
       baseline_revenue: 5000
+      trend_slope: 0.0
+      seasonality_config: {}
       saturation_config:
         type: linear
         slope: 1.0
-        K: 50000.0
+        # Hill K is in weekly impression units (spend/CPM×1000); ~midpoint for spend_range & cpm below.
+        K: 2550000.0
         beta: 0.5
       adstock_decay_config:
-        type: linear
+        type: geometric
         lambda: 0.5
         lag: 10
         weights: [1.0]

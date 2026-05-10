@@ -1,0 +1,117 @@
+/* BlueAlpha: soft sky-blue field (pale corners, medium blue center, subtle radial glow) */
+
+.stApp {
+  background-color: #c5daf0;
+  background-image:
+    radial-gradient(ellipse 90% 70% at 58% 48%, rgba(120, 185, 245, 0.45) 0%, transparent 58%),
+    radial-gradient(ellipse 100% 80% at 72% 42%, rgba(100, 160, 230, 0.22) 0%, transparent 45%),
+    radial-gradient(ellipse 85% 65% at 12% 8%, rgba(255, 255, 255, 0.95) 0%, transparent 42%),
+    radial-gradient(circle at 68% 55%, rgba(147, 197, 253, 0.35) 0%, transparent 52%),
+    linear-gradient(168deg, #f4f9ff 0%, #e3f0fb 28%, #b8d4f0 55%, #9ebadf 82%, #8fa8cf 100%);
+  background-attachment: fixed;
+}
+
+section.main > div {
+  padding-top: 0.75rem;
+}
+
+.block-container {
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 20px;
+  padding: 1.1rem 1.35rem 1.35rem 1.35rem;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.15);
+}
+
+h1,
+h2,
+h3 {
+  color: #0f172a !important;
+}
+
+/* Descendant: `help=` can wrap the native control so `> button` misses */
+.stButton button,
+.stDownloadButton button,
+[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-secondary"] {
+  border-radius: 999px !important;
+  font-weight: 600 !important;
+}
+
+[data-testid="stSidebar"] button {
+  border-radius: 999px !important;
+}
+
+button[kind="primary"],
+[data-testid="baseButton-primary"] {
+  background-color: #1d63ed !important;
+  border: none !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(29, 99, 237, 0.45) !important;
+}
+
+button[kind="secondary"],
+[data-testid="baseButton-secondary"] {
+  background-color: #ffffff !important;
+  color: #1d63ed !important;
+  border: 2px solid rgba(29, 99, 237, 0.35) !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* Keep the header element present (transparent) so Streamlit's sidebar
+   expand button remains clickable when the sidebar is collapsed. Hide only
+   the inner toolbar / decoration we don't want to show. */
+[data-testid="stHeader"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  height: auto !important;
+}
+
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"] {
+  display: none !important;
+}
+
+/* Always show the "expand sidebar" control when the sidebar is collapsed,
+   and give it a visible pill so it cannot blend into the background. */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="stSidebarCollapsed"] {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 10000 !important;
+  top: 0.6rem !important;
+  left: 0.6rem !important;
+}
+
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="stSidebarCollapsed"] button,
+[data-testid="stSidebarCollapseButton"] button {
+  background: #ffffff !important;
+  color: #1d63ed !important;
+  border: 2px solid rgba(29, 99, 237, 0.35) !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.18) !important;
+  border-radius: 999px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+[data-testid="stSidebar"] {
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: 0 16px 16px 0;
+}
+
+[data-testid="stSidebar"] .block-container {
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-testid="stExpander"] details {
+  border-radius: 12px !important;
+  border: 1px solid rgba(29, 99, 237, 0.15) !important;
+  background: rgba(248, 250, 252, 0.95) !important;
+}
+
+div[data-testid="stExpanderDetails"] > div {
+  background: transparent;
+}

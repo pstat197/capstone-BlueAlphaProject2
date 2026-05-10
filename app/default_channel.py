@@ -32,7 +32,7 @@ def default_channel_dict() -> Dict[str, Any]:
                 "beta": 0.5,
             },
             "adstock_decay_config": {
-                "type": "linear",
+                "type": "geometric",
                 "lambda": 0.5,
                 "lag": 10,
                 "weights": [1.0],

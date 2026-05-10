@@ -49,12 +49,16 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
     Apply adstock decay to impressions.
 
     Supported types:
-      - 'geometric' or 'exponential': normalized geometric decay (weights λ^s / Σ λ^s, s=0..L)
+      - 'geometric' or 'exponential': Meridian-style geometric decay
+        (weights α^s, s=0..L, normalized; α in [0,1] via ``lambda`` / ``decay_rate``).
+      - 'binomial': Meridian binomial decay on the same α ∈ [0,1] scale (see Google Meridian docs).
       - 'weighted': finite impulse response; weights are normalized to sum to 1
       - 'linear': if lag <= 0, return impressions; else uniform moving average (weights sum to 1)
+
+    Default type (when omitted) is ``geometric`` to match Meridian-style decay kernels.
     """
     adstock_config = adstock_config or {}
-    adstock_type = adstock_config.get("type", "linear")
+    adstock_type = adstock_config.get("type", "geometric")
 
     if adstock_type == "linear":
         lag = int(adstock_config.get("lag", 0))
@@ -66,13 +70,40 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
         return np.convolve(impressions, weights, mode="full")[: len(impressions)]
 
     if adstock_type in ("geometric", "exponential"):
-        lambda_ = float(adstock_config.get("lambda", adstock_config.get("decay_rate", 0.0)))
+        alpha = float(adstock_config.get("lambda", adstock_config.get("decay_rate", 0.5)))
+        alpha = float(np.clip(alpha, 0.0, 1.0))
         lag = int(adstock_config.get("lag", 0))
         if lag < 0:
             raise ValueError(f"adstock lag must be non-negative, got {lag}.")
-        lag_array = np.arange(lag + 1)
-        decay_weights = np.power(lambda_, lag_array)
-        decay_weights /= decay_weights.sum()
+        lag_array = np.arange(lag + 1, dtype=float)
+        if alpha <= 0.0:
+            decay_weights = np.zeros(lag + 1, dtype=float)
+            decay_weights[0] = 1.0
+        else:
+            decay_weights = np.power(alpha, lag_array)
+            decay_weights /= decay_weights.sum()
+        return np.convolve(impressions, decay_weights, mode="full")[: len(impressions)]
+
+    if adstock_type == "binomial":
+        # Meridian: w(s;α) = (1 - s/(1+L))^α*,  α* = 1/α - 1,  L = max lag; then normalize.
+        alpha = float(adstock_config.get("lambda", adstock_config.get("decay_rate", 0.5)))
+        alpha = float(np.clip(alpha, 0.0, 1.0))
+        L = int(adstock_config.get("lag", 0))
+        if L < 0:
+            raise ValueError(f"adstock lag must be non-negative, got {L}.")
+        lag_array = np.arange(L + 1, dtype=float)
+        if alpha <= 0.0:
+            decay_weights = np.zeros(L + 1, dtype=float)
+            decay_weights[0] = 1.0
+        elif alpha >= 1.0:
+            decay_weights = np.ones(L + 1, dtype=float)
+            decay_weights /= decay_weights.sum()
+        else:
+            alpha_star = 1.0 / alpha - 1.0
+            base = 1.0 - lag_array / (1.0 + float(L))
+            base = np.maximum(base, 0.0)
+            decay_weights = np.power(base, alpha_star)
+            decay_weights /= decay_weights.sum()
         return np.convolve(impressions, decay_weights, mode="full")[: len(impressions)]
 
     if adstock_type == "weighted":
@@ -83,7 +114,7 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
 
     raise ValueError(
         f'Unknown adstock_decay_config type "{adstock_type}". '
-        'Expected one of: "geometric", "exponential", "weighted", "linear".'
+        'Expected one of: "geometric", "exponential", "binomial", "weighted", "linear".'
     )
 
 # seasonality functions

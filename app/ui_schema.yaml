@@ -97,17 +97,17 @@ per_channel_sliders:
     step: 0.05
   - path: channel.adstock_decay_config.lambda
     group: adstock
-    adstock_types: [geometric, exponential]
+    adstock_types: [geometric, exponential, binomial]
     label: "Lambda"
-    help: "Geometric/exponential: weight per lag step (closer to 1 = longer memory, closer to 0 = fast fade)."
+    help: "Geometric/exponential: decay α ∈ [0,1] (α^s weights). Binomial: same α maps to Meridian’s α* = 1/α − 1 on (1 − s/(1+L))."
     min: 0.0
     max: 1.0
     step: 0.05
   - path: channel.adstock_decay_config.lag
     group: adstock
-    adstock_types: [linear, geometric, exponential]
+    adstock_types: [linear, geometric, exponential, binomial]
     label: "Lag"
-    help: "Linear: average over lag+1 weeks (0 = no carry-over). Geometric/exponential: how many decay terms in the kernel."
+    help: "Linear: average over lag+1 weeks (0 = no carry-over). Geometric/exponential/binomial: max lag L (Meridian-style normalized kernel over s=0..L)."
     min: 0
     max: 52
     step: 1
@@ -122,9 +122,10 @@ per_channel_selects:
       - diminishing_returns
   - path: channel.adstock_decay_config.type
     label: "Adstock type"
-    help: "linear = flat moving average; geometric/exponential = exponentially decaying weights; weighted = custom kernel. Open the reference expander in this section for details."
+    help: "geometric/exponential = Meridian-style α^s decay; binomial = Meridian (1−s/(1+L))^(1/α−1); linear = flat moving average; weighted = custom kernel."
     options:
-      - linear
       - geometric
+      - binomial
       - exponential
+      - linear
       - weighted

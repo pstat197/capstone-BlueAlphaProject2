@@ -70,6 +70,26 @@ def test_linear_adstock_lag_zero_is_identity():
     np.testing.assert_array_almost_equal(out, x)
 
 
+def test_default_adstock_is_geometric_when_type_omitted():
+    """Omitted ``type`` uses geometric decay (Meridian-style), not uniform linear MA."""
+    x = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+    out_default = _adstock_decay(x, {"lag": 2, "lambda": 0.5})
+    out_geo = _adstock_decay(x, {"type": "geometric", "lag": 2, "lambda": 0.5})
+    np.testing.assert_array_almost_equal(out_default, out_geo)
+    # Geometric kernel favors recent weeks vs flat 1/3, 1/3, 1/3 linear MA.
+    out_lin = _adstock_decay(x, {"type": "linear", "lag": 2})
+    assert not np.allclose(out_default, out_lin)
+
+
+def test_binomial_adstock_meridian_kernel_l2_alpha_half():
+    """Meridian binomial: L=2, α=0.5 → α*=1, weights ∝ 1, 2/3, 1/3."""
+    x = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+    out = _adstock_decay(x, {"type": "binomial", "lambda": 0.5, "lag": 2})
+    raw = np.array([1.0, 2.0 / 3.0, 1.0 / 3.0])
+    expected = np.convolve(x, raw / raw.sum(), mode="full")[: len(x)]
+    np.testing.assert_array_almost_equal(out, expected)
+
+
 def test_generate_revenue_reproducible_with_seed(example_config_path):
     """With a fixed seed in the config, two runs produce identical revenue vectors."""
     config1 = load_config(str(example_config_path))

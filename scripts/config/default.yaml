@@ -34,7 +34,7 @@ channel_list:
         K: 50000.0
         beta: 0.5
       adstock_decay_config:
-        type: linear
+        type: geometric
         lambda: 0.5
         lag: 10
         weights: [1.0]

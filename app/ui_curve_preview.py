@@ -130,11 +130,45 @@ def _adstock_kernel_preview(
         return lags, w
 
     if ad_type in ("geometric", "exponential"):
-        lam = _resolve_numeric_param(i, "channel.adstock_decay_config.lambda", data, fallback=0.5)
-        lags = np.arange(lag + 1)
-        w = np.power(max(0.0, lam), lags)
-        w = w / w.sum()
-        return lags, w
+        lam = float(
+            np.clip(
+                _resolve_numeric_param(i, "channel.adstock_decay_config.lambda", data, fallback=0.5),
+                0.0,
+                1.0,
+            )
+        )
+        lags = np.arange(lag + 1, dtype=float)
+        if lam <= 0.0:
+            w = np.zeros(lag + 1, dtype=float)
+            w[0] = 1.0
+        else:
+            w = np.power(lam, lags)
+            w = w / w.sum()
+        return lags.astype(int), w
+
+    if ad_type == "binomial":
+        alpha = float(
+            np.clip(
+                _resolve_numeric_param(i, "channel.adstock_decay_config.lambda", data, fallback=0.5),
+                0.0,
+                1.0,
+            )
+        )
+        L = lag
+        lags = np.arange(L + 1, dtype=float)
+        if alpha <= 0.0:
+            w = np.zeros(L + 1, dtype=float)
+            w[0] = 1.0
+        elif alpha >= 1.0:
+            w = np.ones(L + 1, dtype=float)
+            w = w / w.sum()
+        else:
+            alpha_star = 1.0 / alpha - 1.0
+            base = 1.0 - lags / (1.0 + float(L))
+            base = np.maximum(base, 0.0)
+            w = np.power(base, alpha_star)
+            w = w / w.sum()
+        return lags.astype(int), w
 
     if ad_type == "weighted":
         w = np.asarray(_resolve_weights(i, data), dtype=float)
@@ -180,10 +214,13 @@ def render_adstock_preview(
     if len(lags) == 0:
         return
     df = pd.DataFrame({"lag (weeks)": lags, "kernel weight": w}).set_index("lag (weeks)")
-    label_hint = (
-        "normalized" if ad_type == "linear"
-        else "normalized geometric" if ad_type in ("geometric", "exponential")
-        else "normalized relative weights"
-    )
+    if ad_type == "linear":
+        label_hint = "normalized"
+    elif ad_type in ("geometric", "exponential"):
+        label_hint = "normalized geometric"
+    elif ad_type == "binomial":
+        label_hint = "normalized binomial (Meridian-style)"
+    else:
+        label_hint = "normalized relative weights"
     st.caption(f"Preview — *{ad_type}* kernel weight per lag ({label_hint}).")
     st.bar_chart(df, height=160, width="stretch")

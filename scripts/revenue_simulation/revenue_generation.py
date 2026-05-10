@@ -47,9 +47,9 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
     Apply adstock decay to impressions.
 
     Supported types:
-      - 'geometric' or 'exponential': geometric decay with rate lambda and truncated lag L
-      - 'weighted': arbitrary finite impulse response with provided weights
-      - 'linear': if lag <= 0, return impressions; else uniform moving average over lag+1 weeks
+      - 'geometric' or 'exponential': normalized geometric decay (weights λ^s / Σ λ^s, s=0..L)
+      - 'weighted': finite impulse response; weights are normalized to sum to 1
+      - 'linear': if lag <= 0, return impressions; else uniform moving average (weights sum to 1)
     """
     adstock_config = adstock_config or {}
     adstock_type = adstock_config.get("type", "linear")
@@ -70,11 +70,13 @@ def _adstock_decay(impressions: np.ndarray, adstock_config: Dict) -> np.ndarray:
             raise ValueError(f"adstock lag must be non-negative, got {lag}.")
         lag_array = np.arange(lag + 1)
         decay_weights = np.power(lambda_, lag_array)
+        decay_weights /= decay_weights.sum()
         return np.convolve(impressions, decay_weights, mode="full")[: len(impressions)]
 
     if adstock_type == "weighted":
         weights = adstock_config.get("weights", [1.0])
         weights_arr = np.asarray(weights, dtype=float)
+        weights_arr /= weights_arr.sum()
         return np.convolve(impressions, weights_arr, mode="full")[: len(impressions)]
 
     raise ValueError(

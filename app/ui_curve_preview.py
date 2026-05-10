@@ -133,10 +133,12 @@ def _adstock_kernel_preview(
         lam = _resolve_numeric_param(i, "channel.adstock_decay_config.lambda", data, fallback=0.5)
         lags = np.arange(lag + 1)
         w = np.power(max(0.0, lam), lags)
+        w = w / w.sum()
         return lags, w
 
     if ad_type == "weighted":
-        w = _resolve_weights(i, data)
+        w = np.asarray(_resolve_weights(i, data), dtype=float)
+        w = w / w.sum()
         lags = np.arange(len(w))
         return lags, w
 
@@ -180,8 +182,8 @@ def render_adstock_preview(
     df = pd.DataFrame({"lag (weeks)": lags, "kernel weight": w}).set_index("lag (weeks)")
     label_hint = (
         "normalized" if ad_type == "linear"
-        else "geometric decay" if ad_type in ("geometric", "exponential")
-        else "user weights"
+        else "normalized geometric" if ad_type in ("geometric", "exponential")
+        else "normalized relative weights"
     )
     st.caption(f"Preview — *{ad_type}* kernel weight per lag ({label_hint}).")
     st.bar_chart(df, height=160, width="stretch")

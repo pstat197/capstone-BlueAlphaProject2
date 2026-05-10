@@ -400,6 +400,140 @@ def test_load_config_from_dict_preserves_callers_budget_shifts_list():
     assert len(ic.get_budget_shifts()) == n_before
 
 
+def test_validation_rejects_negative_true_roi():
+    base = _minimal_channel("A")["channel"]
+    data = {
+        "run_identifier": "BadRoi",
+        "week_range": 4,
+        "channel_list": [{"channel": {**base, "true_roi": -0.1}}],
+    }
+    with pytest.raises(ValueError, match="true_roi"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_geometric_lambda_one_or_more():
+    base = dict(_minimal_channel("A")["channel"])
+    base["adstock_decay_config"] = {"type": "geometric", "lambda": 1.0, "lag": 5}
+    data = {"run_identifier": "BadAdstock", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="got 1\\.0"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_non_positive_cpm():
+    base = dict(_minimal_channel("A")["channel"])
+    base["cpm"] = 0.0
+    data = {"run_identifier": "BadCpm", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="cpm"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_duplicate_channel_names():
+    data = {
+        "run_identifier": "Dup",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("Same"), _minimal_channel("Same")],
+    }
+    with pytest.raises(ValueError, match="Duplicate channel_name"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_duplicate_names_after_strip():
+    """Stripped names must be unique so correlations and budgets resolve one channel."""
+    a = dict(_minimal_channel("Dup")["channel"])
+    a["channel_name"] = " Foo "
+    b = dict(_minimal_channel("Bar")["channel"])
+    b["channel_name"] = "Foo"
+    data = {
+        "run_identifier": "StripDup",
+        "week_range": 4,
+        "channel_list": [{"channel": a}, {"channel": b}],
+    }
+    with pytest.raises(ValueError, match="Duplicate channel_name"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_budget_shifts_unknown_from_channel():
+    data = {
+        "run_identifier": "BadBS",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("A")],
+        "budget_shifts": [
+            {
+                "type": "reallocate",
+                "start_week": 1,
+                "from_channel": "Nope",
+                "to_channel": "A",
+                "fraction": 0.5,
+            },
+        ],
+    }
+    with pytest.raises(ValueError, match="from_channel"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_budget_shifts_unknown_scale_channel():
+    data = {
+        "run_identifier": "BadBS2",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("A")],
+        "budget_shifts": [
+            {"type": "scale_channel", "channel_name": "Ghost", "start_week": 1, "end_week": 2, "factor": 1.1},
+        ],
+    }
+    with pytest.raises(ValueError, match="scale_channel"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_non_positive_week_range():
+    data = {
+        "run_identifier": "BadWR",
+        "week_range": 0,
+        "channel_list": [_minimal_channel("A")],
+    }
+    with pytest.raises(ValueError, match="week_range"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_non_positive_gamma_shape():
+    base = dict(_minimal_channel("A")["channel"])
+    base["spend_sampling_gamma_params"] = {"shape": 0.0, "scale": 100.0}
+    data = {"run_identifier": "BadGamma", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="shape"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_spend_range_min_gt_max():
+    base = dict(_minimal_channel("A")["channel"])
+    base["spend_range"] = [500.0, 100.0]
+    data = {"run_identifier": "BadSR", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="spend_range"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_negative_outcome_revenue_variance():
+    data = {
+        "run_identifier": "BadOutVar",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("A")],
+        "outcome_revenue": {
+            "baseline_revenue": 0,
+            "trend_slope": 0,
+            "seasonality_config": {},
+            "noise_variance": {"revenue": -1.0},
+        },
+    }
+    with pytest.raises(ValueError, match="outcome noise_variance"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_negative_adstock_lag():
+    base = dict(_minimal_channel("A")["channel"])
+    base["adstock_decay_config"] = {"type": "geometric", "lambda": 0.5, "lag": -1}
+    data = {"run_identifier": "BadLag", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="lag"):
+        InputConfigurations.from_yaml_dict(data)
+
+
 def main():
     print("Config/loading tests...")
     root = _project_root()

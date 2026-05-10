@@ -303,6 +303,174 @@ def _resolve_outcome_revenue_params(
     )
 
 
+def _validate_week_range(week_range: int) -> None:
+    if int(week_range) < 1:
+        raise ValueError(
+            f"week_range must be a positive integer (number of simulated weeks), got {week_range!r}."
+        )
+
+
+def validate_budget_shifts_channel_refs(
+    budget_shifts: List[Dict[str, Any]],
+    *,
+    known_channel_names: set[str],
+) -> None:
+    """Ensure reallocate / scale_channel rules reference existing ``channel_name`` values (exact match)."""
+    for i, rule in enumerate(budget_shifts):
+        t = rule.get("type")
+        if t == "reallocate":
+            f_name = str(rule.get("from_channel", ""))
+            t_name = str(rule.get("to_channel", ""))
+            if f_name not in known_channel_names:
+                raise ValueError(
+                    f"budget_shifts[{i}] reallocate from_channel {f_name!r} is not a known channel_name. "
+                    f"Known channels: {sorted(known_channel_names)}"
+                )
+            if t_name not in known_channel_names:
+                raise ValueError(
+                    f"budget_shifts[{i}] reallocate to_channel {t_name!r} is not a known channel_name. "
+                    f"Known channels: {sorted(known_channel_names)}"
+                )
+        elif t == "scale_channel":
+            cname = str(rule.get("channel_name", ""))
+            if cname not in known_channel_names:
+                raise ValueError(
+                    f"budget_shifts[{i}] scale_channel channel_name {cname!r} is not a known channel_name. "
+                    f"Known channels: {sorted(known_channel_names)}"
+                )
+
+
+def validate_outcome_noise_variance(noise_variance: Dict[str, float]) -> None:
+    """Outcome-level shock variances must be finite and non-negative (same rules as revenue path runtime)."""
+    for k, v in noise_variance.items():
+        if not math.isfinite(float(v)):
+            raise ValueError(
+                f"Resolved outcome noise_variance[{k!r}] must be finite, got {v!r}."
+            )
+        if float(v) < 0.0:
+            raise ValueError(
+                f"Resolved outcome noise_variance[{k!r}] must be non-negative, got {v}."
+            )
+
+
+def validate_channel_list_for_simulation(channels: List[Channel]) -> None:
+    """
+    Fail fast on invalid per-channel parameters before spend/impressions/revenue run.
+
+    Enforces: non-empty unique channel names (after strip), non-negative finite ``true_roi``,
+    positive finite ``cpm``, ``spend_range`` with two finite bounds ``0 <= min <= max``,
+    strictly positive effective Gamma ``shape`` / ``scale``, non-negative finite per-channel
+    ``noise_variance`` entries, non-negative ``adstock_decay_config`` ``lag`` when present,
+    and for geometric / exponential / binomial adstock, any explicit ``lambda`` or ``decay_rate``
+    must lie in ``[0, 1)`` so the decay kernel is not an unintended clipped or divergent-in-length setting.
+    """
+    tmpl = get_default_channel_template()
+    tmpl_gamma = tmpl.get("spend_sampling_gamma_params") or {}
+    default_shape = float(tmpl_gamma.get("shape", 2.5))
+    default_scale = float(tmpl_gamma.get("scale", 1000.0))
+
+    seen: Dict[str, int] = {}
+    for idx, ch in enumerate(channels):
+        name = str(ch.get_channel_name() or "").strip()
+        if not name:
+            raise ValueError(
+                f"channel_list[{idx}].channel.channel_name is empty or whitespace-only; "
+                "every channel needs a non-empty name."
+            )
+        if name in seen:
+            raise ValueError(
+                f"Duplicate channel_name {name!r} (after stripping): entries "
+                f"channel_list[{seen[name]}] and channel_list[{idx}] conflict. "
+                "Channel names must be unique."
+            )
+        seen[name] = idx
+
+        roi = float(ch.get_true_roi())
+        if not math.isfinite(roi):
+            raise ValueError(f"Channel {name!r}: true_roi must be finite, got {roi!r}.")
+        if roi < 0.0:
+            raise ValueError(
+                f"Channel {name!r}: true_roi must be non-negative, got {roi}."
+            )
+
+        cpm = float(ch.get_cpm())
+        if not math.isfinite(cpm):
+            raise ValueError(f"Channel {name!r}: cpm must be finite, got {cpm!r}.")
+        if cpm <= 0.0:
+            raise ValueError(
+                f"Channel {name!r}: cpm must be positive (impressions use spend/cpm), got {cpm}."
+            )
+
+        spend_range = ch.get_spend_range()
+        if len(spend_range) < 2:
+            raise ValueError(
+                f"Channel {name!r}: spend_range must have at least two entries [min_spend, max_spend], "
+                f"got {spend_range!r}."
+            )
+        low_sr, high_sr = float(spend_range[0]), float(spend_range[1])
+        if not math.isfinite(low_sr) or not math.isfinite(high_sr):
+            raise ValueError(
+                f"Channel {name!r}: spend_range bounds must be finite, got [{low_sr!r}, {high_sr!r}]."
+            )
+        if low_sr < 0.0 or high_sr < 0.0:
+            raise ValueError(
+                f"Channel {name!r}: spend_range bounds must be non-negative, got [{low_sr}, {high_sr}]."
+            )
+        if low_sr > high_sr:
+            raise ValueError(
+                f"Channel {name!r}: spend_range must satisfy min <= max, got [{low_sr}, {high_sr}]."
+            )
+
+        g_params = ch.get_spend_sampling_gamma_params() or {}
+        eff_shape = float(g_params.get("shape", default_shape))
+        eff_scale = float(g_params.get("scale", default_scale))
+        if not math.isfinite(eff_shape) or not math.isfinite(eff_scale):
+            raise ValueError(
+                f"Channel {name!r}: spend_sampling_gamma_params shape/scale must be finite "
+                f"(effective shape={eff_shape!r}, scale={eff_scale!r})."
+            )
+        if eff_shape <= 0.0 or eff_scale <= 0.0:
+            raise ValueError(
+                f"Channel {name!r}: spend_sampling_gamma_params require strictly positive shape and scale "
+                f"for Gamma sampling (effective shape={eff_shape}, scale={eff_scale})."
+            )
+
+        nv = ch.get_noise_variance() or {}
+        for nk, nv_val in nv.items():
+            v = float(nv_val)
+            if not math.isfinite(v):
+                raise ValueError(
+                    f"Channel {name!r}: noise_variance[{nk!r}] must be finite, got {nv_val!r}."
+                )
+            if v < 0.0:
+                raise ValueError(
+                    f"Channel {name!r}: noise_variance[{nk!r}] must be non-negative, got {v}."
+                )
+
+        cfg = ch.get_adstock_decay_config() or {}
+        if "lag" in cfg:
+            lag_v = int(cfg["lag"])
+            if lag_v < 0:
+                raise ValueError(
+                    f"Channel {name!r}: adstock_decay_config lag must be non-negative, got {lag_v}."
+                )
+
+        adstock_type = str(cfg.get("type", "geometric")).strip().lower()
+        if adstock_type in ("geometric", "exponential", "binomial"):
+            raw = cfg.get("lambda", cfg.get("decay_rate"))
+            if raw is not None:
+                alpha = float(raw)
+                if not math.isfinite(alpha):
+                    raise ValueError(
+                        f"Channel {name!r}: adstock lambda/decay_rate must be finite, got {raw!r}."
+                    )
+                if alpha < 0.0 or alpha >= 1.0:
+                    raise ValueError(
+                        f"Channel {name!r}: for adstock type {adstock_type!r}, "
+                        f"lambda/decay_rate must be in [0, 1) (decay on the unit interval); got {alpha}."
+                    )
+
+
 @dataclass
 class InputConfigurations:
     run_identifier: str
@@ -392,6 +560,8 @@ class InputConfigurations:
                     saturation_enabled=saturation_enabled,
                 )
             )
+        validate_channel_list_for_simulation(channels)
+
         correlations_raw = data.get("correlations") or []
         correlations = []
         for entry in correlations_raw:
@@ -416,11 +586,19 @@ class InputConfigurations:
         media_transform_order = _parse_media_transform_order(data.get("media_transform_order"))
 
         budget_shifts = _normalize_budget_shifts(data.get("budget_shifts"))
+        known_names = {ch.get_channel_name() for ch in channels}
+        validate_budget_shifts_channel_refs(budget_shifts, known_channel_names=known_names)
+
         rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
         ob, ot, osea, onv = _resolve_outcome_revenue_params(data, channels, default_channel_template)
+        validate_outcome_noise_variance(onv)
+
+        week_range = int(data.get("week_range", 0))
+        _validate_week_range(week_range)
+
         return cls(
             run_identifier=str(data.get("run_identifier", "")),
-            week_range=int(data.get("week_range", 0)),
+            week_range=week_range,
             channel_list=channels,
             seed=seed,
             correlations=correlations,

@@ -5,6 +5,7 @@ Run from project root: python -m tests.test_spend_generation  or  python test.py
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 from scripts.config.loader import load_config
@@ -440,13 +441,8 @@ def test_budget_shifts_reallocate_unknown_channel_raises():
             },
         ],
     }
-    config = InputConfigurations.from_yaml_dict(data)
-    try:
-        generate_spend(config)
-    except ValueError as e:
-        assert "DoesNotExist" in str(e)
-    else:
-        raise AssertionError("expected ValueError")
+    with pytest.raises(ValueError, match="DoesNotExist"):
+        InputConfigurations.from_yaml_dict(data)
 
 
 def test_generate_spend_single_week_single_channel():

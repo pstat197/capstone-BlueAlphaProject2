@@ -14,6 +14,7 @@ from scripts.impressions_simulation.impressions_generation import generate_impre
 from scripts.revenue_simulation.revenue_generation import generate_revenue
 
 from scripts.synth_input_classes.input_configurations import InputConfigurations
+from scripts.ground_truth_io import extract_ground_truth, write_ground_truth_json
 
 
 def construct_csv(
@@ -111,6 +112,14 @@ def main(yaml_path):
     output_path = f"output/{config.get_run_identifier()}_{timestamp}.csv"
     df.to_csv(output_path, index=False)
     print(f"Saved to: {output_path}")
+
+    # Always write generative "ground truth" parameters for this run.
+    gt_path = Path("output") / f"{config.get_run_identifier()}_{timestamp}_ground_truth.json"
+    try:
+        write_ground_truth_json(gt_path, extract_ground_truth(config))
+        print(f"Saved ground truth to: {gt_path}")
+    except Exception as e:
+        print(f"WARNING: Could not write ground truth file {gt_path}: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run with a YAML config (e.g. example.yaml)")

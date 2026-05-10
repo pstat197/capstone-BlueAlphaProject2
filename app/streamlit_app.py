@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -389,6 +390,21 @@ def main() -> None:
                 config_for_storage = copy.deepcopy(merged)
                 to_run = copy.deepcopy(merged)
                 df_out, run_id, cache_hit, cfg_hash, corr_results = run_with_cache(to_run, run_pipeline)
+                # Always persist generative "true" parameters for this run (even on cache hits).
+                from scripts.config.loader import load_config_from_dict
+                from scripts.ground_truth_io import extract_ground_truth, write_ground_truth_json
+
+                loaded_for_truth = load_config_from_dict(copy.deepcopy(config_for_storage))
+                gt_dir = Path(__file__).resolve().parent / ".cache" / "ground_truth"
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                gt_path = gt_dir / f"{cfg_hash}_{ts}.json"
+                try:
+                    write_ground_truth_json(gt_path, extract_ground_truth(loaded_for_truth))
+                    st.session_state["last_ground_truth_path"] = str(gt_path)
+                except Exception as gt_e:
+                    st.session_state["last_ground_truth_path"] = None
+                    st.session_state["last_ground_truth_error"] = str(gt_e)
+                    st.warning(f"Could not write ground truth file: {gt_e}")
                 st.session_state["last_df"] = df_out
                 st.session_state["last_run_id"] = run_id
                 st.session_state["last_cache_hit"] = cache_hit

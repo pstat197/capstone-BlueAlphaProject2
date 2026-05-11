@@ -1,0 +1,88 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * Blue Alpha brand theme. Tailwind v4 reads these CSS variables and exposes
+ * matching utility classes (e.g. `bg-brand-500`, `text-accent-500`).
+ *
+ * Primary blue: #1D63ED. Accent (chart secondary, callouts): #F39C59.
+ * Canvas/page background mirrors the Streamlit gradient but flatter and lighter.
+ */
+@theme {
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #d9e6ff;
+  --color-brand-200: #b6cfff;
+  --color-brand-300: #8aaeff;
+  --color-brand-400: #5a86fa;
+  --color-brand-500: #1d63ed;
+  --color-brand-600: #1850c8;
+  --color-brand-700: #143fa0;
+  --color-brand-800: #11337f;
+  --color-brand-900: #0d2660;
+
+  --color-accent-50: #fff5ed;
+  --color-accent-100: #ffe5d1;
+  --color-accent-200: #ffc8a3;
+  --color-accent-300: #ffa771;
+  --color-accent-400: #fa8a4a;
+  --color-accent-500: #f39c59;
+  --color-accent-600: #d97a3b;
+  --color-accent-700: #b15c28;
+
+  --color-success-500: #10a37f;
+  --color-warn-500: #f59e0b;
+  --color-danger-500: #e11d48;
+
+  --color-brand-canvas: #f5f8fd;
+  --color-brand-surface: #ffffff;
+  --color-brand-border: #e3eaf5;
+  --color-brand-muted: #64748b;
+
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  --radius-xs: 0.375rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --shadow-pop: 0 8px 32px rgba(20, 63, 160, 0.18);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background:
+      radial-gradient(1200px 600px at 12% -10%, rgba(29, 99, 237, 0.08), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, rgba(243, 156, 89, 0.06), transparent 55%),
+      var(--color-brand-canvas);
+    background-attachment: fixed;
+  }
+  *:focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
+
+/* Plain styling for CodeMirror to match the rest of the UI. */
+.cm-editor {
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: #fbfcfe;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}

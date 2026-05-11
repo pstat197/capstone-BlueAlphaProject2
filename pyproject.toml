@@ -22,7 +22,12 @@ dependencies = [
 mmm = [
     "google-meridian>=1.4.0",
 ]
+api = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.6.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["scripts*", "app*"]
+include = ["scripts*", "app*", "server*"]

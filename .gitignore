@@ -211,3 +211,8 @@ output/
 
 # Streamlit run cache (disk-backed simulation cache)
 app/.cache/
+
+# Node / Vite (React UI under frontend/)
+node_modules/
+*.tsbuildinfo
+frontend/dist/

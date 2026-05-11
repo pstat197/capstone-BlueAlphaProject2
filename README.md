@@ -49,6 +49,21 @@ Requirements (declared in `pyproject.toml` / `requirements.txt`): `numpy`, `pand
 
 **Bayesian MMM tab (optional):** TensorFlow + Google Meridian — `pip install -r requirements-meridian.txt` or `pip install -e ".[mmm]"` (Python 3.11–3.13 recommended), then **restart Streamlit from that same environment** (`./scripts/run_streamlit.sh` or `.venv/bin/streamlit`).
 
+### React UI (experimental, on this branch)
+
+A new Vite + React + Tailwind v4 frontend lives in `frontend/` and talks to a thin FastAPI server in `server/` that wraps the same simulator pipeline. The Streamlit app stays fully functional — this is an alternative UI, not a replacement.
+
+```bash
+# one-time install of the API extras and the JS deps
+.venv/bin/pip install -e ".[api]"
+npm install --prefix frontend
+
+# run both servers (FastAPI on :8000, Vite on :5173, /api proxied)
+./scripts/run_dev.sh
+```
+
+Then open <http://localhost:5173>. The simulator is at `/simulator`, results live at `/results/:configHash`, and `/results/:configHash/diagnostics` shows the correlation panel. The Bayesian MMM tab is stubbed as "Coming soon" — use the Streamlit app for MMM in the meantime. See [frontend/README.md](frontend/README.md) for layout, theming, and stack notes.
+
 ---
 
 ## Table of contents
@@ -56,6 +71,7 @@ Requirements (declared in `pyproject.toml` / `requirements.txt`): `numpy`, `pand
 - [Setup](#setup)
 - [Running the pipeline](#running-the-pipeline)
 - [Streamlit UI](#streamlit-ui)
+- [React UI (experimental, on this branch)](#react-ui-experimental-on-this-branch)
 - [Running tests](#running-tests)
 - [Pipeline overview](#pipeline-overview)
 - [1. Config & loading](#1-config--loading)

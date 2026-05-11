@@ -31,6 +31,7 @@ from app.cache import (  # noqa: E402
 from app.pipeline_runner import run_pipeline  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
 
+from server.correlations import derive_correlation_results  # noqa: E402
 from server.serializers import serialize_correlation, serialize_run_dataframe  # noqa: E402
 from server.store import get_run_record, list_run_records, save_run_record  # noqa: E402
 
@@ -146,6 +147,11 @@ def _build_run_payload(
     corr_results: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     serialized = serialize_run_dataframe(df)
+    # `run_with_cache` skips correlation analysis on cache hits to keep the fast
+    # path cheap. Recompute it here so the React diagnostics route works for
+    # any run (fresh or cached, POST or GET).
+    if corr_results is None:
+        corr_results = derive_correlation_results(df, config)
     return {
         "run_id": run_identifier,
         "config_hash": config_hash,

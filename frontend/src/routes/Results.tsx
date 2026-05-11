@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfigSnapshot } from "@/components/results/config-snapshot";
 import { PreviewTable } from "@/components/results/preview-table";
 import { ResultsCharts } from "@/components/results/results-charts";
+import { RunKpis } from "@/components/results/run-kpis";
 import { RunSummary } from "@/components/results/run-summary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -80,6 +81,8 @@ export default function ResultsRoute() {
   return (
     <div className="flex flex-1 flex-col gap-6">
       <RunSummary run={run} onEditConfiguration={handleEditConfiguration} />
+
+      <RunKpis run={run} />
 
       <Tabs defaultValue="charts">
         <TabsList>

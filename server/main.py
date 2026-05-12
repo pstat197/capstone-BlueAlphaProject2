@@ -31,6 +31,8 @@ from app.cache import (  # noqa: E402
 )
 from app.pipeline_runner import run_pipeline  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
+from scripts.config.loader import load_config_from_dict  # noqa: E402
+from scripts.ground_truth_io import extract_ground_truth  # noqa: E402
 
 from server.correlations import derive_correlation_results  # noqa: E402
 from server.serializers import serialize_correlation, serialize_run_dataframe  # noqa: E402
@@ -138,6 +140,25 @@ def dump_yaml(payload: YamlDumpRequest) -> YamlDumpResponse:
 # ---------------------------------------------------------------------------
 
 
+def _safe_extract_ground_truth(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Derive the ground-truth artifact from a merged user config.
+
+    Loading the config + extracting ground truth is cheap (no simulation)
+    and we want it available on both fresh and cached paths so the React
+    Results page can always show it. We swallow loader errors here so
+    that a broken config still lets the rest of the run payload through —
+    the create_run handler validates separately and surfaces real errors.
+    """
+    try:
+        loaded = load_config_from_dict(config)
+    except Exception:
+        return None
+    try:
+        return extract_ground_truth(loaded)
+    except Exception:
+        return None
+
+
 def _build_run_payload(
     *,
     config: Dict[str, Any],
@@ -163,6 +184,7 @@ def _build_run_payload(
         "channels": serialized["channels"],
         "preview": serialized["preview"],
         "correlation": serialize_correlation(corr_results),
+        "ground_truth": _safe_extract_ground_truth(config),
     }
 
 

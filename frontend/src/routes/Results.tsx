@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ConfigSnapshot } from "@/components/results/config-snapshot";
+import { GroundTruthCard } from "@/components/results/ground-truth-card";
 import { PreviewTable } from "@/components/results/preview-table";
 import { ResultsCharts } from "@/components/results/results-charts";
 import { RunKpis } from "@/components/results/run-kpis";
@@ -88,6 +89,7 @@ export default function ResultsRoute() {
         <TabsList>
           <TabsTrigger value="charts">Chart view</TabsTrigger>
           <TabsTrigger value="preview">Data preview</TabsTrigger>
+          <TabsTrigger value="ground-truth">Ground truth</TabsTrigger>
           <TabsTrigger value="config">Configuration</TabsTrigger>
         </TabsList>
 
@@ -96,6 +98,9 @@ export default function ResultsRoute() {
         </TabsContent>
         <TabsContent value="preview">
           <PreviewTable preview={run.preview} />
+        </TabsContent>
+        <TabsContent value="ground-truth">
+          <GroundTruthCard groundTruth={run.ground_truth} />
         </TabsContent>
         <TabsContent value="config">
           <ConfigSnapshot config={run.config} />

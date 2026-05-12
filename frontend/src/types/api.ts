@@ -166,6 +166,55 @@ export interface CorrelationResult {
   window: number;
 }
 
+export interface GroundTruthChannel {
+  channel_name: string;
+  enabled?: boolean;
+  off_ranges?: Array<[number, number]>;
+  sticky_pause_ranges?: Array<{
+    start_week: number;
+    end_week: number;
+    start_probability: number;
+    continue_probability: number;
+  }>;
+  true_roi?: number;
+  baseline_revenue?: number;
+  trend_slope?: number;
+  seasonality_config?: Record<string, unknown> | null;
+  saturation_enabled?: boolean;
+  saturation_config?: Record<string, unknown> | null;
+  adstock_enabled?: boolean;
+  adstock_decay_config?: Record<string, unknown> | null;
+  spend_range?: [number, number];
+  cpm?: number;
+  spend_sampling_gamma_params?: Record<string, unknown> | null;
+  noise_variance?: Record<string, unknown> | null;
+}
+
+/** Snapshot of the generative parameters the simulator was given.
+ *  Mirrors `scripts/ground_truth_io.extract_ground_truth`. */
+export interface GroundTruth {
+  ground_truth_version: number;
+  generated_at: string;
+  run_identifier: string;
+  week_range: number;
+  seed?: number | null;
+  outcome_revenue: {
+    baseline_revenue: number;
+    trend_slope: number;
+    seasonality_config?: Record<string, unknown> | null;
+    noise_variance?: Record<string, unknown> | null;
+    total_revenue_mechanism?: { description?: string };
+  };
+  global_toggles: {
+    adstock_global: boolean;
+    saturation_global: boolean;
+    media_transform_order: string;
+  };
+  correlations?: unknown;
+  budget_shifts?: unknown;
+  channels: GroundTruthChannel[];
+}
+
 export interface RunResponse {
   run_id: string;
   config_hash: string;
@@ -176,6 +225,7 @@ export interface RunResponse {
   channels: RunChannelSeries[];
   preview: RunPreview;
   correlation: CorrelationResult | null;
+  ground_truth: GroundTruth | null;
 }
 
 export interface RunListItem {

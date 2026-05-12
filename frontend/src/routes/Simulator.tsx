@@ -7,6 +7,7 @@ import { AdvancedSettingsCard } from "@/components/simulator/advanced-settings-c
 import { ChannelDetail } from "@/components/simulator/channel-detail";
 import { ChannelList, type SimulatorPane } from "@/components/simulator/channel-list";
 import { RunSettingsCard } from "@/components/simulator/run-settings-card";
+import { ScenariosCard } from "@/components/simulator/scenarios-card";
 import { YamlEditorCard } from "@/components/simulator/yaml-editor-card";
 import { StickyActionBar } from "@/components/layout/sticky-action-bar";
 import { Badge } from "@/components/ui/badge";
@@ -97,6 +98,7 @@ export default function SimulatorRoute() {
 
       <RunSettingsCard />
       <AdvancedSettingsCard />
+      <ScenariosCard />
 
       <div className="grid flex-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div className="lg:max-h-[calc(100vh-260px)]">

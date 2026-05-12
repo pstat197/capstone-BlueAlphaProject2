@@ -83,12 +83,16 @@ export interface ChannelDef {
 
 /**
  * Seasonality is intentionally loose-typed at the React layer — the
- * backend supports multiple modes (basic cycles, deterministic Fourier)
- * and the structured Streamlit UI passes them through verbatim. We
- * expose a minimal schema-aware shape and let unknown keys ride along.
+ * backend supports multiple modes (sin → normalized to fourier, basic
+ * cycles, raw deterministic fourier with coefficients, and arbitrary
+ * patterns). The structured Streamlit UI passes them through verbatim.
+ * We expose a minimal schema-aware shape and let unknown keys ride
+ * along so the YAML pane can edit anything the backend accepts.
  */
 export interface SeasonalityConfig {
-  type?: "none" | "basic" | "fourier";
+  type?: "none" | "basic" | "sin" | "fourier";
+  amplitude?: number;
+  phase?: number;
   cycles?: Array<{ period_weeks?: number; amplitude?: number; phase?: number }>;
   [key: string]: unknown;
 }

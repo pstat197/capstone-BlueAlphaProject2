@@ -57,8 +57,43 @@ button[kind="secondary"],
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08) !important;
 }
 
+/* Keep the header element present (transparent) so Streamlit's sidebar
+   expand button remains clickable when the sidebar is collapsed. Hide only
+   the inner toolbar / decoration we don't want to show. */
 [data-testid="stHeader"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  height: auto !important;
+}
+
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"] {
   display: none !important;
+}
+
+/* Always show the "expand sidebar" control when the sidebar is collapsed,
+   and give it a visible pill so it cannot blend into the background. */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="stSidebarCollapsed"] {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 10000 !important;
+  top: 0.6rem !important;
+  left: 0.6rem !important;
+}
+
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="stSidebarCollapsed"] button,
+[data-testid="stSidebarCollapseButton"] button {
+  background: #ffffff !important;
+  color: #1d63ed !important;
+  border: 2px solid rgba(29, 99, 237, 0.35) !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.18) !important;
+  border-radius: 999px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
 }
 
 [data-testid="stSidebar"] {

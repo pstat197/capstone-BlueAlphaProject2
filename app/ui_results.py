@@ -13,6 +13,8 @@ from plotly.subplots import make_subplots
 from app.cache import cached_dataframe_schema_ok
 from app.ui_chart_constants import ACCENT2, BLUE, CHART_PAL_CVD, ORANGE
 from app.ui_yaml_io import yaml_dump
+from scripts.spend_simulation.correlation_math import safe_corrcoef
+from scripts.spend_simulation.pairwise_summary import build_pairwise_summary
 
 
 def _norm_series(s: pd.Series) -> pd.Series:
@@ -212,14 +214,17 @@ def _make_correlation_heatmap(
             zmin=-1,
             zmax=1,
             showscale=True,
-            colorbar=dict(title="rho"),
+            colorbar=dict(title="ρ spend"),
         )
     )
     paper = "rgba(15,23,42,0.3)" if night else "rgba(255,255,255,0)"
     plot_bg = "rgba(30,41,59,0.5)" if night else "rgba(248,250,252,0.9)"
     title_color = "#e2e8f0" if night else "#0f172a"
     fig.update_layout(
-        title=dict(text="Static Correlation Matrix", font=dict(color=title_color, size=14)),
+        title=dict(
+            text="Static correlation (weekly spend, levels)",
+            font=dict(color=title_color, size=14),
+        ),
         height=380,
         margin=dict(l=80, r=40, t=50, b=40),
         paper_bgcolor=paper,
@@ -262,7 +267,7 @@ def _make_rolling_correlation_chart(
     )
     fig.update_layout(
         title=dict(
-            text=f"Rolling Correlation: {pair[0]} / {pair[1]}",
+            text=f"Rolling Pearson ρ (spend): {pair[0]} / {pair[1]}",
             font=dict(color=title_color, size=14),
         ),
         height=320,
@@ -270,7 +275,7 @@ def _make_rolling_correlation_chart(
         paper_bgcolor=paper,
         plot_bgcolor=plot_bg,
         xaxis=dict(gridcolor=grid, color=title_color, title="Week"),
-        yaxis=dict(gridcolor=grid, color=title_color, title="Pearson rho", range=[-1, 1]),
+        yaxis=dict(gridcolor=grid, color=title_color, title="Pearson ρ (spend)", range=[-1, 1]),
         showlegend=False,
     )
     return fig
@@ -278,66 +283,135 @@ def _make_rolling_correlation_chart(
 
 def _render_correlation_panel(corr_results: Dict[str, Any]) -> None:
     night = st.session_state.get("night_mode", False)
-    names = corr_results["channel_names"]
-    static_corr = corr_results["static_corr"]
-    rolling_corr = corr_results["rolling_corr"]
-    window = corr_results["window"]
-    pairwise = corr_results["pairwise_summary"]
+    mode_options = {"Operational (post-mask spend)": "operational", "Generative (pre-mask spend)": "generative"}
+    has_dual = "operational_corr" in corr_results and "generative_corr" in corr_results
+    selected_mode = "operational"
+    if has_dual:
+        selected_label = st.selectbox(
+            "Correlation basis",
+            options=list(mode_options.keys()),
+            key="corr_basis_select",
+            help=(
+                "Operational uses post-toggle spend (zeros on paused/off weeks). "
+                "Generative uses pre-toggle spend right after draw + budget shifts."
+            ),
+        )
+        selected_mode = mode_options[selected_label]
+        corr_payload = corr_results["operational_corr"] if selected_mode == "operational" else corr_results["generative_corr"]
+    else:
+        corr_payload = corr_results
+
+    names = corr_payload["channel_names"]
+    static_corr = corr_payload["static_corr"]
+    rolling_corr = corr_payload["rolling_corr"]
+    window = corr_payload["window"]
+    pairwise = corr_payload["pairwise_summary"]
 
     st.markdown("---")
     st.markdown("### Channel Spend Correlation Analysis")
+    st.caption(
+        "**Heatmap & badges:** Pearson **ρ** on simulated **weekly spend** (dollar columns in the table). "
+        "**Parentheses:** the ρ from your `correlations` YAML — it drives a **Gaussian copula in log‑spend** before "
+        "`exp` and per‑channel clipping, so it is **not** the same quantity as spend‑level ρ and will often differ. "
+        "**Trailing value:** drift in **rolling** spend‑ρ (not “distance to target”)."
+    )
+    if not pairwise:
+        st.caption("Need at least two channels for pairwise summaries and rolling charts.")
 
     m1, m2, m3 = st.columns(3)
-    avg_rho = float(np.mean([v for v in corr_results["avg_abs_corr"].values()]))
+    avg_rho = float(np.mean([v for v in corr_payload["avg_abs_corr"].values()]))
     with m1:
-        st.metric("Avg pairwise |rho|", f"{avg_rho:.2f}", help="Across all channel pairs")
+        st.metric(
+            "Avg pairwise |rho|",
+            f"{avg_rho:.2f}",
+            help="Mean |ρ| over all unordered pairs for **weekly spend** (same as heatmap), not log-spend copula ρ.",
+        )
     with m2:
         st.metric(
             "Most correlated channel",
-            corr_results["most_correlated_channel"],
-            help="Highest average absolute correlation",
+            corr_payload["most_correlated_channel"],
+            help="Channel with the largest mean |ρ| to every other channel.",
         )
     with m3:
-        st.metric("Rolling window", f"{window} wks", help="Used for drift analysis")
+        st.metric(
+            "Rolling window",
+            f"{window} wks",
+            help="Weeks per window for **rolling Pearson ρ on spend** and for the drift comparison (first vs last windows).",
+        )
 
     col_heat, col_summary = st.columns([1, 1])
     with col_heat:
-        st.plotly_chart(_make_correlation_heatmap(static_corr, names, night=night), use_container_width=True)
+        st.caption("**Static matrix:** full-run Pearson ρ of **weekly spend** (levels). Symmetric; diagonal 1.")
+        st.plotly_chart(_make_correlation_heatmap(static_corr, names, night=night), width="stretch")
     with col_summary:
         st.markdown("**Pairwise Summary + Drift**")
+        st.caption(
+            "Badge = ρ on **spend**. Gray text = configured **log‑space copula** ρ (if any); expect a gap after exp + clip."
+        )
         for p in pairwise:
             pair_label = f"{p['pair'][0]} / {p['pair'][1]}"
             rho_val = p["observed_rho"]
+            rho_tgt = p.get("configured_rho")
             drift_label = p["drift_label"]
             color = _corr_cell_color(rho_val)
             drift_color = "#27ae60" if drift_label == "stable" else ("#e74c3c" if drift_label.startswith("-") else "#e67e22")
+            tgt_muted = "#94a3b8" if night else "#64748b"
+            tgt_html = (
+                f"<span style='color:{tgt_muted};font-size:0.8rem'>(config ρ on log‑spend: {float(rho_tgt):.2f})</span>"
+                if rho_tgt is not None
+                else f"<span style='color:{tgt_muted};font-size:0.8rem'>(no `correlations` row for this pair)</span>"
+            )
             st.markdown(
-                f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem'>"
+                f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;flex-wrap:wrap'>"
                 f"<span style='min-width:140px;font-weight:500'>{pair_label}</span>"
                 f"<span style='background:{color};color:white;padding:2px 10px;border-radius:4px;font-size:0.9rem;font-weight:600'>{rho_val:.2f}</span>"
+                f"{tgt_html}"
                 f"<span style='color:{drift_color};font-size:0.85rem;font-weight:500'>{drift_label}</span>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
-        if not pairwise:
-            st.caption("No correlation pairs configured.")
-        st.caption("Drift = change in rolling rho from first 5 to last 5 windows.")
+        st.caption(
+            "**Drift:** change in **rolling spend‑ρ** (mean of last five windows minus first five). "
+            "**Stable** means the absolute change is under 0.05. This is unrelated to the gap between spend ρ and config log‑copula ρ."
+        )
 
     if rolling_corr is not None and rolling_corr.shape[0] > 0 and len(pairwise) > 0:
-        all_pairs = [p["pair"] for p in pairwise]
-        pair_labels = [f"{p[0]} / {p[1]}" for p in all_pairs]
+        raw_pairs = [list(p["pair"]) for p in pairwise]
+        raw_labels = [f"{p[0]} / {p[1]}" for p in raw_pairs]
+        all_pairs: List[List[str]] = []
+        pair_labels: List[str] = []
+        seen_unordered: set[tuple[str, ...]] = set()
+        for lbl, pr in zip(raw_labels, raw_pairs):
+            key = tuple(sorted(pr))
+            if key in seen_unordered:
+                continue
+            seen_unordered.add(key)
+            pair_labels.append(lbl)
+            all_pairs.append(pr)
+        if not pair_labels:
+            pair_labels = raw_labels
+            all_pairs = raw_pairs
         if "corr_pair_select" not in st.session_state:
             st.session_state.corr_pair_select = pair_labels[0]
-        selected_label = st.selectbox("Channel pair", options=pair_labels, key="corr_pair_select")
+        st.caption("**Rolling line:** Pearson ρ on **spend** inside each sliding window (not log‑copula ρ).")
+        selected_label = st.selectbox(
+            "Channel pair (rolling chart)",
+            options=pair_labels,
+            key="corr_pair_select",
+            help="Rolling Pearson ρ on **spend** for this pair; each point is one window (label ≈ window end week).",
+        )
         idx = pair_labels.index(selected_label)
         selected_pair = all_pairs[idx]
         st.plotly_chart(
             _make_rolling_correlation_chart(rolling_corr, names, selected_pair, window, night=night),
-            use_container_width=True,
+            width="stretch",
         )
 
     with st.expander("Per-channel avg absolute correlation (multicollinearity risk)", expanded=False):
-        for name, val in corr_results["avg_abs_corr"].items():
+        st.caption(
+            "Per channel: mean |ρ| to all **other** channels. Higher bars flag stronger joint movement with the rest of the mix."
+        )
+        for name, val in corr_payload["avg_abs_corr"].items():
             bar_pct = min(val * 100, 100)
             color = _corr_cell_color(val)
             st.markdown(
@@ -356,8 +430,6 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
     """Fallback for cache hits: derive correlation results from spend columns + sim_config."""
     cfg = st.session_state.get("sim_config") or {}
     corr_cfg = cfg.get("correlations") or []
-    if not corr_cfg:
-        return None
 
     channels = cfg.get("channel_list") or []
     channel_names: List[str] = []
@@ -374,13 +446,17 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
 
     spend = df[spend_cols].to_numpy(dtype=float)
     t, c = spend.shape
-    static_corr = np.corrcoef(spend.T)
+    static_corr = safe_corrcoef(spend.T)
 
-    window = min(12, max(2, t - 1))
+    # Match scripts.spend_simulation.correlation_analysis.analyze_spend_correlations (default window=12).
+    roll_window = 12
+    effective_window = min(roll_window, t)
     rolling_corr = np.empty((0, c, c))
     drift = np.zeros((c, c))
-    if t > window:
-        rolling_corr = np.array([np.corrcoef(spend[i : i + window].T) for i in range(t - window)])
+    if effective_window < t:
+        rolling_corr = np.array(
+            [safe_corrcoef(spend[i : i + effective_window].T) for i in range(t - effective_window)]
+        )
         edge = min(5, rolling_corr.shape[0])
         drift = rolling_corr[-edge:].mean(axis=0) - rolling_corr[:edge].mean(axis=0)
 
@@ -391,30 +467,7 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
     avg_abs_corr = dict(sorted(avg_abs_corr.items(), key=lambda kv: kv[1], reverse=True))
     most_corr = max(avg_abs_corr, key=avg_abs_corr.get) if avg_abs_corr else ""
 
-    name_to_idx = {n: i for i, n in enumerate(channel_names)}
-    pairwise_summary: List[Dict[str, Any]] = []
-    for entry in corr_cfg:
-        pair = list(entry.get("channels") or [])
-        if len(pair) != 2 or pair[0] not in name_to_idx or pair[1] not in name_to_idx:
-            continue
-        i, j = name_to_idx[pair[0]], name_to_idx[pair[1]]
-        observed_rho = float(static_corr[i, j])
-        pair_drift = float(drift[i, j]) if drift.size else 0.0
-        if abs(pair_drift) < 0.05:
-            drift_label = "stable"
-        elif pair_drift > 0:
-            drift_label = f"+{pair_drift:.2f}"
-        else:
-            drift_label = f"{pair_drift:.2f}"
-        pairwise_summary.append(
-            {
-                "pair": pair,
-                "configured_rho": float(entry.get("rho", 0.0)),
-                "observed_rho": observed_rho,
-                "drift": pair_drift,
-                "drift_label": drift_label,
-            }
-        )
+    pairwise_summary = build_pairwise_summary(channel_names, static_corr, drift, list(corr_cfg))
 
     return {
         "channel_names": channel_names,
@@ -424,7 +477,7 @@ def _build_corr_results_from_cached_df(df: pd.DataFrame) -> Optional[Dict[str, A
         "avg_abs_corr": avg_abs_corr,
         "most_correlated_channel": most_corr,
         "pairwise_summary": pairwise_summary,
-        "window": window,
+        "window": effective_window,
     }
 
 
@@ -447,8 +500,9 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
 
     tb1, tb2, tb3 = st.columns([1, 1, 2])
     with tb1:
-        if compact_toolbar and st.button("Edit configuration", type="primary", use_container_width=True):
+        if compact_toolbar and st.button("Edit configuration", type="primary", width="stretch"):
             st.session_state.config_collapsed = False
+            st.session_state["_resync_form_from_sim_config"] = True
             st.rerun()
     with tb2:
         csv_bytes = df.to_csv(index=False).encode("utf-8")
@@ -458,7 +512,7 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
             file_name=f"{rid or 'simulation'}.csv",
             mime="text/csv",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
 
     st.caption(
@@ -491,24 +545,25 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
         st.session_state.results_chart_scope = scope_options[0]
 
     with st.expander("Configuration (YAML snapshot)", expanded=False):
-        st.caption("Last merged settings (same structure as Advanced YAML).")
+        st.caption(
+            "Last merged settings (same structure as Advanced YAML), including **manual rules plus "
+            "any seed-appended** `correlations` / `budget_shifts` from the Correlations and Budget shifts tabs."
+        )
         st.code(
             yaml_dump(st.session_state.get("sim_config") or {}),
             language="yaml",
         )
 
     corr_results = st.session_state.get("last_corr_results")
-    if corr_results is None:
-        corr_results = _build_corr_results_from_cached_df(df)
-        if corr_results is not None:
-            st.session_state["last_corr_results"] = corr_results
-    if corr_results is not None:
-        tab_chart, tab_data, tab_corr = st.tabs(
-            ["Chart view", "Data preview", "Correlation analysis"]
-        )
-    else:
-        tab_chart, tab_data = st.tabs(["Chart view", "Data preview"])
-        tab_corr = None
+    if hit or corr_results is None:
+        rebuilt = _build_corr_results_from_cached_df(df)
+        if rebuilt is not None:
+            st.session_state["last_corr_results"] = rebuilt
+            corr_results = rebuilt
+
+    tab_chart, tab_corr, tab_data = st.tabs(
+        ["Chart view", "Correlation analysis", "Data preview"]
+    )
 
     with tab_chart:
         csel1, csel2 = st.columns([1, 1])
@@ -530,18 +585,22 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
         overlay = bool(st.session_state.overlay_results_charts)
         st.plotly_chart(
             make_charts(df, channel=ch_view, overlay=overlay, night=night, colorblind=colorblind),
-            use_container_width=True,
+            width="stretch",
         )
+
+    with tab_corr:
+        if corr_results is not None:
+            _render_correlation_panel(corr_results)
+        else:
+            st.info(
+                "Needs per-channel **`*_spend`** columns and channel names in the saved configuration to build this tab."
+            )
 
     with tab_data:
         st.caption("First 25 rows · values rounded for readability.")
         st.dataframe(
             preview_table(df),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=320,
         )
-
-    if tab_corr is not None and corr_results is not None:
-        with tab_corr:
-            _render_correlation_panel(corr_results)

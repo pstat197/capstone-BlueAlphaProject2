@@ -9,7 +9,8 @@ import pytest
 
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 from scripts.synth_input_classes.channel import Channel
-from scripts.config.loader import load_config
+from scripts.config.loader import apply_seed_append_expansion, load_config, load_config_from_dict
+from scripts.ground_truth_io import extract_ground_truth
 
 
 def _project_root():
@@ -35,6 +36,7 @@ def test_config_getters(config: InputConfigurations):
     """Check InputConfigurations getters match example.yaml."""
     assert config.get_run_identifier() == "Example Alpha"
     assert config.get_week_range() == 26
+    assert config.get_media_transform_order() == "adstock_first"
 
 
 def test_channel_list(config: InputConfigurations):
@@ -50,16 +52,19 @@ def test_channel_tiktok(config: InputConfigurations):
     assert tiktok.get_true_roi() == 3.1
     assert tiktok.get_spend_range() == [1500, 40000]
     assert tiktok.get_baseline_revenue() == 6000
+    assert tiktok.get_trend_slope() == 0
+    seasonality = tiktok.get_seasonality_config()
+    assert seasonality == {}
     sat = tiktok.get_saturation_config()
-    assert sat["type"] == "linear" and sat["slope"] == 1.0 and sat["K"] == 50000.0 and sat["beta"] == 0.5
+    assert sat["type"] == "linear" and sat["slope"] == 1.0 and sat["K"] == 830000.0 and sat["beta"] == 0.5
     adstock = tiktok.get_adstock_decay_config()
     assert adstock["type"] == "linear" and adstock["lambda"] == 0.5 and adstock["lag"] == 10 and adstock["weights"] == [1.0]
     gamma = tiktok.get_spend_sampling_gamma_params()
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
     noise = tiktok.get_noise_variance()
-    assert noise["impression"] == 0.1
-    assert noise["revenue"] == 0.15
+    assert "impression" not in noise
+    assert noise["revenue"] == 1_000_000.0
     assert tiktok.get_cpm() == 25
 
 
@@ -70,16 +75,19 @@ def test_channel_linkedin(config: InputConfigurations):
     assert linkedin.get_true_roi() == 2.2
     assert linkedin.get_spend_range() == [3000, 60000]
     assert linkedin.get_baseline_revenue() == 9500
+    assert linkedin.get_trend_slope() == 0
+    seasonality = linkedin.get_seasonality_config()
+    assert seasonality == {}
     sat = linkedin.get_saturation_config()
-    assert sat["type"] == "linear" and sat["slope"] == 0.8
+    assert sat["type"] == "linear" and sat["slope"] == 0.8 and sat["K"] == 3150000.0 and sat["beta"] == 0.65
     adstock = linkedin.get_adstock_decay_config()
     assert adstock["lag"] == 7 and adstock["weights"] == [0.7, 0.2, 0.1]
     gamma = linkedin.get_spend_sampling_gamma_params()
     assert gamma["shape"] == 2.5
     assert gamma["scale"] == 1000
     noise = linkedin.get_noise_variance()
-    assert noise["impression"] == 0.0025
-    assert noise["revenue"] == 0.15
+    assert "impression" not in noise
+    assert noise["revenue"] == 1_000_000.0
     assert linkedin.get_cpm() == 10
 
 
@@ -97,6 +105,7 @@ def test_load_default_yaml():
         assert c.get_channel_name()
         assert c.get_spend_sampling_gamma_params() is not None
         assert c.get_noise_variance() is not None
+        assert c.get_seasonality_config() is not None
         assert c.get_saturation_config() is not None
         assert c.get_adstock_decay_config() is not None
         assert 0.5 <= c.get_cpm() <= 50.0, "cpm should be in default sampling range when loaded from default"
@@ -115,12 +124,14 @@ def test_number_of_channels_generates_from_default():
         assert len(channels) == 3
         names = [c.get_channel_name() for c in channels]
         assert len(names) == 3
+        assert len(set(names)) == 3
         assert names[0] == "Channel 1"  # from default.yaml
-        assert names[1].startswith("Generated Channel ") and names[2].startswith("Generated Channel ")
+        assert names[1] == "Generated Channel 1" and names[2] == "Generated Channel 2"
         assert config.get_week_range() == 52  # from default
         for c in channels:
             assert c.get_spend_sampling_gamma_params()
             assert c.get_noise_variance()
+            assert c.get_seasonality_config() is not None
             assert c.get_saturation_config() is not None
             assert c.get_adstock_decay_config() is not None
             assert 0.5 <= c.get_cpm() <= 50.0, "generated channels should have cpm in default sampling range"
@@ -143,6 +154,7 @@ def test_missing_fields_filled_from_default():
         assert channels[0].get_channel_name() == "Only"
         assert channels[0].get_spend_sampling_gamma_params()
         assert channels[0].get_noise_variance()
+        assert channels[0].get_seasonality_config() is not None
         assert 0.5 <= channels[0].get_cpm() <= 50.0, "minimal channel without cpm should get sampled cpm in range"
     finally:
         Path(tmp).unlink(missing_ok=True)
@@ -241,6 +253,318 @@ def test_rng_reproducible_with_same_seed():
         Path(tmp).unlink(missing_ok=True)
 
 
+def _minimal_channel(name: str) -> dict:
+    return {
+        "channel": {
+            "channel_name": name,
+            "true_roi": 1.0,
+            "spend_range": [1, 1000],
+            "baseline_revenue": 0.0,
+            "trend_slope": 0.0,
+            "seasonality_config": {},
+            "saturation_config": {"type": "linear", "slope": 1.0},
+            "adstock_decay_config": {"type": "linear", "lag": 0},
+            "spend_sampling_gamma_params": {"shape": 1.0, "scale": 100.0},
+            "noise_variance": {"revenue": 0.0},
+            "cpm": 10.0,
+        }
+    }
+
+
+def test_budget_shifts_auto_mode_global_expands_at_load():
+    """Empty manual budget_shifts + global auto mode yields non-empty effective rules (loader expansion)."""
+    cfg = {
+        "run_identifier": "AutoBS",
+        "week_range": 12,
+        "seed": 7,
+        "budget_shifts": [],
+        "budget_shifts_auto_mode": "global",
+        "channel_list": [_minimal_channel("A"), _minimal_channel("B")],
+    }
+    ic = load_config_from_dict(cfg)
+    bs = ic.get_budget_shifts()
+    assert len(bs) >= 2
+    for r in bs:
+        assert r.get("type") in ("scale", "scale_channel", "reallocate")
+
+
+def test_budget_shifts_auto_mode_reproducible():
+    """Same YAML dict twice -> identical expanded budget_shifts inside InputConfigurations."""
+    cfg = {
+        "run_identifier": "AutoBS2",
+        "week_range": 12,
+        "seed": 7,
+        "budget_shifts": [],
+        "budget_shifts_auto_mode": "global",
+        "channel_list": [_minimal_channel("A"), _minimal_channel("B")],
+    }
+    ic1 = load_config_from_dict(cfg)
+    ic2 = load_config_from_dict(cfg)
+    assert ic1.get_budget_shifts() == ic2.get_budget_shifts()
+
+
+def test_correlations_auto_mode_random_expands_at_load():
+    """correlations_auto_mode random with empty manual list yields 1..3 pairs for 3+ channels."""
+    cfg = {
+        "run_identifier": "AutoCorr",
+        "week_range": 8,
+        "seed": 99,
+        "correlations": [],
+        "correlations_auto_mode": "random",
+        "channel_list": [
+            _minimal_channel("Z"),
+            _minimal_channel("A"),
+            _minimal_channel("M"),
+        ],
+    }
+    ic = load_config_from_dict(cfg)
+    corr = ic.get_correlations()
+    assert 1 <= len(corr) <= 3
+    for row in corr:
+        assert len(row.get("channels") or []) == 2
+        rho = float(row.get("rho", 0.0))
+        assert -1.0 <= rho <= 1.0
+
+
+def test_correlations_manual_pair_not_overwritten_by_random():
+    """Manual rho for a pair wins; random mode does not add a duplicate unordered pair."""
+    cfg = {
+        "run_identifier": "ManualCorrWins",
+        "week_range": 8,
+        "seed": 99,
+        "correlations": [{"channels": ["A", "B"], "rho": 0.35}],
+        "correlations_auto_mode": "random",
+        "channel_list": [_minimal_channel("A"), _minimal_channel("B")],
+    }
+    ic = load_config_from_dict(cfg)
+    corr = ic.get_correlations()
+    assert len(corr) == 1
+    assert corr[0]["channels"] == ["A", "B"]
+    assert abs(float(corr[0]["rho"]) - 0.35) < 1e-9
+
+
+def test_apply_seed_append_expansion_pops_mode_keys():
+    """Expansion consumes mode keys so merged dict is safe for from_yaml_dict-style consumers."""
+    merged = {
+        "seed": 1,
+        "week_range": 10,
+        "budget_shifts": [],
+        "budget_shifts_auto_mode": "global",
+        "correlations_auto_mode": "none",
+        "correlations": [],
+        "channel_list": [
+            {"channel": {"channel_name": "A"}},
+            {"channel": {"channel_name": "B"}},
+        ],
+    }
+    apply_seed_append_expansion(merged)
+    assert "budget_shifts_auto_mode" not in merged
+    assert "correlations_auto_mode" not in merged
+    assert merged.get("budget_shifts")
+    assert merged.get("correlations") == []
+
+
+def test_load_config_from_dict_preserves_callers_budget_shifts_list():
+    """Loader must not mutate the caller's ``budget_shifts`` list in place (Streamlit snapshots)."""
+    rules = [
+        {"type": "scale", "start_week": 1, "end_week": 2, "factor": 1.05},
+        {"type": "scale_channel", "channel_name": "A", "start_week": 1, "end_week": 2, "factor": 0.95},
+    ]
+    cfg_dict = {
+        "run_identifier": "PreserveBudgetShifts",
+        "week_range": 5,
+        "seed": 1,
+        "budget_shifts": rules,
+        "channel_list": [
+            {
+                "channel": {
+                    "channel_name": "A",
+                    "true_roi": 1.0,
+                    "spend_range": [1, 1000],
+                    "baseline_revenue": 0.0,
+                    "trend_slope": 0.0,
+                    "seasonality_config": {},
+                    "saturation_config": {"type": "linear", "slope": 1.0},
+                    "adstock_decay_config": {"type": "linear", "lag": 0},
+                    "spend_sampling_gamma_params": {"shape": 1.0, "scale": 100.0},
+                    "noise_variance": {"revenue": 0.0},
+                    "cpm": 10.0,
+                }
+            }
+        ],
+    }
+    rules_id = id(cfg_dict["budget_shifts"])
+    n_before = len(rules)
+    ic = load_config_from_dict(cfg_dict)
+    assert id(cfg_dict["budget_shifts"]) == rules_id
+    assert len(cfg_dict["budget_shifts"]) == n_before
+    assert len(ic.get_budget_shifts()) == n_before
+
+
+def test_validation_rejects_negative_true_roi():
+    base = _minimal_channel("A")["channel"]
+    data = {
+        "run_identifier": "BadRoi",
+        "week_range": 4,
+        "channel_list": [{"channel": {**base, "true_roi": -0.1}}],
+    }
+    with pytest.raises(ValueError, match="true_roi"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_geometric_lambda_one_or_more():
+    base = dict(_minimal_channel("A")["channel"])
+    base["adstock_decay_config"] = {"type": "geometric", "lambda": 1.0, "lag": 5}
+    data = {"run_identifier": "BadAdstock", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="got 1\\.0"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_non_positive_cpm():
+    base = dict(_minimal_channel("A")["channel"])
+    base["cpm"] = 0.0
+    data = {"run_identifier": "BadCpm", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="cpm"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_duplicate_channel_names():
+    data = {
+        "run_identifier": "Dup",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("Same"), _minimal_channel("Same")],
+    }
+    with pytest.raises(ValueError, match="Duplicate channel_name"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_duplicate_names_after_strip():
+    """Stripped names must be unique so correlations and budgets resolve one channel."""
+    a = dict(_minimal_channel("Dup")["channel"])
+    a["channel_name"] = " Foo "
+    b = dict(_minimal_channel("Bar")["channel"])
+    b["channel_name"] = "Foo"
+    data = {
+        "run_identifier": "StripDup",
+        "week_range": 4,
+        "channel_list": [{"channel": a}, {"channel": b}],
+    }
+    with pytest.raises(ValueError, match="Duplicate channel_name"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_budget_shifts_unknown_from_channel():
+    data = {
+        "run_identifier": "BadBS",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("A")],
+        "budget_shifts": [
+            {
+                "type": "reallocate",
+                "start_week": 1,
+                "from_channel": "Nope",
+                "to_channel": "A",
+                "fraction": 0.5,
+            },
+        ],
+    }
+    with pytest.raises(ValueError, match="from_channel"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_budget_shifts_unknown_scale_channel():
+    data = {
+        "run_identifier": "BadBS2",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("A")],
+        "budget_shifts": [
+            {"type": "scale_channel", "channel_name": "Ghost", "start_week": 1, "end_week": 2, "factor": 1.1},
+        ],
+    }
+    with pytest.raises(ValueError, match="scale_channel"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_non_positive_week_range():
+    data = {
+        "run_identifier": "BadWR",
+        "week_range": 0,
+        "channel_list": [_minimal_channel("A")],
+    }
+    with pytest.raises(ValueError, match="week_range"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_non_positive_gamma_shape():
+    base = dict(_minimal_channel("A")["channel"])
+    base["spend_sampling_gamma_params"] = {"shape": 0.0, "scale": 100.0}
+    data = {"run_identifier": "BadGamma", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="shape"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_spend_range_min_gt_max():
+    base = dict(_minimal_channel("A")["channel"])
+    base["spend_range"] = [500.0, 100.0]
+    data = {"run_identifier": "BadSR", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="spend_range"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_negative_outcome_revenue_variance():
+    data = {
+        "run_identifier": "BadOutVar",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("A")],
+        "outcome_revenue": {
+            "baseline_revenue": 0,
+            "trend_slope": 0,
+            "seasonality_config": {},
+            "noise_variance": {"revenue": -1.0},
+        },
+    }
+    with pytest.raises(ValueError, match="outcome noise_variance"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_channel_noise_variance_impression_key():
+    ch = dict(_minimal_channel("A")["channel"])
+    ch["noise_variance"] = {"impression": 0.1, "revenue": 1.0}
+    data = {"run_identifier": "BadImp", "week_range": 4, "channel_list": [{"channel": ch}]}
+    with pytest.raises(ValueError, match="no longer supported"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_outcome_noise_variance_impression_key():
+    data = {
+        "run_identifier": "BadOutImp",
+        "week_range": 4,
+        "channel_list": [_minimal_channel("A")],
+        "outcome_revenue": {"noise_variance": {"impression": 0.1, "revenue": 1.0}},
+    }
+    with pytest.raises(ValueError, match="no longer supported"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_validation_rejects_negative_adstock_lag():
+    base = dict(_minimal_channel("A")["channel"])
+    base["adstock_decay_config"] = {"type": "geometric", "lambda": 0.5, "lag": -1}
+    data = {"run_identifier": "BadLag", "week_range": 4, "channel_list": [{"channel": base}]}
+    with pytest.raises(ValueError, match="lag"):
+        InputConfigurations.from_yaml_dict(data)
+
+
+def test_extract_ground_truth_records_total_revenue_mechanism(config: InputConfigurations):
+    """Ground truth JSON documents Meridian μ_t vs simulator μ_t^sim and additive mean."""
+    gt = extract_ground_truth(config)
+    assert gt["ground_truth_version"] == 3
+    mech = gt["outcome_revenue"]["total_revenue_mechanism"]
+    assert "meridian_mu_t_definition" in mech
+    assert "w(t)*b_l" in mech["meridian_mu_t_definition"] or "w(t)" in mech["meridian_mu_t_definition"]
+    assert "simulator_mu_t_substitute" in mech
+    assert "μ_t^sim" in mech["simulator_mu_t_substitute"]
+
+
 def main():
     print("Config/loading tests...")
     root = _project_root()
@@ -263,6 +587,7 @@ def main():
     test_seed_absent_returns_none()
     test_missing_run_identifier_gets_timestamp()
     test_rng_reproducible_with_same_seed()
+    test_load_config_from_dict_preserves_callers_budget_shifts_list()
     print("Config tests passed.")
 
 

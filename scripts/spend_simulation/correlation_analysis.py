@@ -6,10 +6,12 @@ per-channel average absolute correlation (multicollinearity risk).
 All functions are pure numpy — no plotting. A future frontend layer
 will consume these return values to render the dashboard.
 """
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import numpy as np
 
+from scripts.spend_simulation.correlation_math import safe_corrcoef
+from scripts.spend_simulation.pairwise_summary import build_pairwise_summary
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 
@@ -21,7 +23,7 @@ def compute_static_correlation(spend: np.ndarray) -> np.ndarray:
     Returns:
         (num_channels, num_channels) correlation matrix.
     """
-    return np.corrcoef(spend.T)
+    return safe_corrcoef(spend.T)
 
 
 def compute_rolling_correlation(
@@ -42,7 +44,7 @@ def compute_rolling_correlation(
         raise ValueError(f"Window ({window}) exceeds number of weeks ({T})")
     results = np.zeros((T - window, C, C))
     for t in range(T - window):
-        results[t] = np.corrcoef(spend[t : t + window].T)
+        results[t] = safe_corrcoef(spend[t : t + window].T)
     return results
 
 
@@ -111,7 +113,7 @@ def analyze_spend_correlations(
         drift: (C, C) ndarray
         avg_abs_corr: {name: float}
         most_correlated_channel: str
-        pairwise_summary: list of dicts per configured pair
+        pairwise_summary: list of dicts per unordered channel pair
         window: int
     """
     channel_names = [ch.get_channel_name() for ch in config.get_channel_list()]
@@ -129,27 +131,9 @@ def analyze_spend_correlations(
     avg_abs = compute_avg_abs_correlation(static_corr, channel_names)
     most_corr = compute_most_correlated_channel(static_corr, channel_names)
 
-    name_to_idx = {n: i for i, n in enumerate(channel_names)}
-    pairwise_summary = []
-    for entry in config.get_correlations():
-        pair = entry["channels"]
-        configured_rho = entry["rho"]
-        i, j = name_to_idx[pair[0]], name_to_idx[pair[1]]
-        observed_rho = float(static_corr[i, j])
-        pair_drift = float(drift[i, j])
-        if abs(pair_drift) < 0.05:
-            drift_label = "stable"
-        elif pair_drift > 0:
-            drift_label = f"+{pair_drift:.2f}"
-        else:
-            drift_label = f"{pair_drift:.2f}"
-        pairwise_summary.append({
-            "pair": pair,
-            "configured_rho": configured_rho,
-            "observed_rho": observed_rho,
-            "drift": pair_drift,
-            "drift_label": drift_label,
-        })
+    pairwise_summary = build_pairwise_summary(
+        channel_names, static_corr, drift, config.get_correlations()
+    )
 
     return {
         "channel_names": channel_names,
@@ -188,10 +172,12 @@ def print_correlation_report(results: Dict) -> None:
     if results["pairwise_summary"]:
         print("\n--- Pairwise Summary + Drift ---")
         for p in results["pairwise_summary"]:
+            cfg = p["configured_rho"]
+            cfg_txt = f"{cfg:.2f}" if cfg is not None else "—"
             print(
                 f"  {p['pair'][0]} / {p['pair'][1]}:  "
                 f"rho={p['observed_rho']:.2f}  "
-                f"(configured={p['configured_rho']:.2f})  "
+                f"(configured={cfg_txt})  "
                 f"drift={p['drift_label']}"
             )
 

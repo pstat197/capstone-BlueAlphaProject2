@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from typing import Any, Dict, List, Optional
 
 import streamlit as st
 
 from app.default_channel import default_channel_dict
+from app.ui_channel_toggles import (
+    channel_status_summary,
+    ensure_channel_toggle_state_initialized,
+    render_channel_adstock_enable_checkbox,
+    render_channel_saturation_enable_checkbox,
+    render_channel_toggles_block,
+)
 from app.ui_config_merge import clear_channel_widget_keys
+from app.ui_curve_preview import render_adstock_preview, render_saturation_preview
 from app.ui_form_state import (
     adstock_slider_visible,
     adstock_weights_key,
     effective_curve_type,
+    parse_optional_num,
     pc_field_key,
     saturation_slider_visible,
     select_session_key,
@@ -22,7 +32,9 @@ from app.ui_help_markdown import (
     NOISE_PARAMETERS_GUIDE_MD,
     SATURATION_TYPES_GUIDE_MD,
 )
+from app.ui_seasonality_panel import render_seasonality_block
 from app.ui_helpers import get_at, path_string_to_parts
+from app.ui_prerun import existing_channel_names, next_unique_channel_name
 
 
 def yaml_sync_from_form() -> None:
@@ -31,6 +43,30 @@ def yaml_sync_from_form() -> None:
 
 def yaml_mark_dirty() -> None:
     st.session_state["yaml_manual_edit"] = True
+
+
+def duplicate_channel_at_index(i: int) -> None:
+    """Deep-copy channel ``i``, assign a unique name, insert below ``i``, and refresh widget keys."""
+    cfg = st.session_state.sim_config
+    cl = list(cfg.get("channel_list") or [])
+    if not (0 <= i < len(cl)):
+        return
+    existing = existing_channel_names(cfg)
+    item = copy.deepcopy(cl[i])
+    if not isinstance(item, dict):
+        return
+    ch = item.get("channel")
+    if not isinstance(ch, dict):
+        ch = {}
+    base = str(ch.get("channel_name", "Channel")).strip() or "Channel"
+    nm = next_unique_channel_name(base, existing)
+    ch["channel_name"] = nm
+    item["channel"] = ch
+    cl.insert(i + 1, item)
+    cfg["channel_list"] = cl
+    st.session_state["yaml_manual_edit"] = False
+    clear_channel_widget_keys()
+    st.rerun()
 
 
 _default_channel_template: Optional[Dict[str, Any]] = None
@@ -166,11 +202,50 @@ def _render_adstock_weights_field(i: int, data: Dict[str, Any]) -> None:
     )
 
 
-def _render_one_pc_field(
+_SLIDER_GROUPS = {"saturation", "adstock", "noise"}
+
+
+def _live_float_channel_field(
+    i: int,
+    data: Dict[str, Any],
+    path_suffix: str,
+    list_index: Optional[int],
+) -> Optional[float]:
+    """Current widget value if set, else YAML on ``data`` for ``channel_list.{i}.{path_suffix}``."""
+    key = pc_field_key(i, path_suffix, list_index)
+    raw = st.session_state.get(key, "")
+    val, ok = parse_optional_num(raw, as_int=False)
+    if ok and val is not None:
+        return float(val)
+    parts = path_string_to_parts(f"channel_list.{i}.{path_suffix}")
+    if list_index is not None:
+        lst = get_at(data, parts)
+        if isinstance(lst, list) and len(lst) > list_index:
+            try:
+                return float(lst[list_index])
+            except (TypeError, ValueError):
+                return None
+        return None
+    cur = get_at(data, parts)
+    try:
+        return float(cur) if cur is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _hill_k_slider_schema(schema: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    for it in schema.get("per_channel_sliders", []):
+        if it.get("path") == "channel.saturation_config.K":
+            return it
+    return None
+
+
+def _resolve_cur_and_default(
     i: int,
     item: Dict[str, Any],
     data: Dict[str, Any],
-) -> None:
+) -> tuple[Any, Any, Any]:
+    """Return (cur, default_v, tmpl_v) for a per-channel numeric field."""
     path_suffix = item["path"]
     full_path = f"channel_list.{i}.{path_suffix}"
     parts = path_string_to_parts(full_path)
@@ -186,10 +261,9 @@ def _render_one_pc_field(
     if isinstance(cur, bool) or (cur is not None and not isinstance(cur, (int, float))):
         cur = None
 
-    key = pc_field_key(i, path_suffix, list_index)
     tmpl_v = _template_scalar_at(path_suffix, list_index)
     if isinstance(cur, (int, float)) and not isinstance(cur, bool):
-        default_v = cur
+        default_v: Any = cur
     elif (
         tmpl_v is not None
         and isinstance(tmpl_v, (int, float))
@@ -200,6 +274,38 @@ def _render_one_pc_field(
         default_v = item["min"]
     if not isinstance(default_v, (int, float)):
         default_v = item["min"]
+    return cur, default_v, tmpl_v
+
+
+def _render_one_pc_field(
+    i: int,
+    item: Dict[str, Any],
+    data: Dict[str, Any],
+) -> None:
+    """Dispatch a per-channel numeric field to either the slider or text renderer.
+
+    Saturation / adstock / noise parameters use bounded sliders so the effect
+    of small tweaks is immediately visible in the live curve preview. Core
+    fields (ROI, baseline, CPM, spend range) stay as text inputs with a
+    ``Default: …`` placeholder so they can be cleared back to defaults.
+    """
+    group = str(item.get("group", "core"))
+    if group in _SLIDER_GROUPS:
+        _render_slider_field(i, item, data)
+    else:
+        _render_text_field(i, item, data)
+
+
+def _render_text_field(
+    i: int,
+    item: Dict[str, Any],
+    data: Dict[str, Any],
+) -> None:
+    path_suffix = item["path"]
+    list_index = item.get("list_index")
+    cur, default_v, _tmpl_v = _resolve_cur_and_default(i, item, data)
+
+    key = pc_field_key(i, path_suffix, list_index)
     label = item["label"]
     ph = f"Default: {_fmt_default(default_v)}"
     help_txt = item.get("help", "Leave empty to use the default in the placeholder.")
@@ -215,6 +321,67 @@ def _render_one_pc_field(
         label,
         key=key,
         placeholder=ph,
+        help=help_txt,
+        on_change=yaml_sync_from_form,
+    )
+
+
+def _render_slider_field(
+    i: int,
+    item: Dict[str, Any],
+    data: Dict[str, Any],
+) -> None:
+    """Bounded slider for saturation / adstock / noise parameters.
+
+    Session state is stored as a concrete number (int for ``lag``, float
+    otherwise). ``parse_optional_num`` in the merge path accepts both strings
+    and numbers, so this coexists cleanly with text-field overrides for core
+    fields that may still be string-typed.
+    """
+    path_suffix = item["path"]
+    list_index = item.get("list_index")
+    cur, default_v, _tmpl_v = _resolve_cur_and_default(i, item, data)
+
+    key = pc_field_key(i, path_suffix, list_index)
+    label = item["label"]
+    help_txt = item.get("help", "")
+
+    is_int = path_suffix.endswith("lag")
+    if is_int:
+        mn_c: Any = int(item["min"])
+        mx_c: Any = int(item["max"])
+        step_c: Any = int(item["step"])
+        init_raw = cur if isinstance(cur, (int, float)) and not isinstance(cur, bool) else default_v
+        try:
+            init_val: Any = int(round(float(init_raw)))
+        except (TypeError, ValueError):
+            init_val = mn_c
+        init_val = max(mn_c, min(mx_c, init_val))
+    else:
+        mn_c = float(item["min"])
+        mx_c = float(item["max"])
+        step_c = float(item["step"])
+        init_raw = cur if isinstance(cur, (int, float)) and not isinstance(cur, bool) else default_v
+        try:
+            init_val = float(init_raw)
+        except (TypeError, ValueError):
+            init_val = mn_c
+        init_val = max(mn_c, min(mx_c, init_val))
+
+    existing = st.session_state.get(key)
+    if not isinstance(existing, (int, float)) or isinstance(existing, bool):
+        st.session_state[key] = init_val
+    else:
+        clamped = max(mn_c, min(mx_c, int(existing) if is_int else float(existing)))
+        if clamped != existing:
+            st.session_state[key] = clamped
+
+    st.slider(
+        label,
+        min_value=mn_c,
+        max_value=mx_c,
+        step=step_c,
+        key=key,
         help=help_txt,
         on_change=yaml_sync_from_form,
     )
@@ -261,14 +428,38 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
         if f"ch_name_{i}" not in st.session_state:
             st.session_state[f"ch_name_{i}"] = name
 
-        with st.expander(f"{name}", expanded=False):
-            head_l, head_r = st.columns([5, 1])
+        week_range_for_ranges = int(
+            st.session_state.get(
+                "week_range_num",
+                data.get("week_range", 52),
+            )
+        )
+        # Initialize toggle state before rendering the expander so the
+        # collapsed-header summary reflects live session values.
+        ensure_channel_toggle_state_initialized(data, i, week_range_for_ranges)
+        summary = channel_status_summary(i, data)
+        header = f"{name}  —  {summary}" if summary else f"{name}"
+
+        # `key=` makes Streamlit persist the open/closed state across reruns,
+        # so toggling a checkbox or adding a pause window no longer snaps the
+        # expander shut. With `key` set, `expanded` is only the initial state.
+        with st.expander(header, expanded=False, key=f"ch_exp_{i}"):
+            head_l, head_m, head_r = st.columns([4, 1, 1])
             with head_l:
                 st.text_input(
                     "Channel name",
                     key=f"ch_name_{i}",
                     on_change=yaml_sync_from_form,
                 )
+            with head_m:
+                st.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
+                if st.button(
+                    "Duplicate",
+                    key=f"dup_ch_{i}",
+                    type="secondary",
+                    help="Copy this channel (new unique name) right below",
+                ):
+                    duplicate_channel_at_index(i)
             with head_r:
                 st.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
                 if st.button("Remove", key=f"del_ch_{i}", type="secondary", help="Delete this channel"):
@@ -285,11 +476,18 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
                 "auto-filled from defaults."
             )
 
-            st.markdown("**Spend & ROI**")
+            render_channel_toggles_block(i, data, week_range_for_ranges)
+            channel_active = bool(st.session_state.get(f"tog_enabled_{i}", True))
+            if not channel_active:
+                # Auto-collapse inactive channels and hide all non-reactivation controls.
+                st.session_state[f"ch_exp_{i}"] = False
+                continue
+
+            st.markdown("##### Spend & ROI")
             st.caption(
                 "Spend range and gamma sampling drive weekly spend; CPM maps spend to impressions. "
-                "True ROI scales effective (saturated, adstocked) media into revenue. "
-                "Baseline revenue is added each week regardless of media."
+                "True ROI scales media after the enabled adstock/saturation steps (order is under **Advanced → "
+                "Media response order**). Baseline revenue is added each week regardless of media."
             )
             core = grouped.get("core", [])
             if len(core) >= 2:
@@ -306,65 +504,129 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
                     _render_one_pc_field(i, core[3], data)
                 with c5:
                     _render_one_pc_field(i, core[4], data)
+            if len(core) >= 6:
+                _render_one_pc_field(i, core[5], data)
 
-            st.markdown("**Noise (simulation)**")
             st.caption(
-                "Random variation in **impressions** (right after CPM) and in **revenue** (after all media math). "
-                "Both use √(your value) × a weekly level, so they scale with that week’s size — not fixed dollar noise."
+                "Trend modifies baseline linearly over time. Seasonality multiplies the baseline "
+                "before media contribution and noise are added."
+            )
+            render_seasonality_block(i, data, week_range_for_ranges)
+
+            st.markdown("##### Noise (simulation)")
+            st.caption(
+                "**Revenue** noise is one Gaussian shock per week on **total** revenue: √(value) is σ in **fixed** KPI units (see expander)."
             )
             with st.expander(
                 "How noise values work (click to open)",
                 expanded=False,
+                key=f"noise_ref_{i}",
             ):
                 st.markdown(NOISE_PARAMETERS_GUIDE_MD)
             noise = grouped.get("noise", [])
-            if len(noise) >= 2:
-                n1, n2 = st.columns(2)
-                with n1:
+            if len(noise) >= 1:
+                if len(noise) >= 2:
+                    n1, n2 = st.columns(2)
+                    with n1:
+                        _render_one_pc_field(i, noise[0], data)
+                    with n2:
+                        _render_one_pc_field(i, noise[1], data)
+                else:
                     _render_one_pc_field(i, noise[0], data)
-                with n2:
-                    _render_one_pc_field(i, noise[1], data)
 
             st.markdown("##### Saturation")
             st.caption(
                 "Step 1 in the revenue path: turns raw impressions into effective media. "
                 "Pick a type below, then adjust only the fields that appear."
             )
-            with st.expander(
-                "Saturation types — reference (click to open)",
-                expanded=False,
-            ):
-                st.markdown(SATURATION_TYPES_GUIDE_MD)
-            sat_opts = list(sat_select.get("options", [])) if sat_select else []
-            if sat_select is not None:
-                _render_type_radio_for_path(i, sat_select, data)
-            eff_sat = effective_curve_type(i, "channel.saturation_config.type", data, sat_opts)
-            sat = [
-                it
-                for it in grouped.get("saturation", [])
-                if saturation_slider_visible(it, eff_sat)
-            ]
-            _render_pc_fields_flex(i, sat, data)
+            render_channel_saturation_enable_checkbox(i)
+            if st.session_state.get(f"tog_sat_{i}", True):
+                with st.expander(
+                    "Saturation types — reference (click to open)",
+                    expanded=False,
+                    key=f"sat_types_ref_{i}",
+                ):
+                    st.markdown(SATURATION_TYPES_GUIDE_MD)
+                sat_opts = list(sat_select.get("options", [])) if sat_select else []
+                if sat_select is not None:
+                    _render_type_radio_for_path(i, sat_select, data)
+                eff_sat = effective_curve_type(i, "channel.saturation_config.type", data, sat_opts)
+                sat = [
+                    it
+                    for it in grouped.get("saturation", [])
+                    if saturation_slider_visible(it, eff_sat)
+                ]
+                if eff_sat == "hill":
+                    st.caption(
+                        "Hill **K** is in **weekly impression** units (same as spend ÷ CPM × 1000). "
+                        "If **K** is much smaller than typical impressions, the curve stays near 1."
+                    )
+                    k_schema = _hill_k_slider_schema(schema)
+                    cpm_v = _live_float_channel_field(i, data, "channel.cpm", None)
+                    smin = _live_float_channel_field(i, data, "channel.spend_range", 0)
+                    smax = _live_float_channel_field(i, data, "channel.spend_range", 1)
+                    k_err: Optional[str] = None
+                    raw_k: Optional[float] = None
+                    if cpm_v is None or cpm_v <= 0:
+                        k_err = "need a positive CPM"
+                    elif smin is None or smax is None:
+                        k_err = "need spend min and max"
+                    else:
+                        mid_spend = (float(smin) + float(smax)) / 2.0
+                        if mid_spend <= 0:
+                            k_err = "midpoint spend must be positive"
+                        else:
+                            raw_k = mid_spend / float(cpm_v) * 1000.0
+                    if k_schema is not None and raw_k is not None:
+                        mn_k = float(k_schema["min"])
+                        mx_k = float(k_schema["max"])
+                        clamped_k = max(mn_k, min(mx_k, float(raw_k)))
+                        k_key = pc_field_key(i, "channel.saturation_config.K", None)
+                        hint = (
+                            f"Proposed **K ≈ {raw_k:,.0f}** impressions "
+                            f"((spend_min+spend_max)/2 ÷ CPM × 1000)."
+                        )
+                        if clamped_k != raw_k:
+                            hint += f" Clamped to slider range [{mn_k:,.0f}, {mx_k:,.0f}]."
+                        st.caption(hint)
+                        if st.button(
+                            "Suggest K from spend & CPM",
+                            key=f"suggest_hill_k_{i}",
+                            help="Sets the Hill K slider from midpoint weekly spend and CPM (impression units).",
+                        ):
+                            st.session_state[k_key] = clamped_k
+                            yaml_sync_from_form()
+                            st.rerun()
+                    elif k_err:
+                        st.caption(f"Suggest K unavailable: {k_err}.")
+                _render_pc_fields_flex(i, sat, data)
+                if sat_opts:
+                    render_saturation_preview(i, data, sat_opts)
 
             st.markdown("##### Adstock")
             st.caption(
                 "Step 2: spreads each week’s saturated response over neighboring weeks (carry-over / memory)."
             )
-            with st.expander(
-                "Adstock types — reference (click to open)",
-                expanded=False,
-            ):
-                st.markdown(ADSTOCK_TYPES_GUIDE_MD)
-            ad_opts = list(ad_select.get("options", [])) if ad_select else []
-            if ad_select is not None:
-                _render_type_radio_for_path(i, ad_select, data)
-            eff_ad = effective_curve_type(i, "channel.adstock_decay_config.type", data, ad_opts)
-            ads = [
-                it
-                for it in grouped.get("adstock", [])
-                if adstock_slider_visible(it, eff_ad)
-            ]
-            _render_pc_fields_flex(i, ads, data)
-            if eff_ad == "weighted":
-                _render_adstock_weights_field(i, data)
+            render_channel_adstock_enable_checkbox(i)
+            if st.session_state.get(f"tog_ads_{i}", True):
+                with st.expander(
+                    "Adstock types — reference (click to open)",
+                    expanded=False,
+                    key=f"ad_types_ref_{i}",
+                ):
+                    st.markdown(ADSTOCK_TYPES_GUIDE_MD)
+                ad_opts = list(ad_select.get("options", [])) if ad_select else []
+                if ad_select is not None:
+                    _render_type_radio_for_path(i, ad_select, data)
+                eff_ad = effective_curve_type(i, "channel.adstock_decay_config.type", data, ad_opts)
+                ads = [
+                    it
+                    for it in grouped.get("adstock", [])
+                    if adstock_slider_visible(it, eff_ad)
+                ]
+                _render_pc_fields_flex(i, ads, data)
+                if eff_ad == "weighted":
+                    _render_adstock_weights_field(i, data)
+                if ad_opts:
+                    render_adstock_preview(i, data, ad_opts)
 

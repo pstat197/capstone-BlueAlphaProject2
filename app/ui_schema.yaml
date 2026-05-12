@@ -1,5 +1,14 @@
 # group: layout. † = loader may jitter when auto-filling (excludes saturation/adstock dicts).
 # Paths are relative to channel_list.{i}.
+# Optional top-level YAML ``outcome_revenue`` (baseline_revenue, trend_slope, seasonality_config,
+# noise_variance) overrides the first-channel fallback for the single MMM-style outcome path; not listed as sliders here.
+#
+# Top-level ``budget_shifts`` (optional list): manual rows in the **Budget shifts** tab (``ui_budget_shifts.py``).
+# Rules: ``type: scale``, ``type: scale_channel`` (``channel_name``), ``type: reallocate`` (week window,
+# ``from_channel``, ``to_channel``, ``fraction``). Optional ``budget_shifts_auto_mode`` (``none`` | ``global`` |
+# ``global_and_channel``) and ``correlations_auto_mode`` (``none`` | ``random``) come from **Random append**
+# (``ui_seed_extras.py``); ``load_config_from_dict`` expands them into concrete lists using ``seed``,
+# ``week_range``, and channel names (``scripts/config/loader.py``, ``budget_shift_auto.py``, ``correlation_auto.py``).
 
 top_level_sliders: []
 
@@ -14,10 +23,17 @@ per_channel_sliders:
   - path: channel.baseline_revenue
     group: core
     label: "Baseline revenue †"
-    help: "Weekly revenue not explained by media (added after ROI scaling)."
+    help: "SIM μ_t^sim slot: (baseline + trend/week)×seasonality σ_t; mean total = μ_t^sim + media sum + noise (additive like Meridian). Meridian’s doc μ_t is knot-interpolated; this app uses that closed form for synthesis. First-channel / `outcome_revenue` rule applies. CSV `{name}_revenue` is media-only."
     min: 0.0
     max: 100000.0
     step: 100.0
+  - path: channel.trend_slope
+    group: core
+    label: "Baseline trend / week †"
+    help: "Outcome linear trend (same first-channel / `outcome_revenue` rule as baseline)."
+    min: -5000.0
+    max: 5000.0
+    step: 10.0
   - path: channel.cpm
     group: core
     label: "CPM †"
@@ -41,17 +57,10 @@ per_channel_sliders:
     min: 0.0
     max: 200000.0
     step: 500.0
-  - path: channel.noise_variance.impression
-    group: noise
-    label: "Impression noise"
-    help: "Scales random wobble on weekly impressions. Std dev = √(this) × base impressions (base = spend/CPM×1000). 0 = no impression noise. Open the Noise reference expander for detail."
-    min: 0.0
-    max: 1.0
-    step: 0.01
   - path: channel.noise_variance.revenue
     group: noise
     label: "Revenue noise"
-    help: "Scales random wobble on weekly revenue after media math. Std dev = √(this) × |revenue before noise|. 0 = no revenue noise. Open the Noise reference expander for detail."
+    help: "Outcome noise on **total** weekly revenue (first-channel / `outcome_revenue` rule). This field is **variance** σ² of a weekly N(0,σ²) shock in squared KPI units (σ does not scale with total). Open the Noise reference expander."
     min: 0.0
     max: 1.0
     step: 0.01
@@ -67,10 +76,10 @@ per_channel_sliders:
     group: saturation
     saturation_types: [hill]
     label: "K"
-    help: "Hill only: impression scale where the curve bends (larger K = need more impressions before flattening)."
+    help: "Hill only: half-saturation scale in weekly impression units (same as spend/CPM×1000). Too small vs. typical impressions ⇒ curve ≈ 1. Use Suggest K from spend & CPM."
     min: 1.0
-    max: 200000.0
-    step: 1000.0
+    max: 15000000.0
+    step: 50000.0
   - path: channel.saturation_config.beta
     group: saturation
     saturation_types: [diminishing_returns]
@@ -81,17 +90,17 @@ per_channel_sliders:
     step: 0.05
   - path: channel.adstock_decay_config.lambda
     group: adstock
-    adstock_types: [geometric, exponential]
+    adstock_types: [geometric, exponential, binomial]
     label: "Lambda"
-    help: "Geometric/exponential: weight per lag step (closer to 1 = longer memory, closer to 0 = fast fade)."
+    help: "Geometric/exponential: decay α ∈ [0,1] (α^s weights). Binomial: same α maps to Meridian’s α* = 1/α − 1 on (1 − s/(1+L))."
     min: 0.0
     max: 1.0
     step: 0.05
   - path: channel.adstock_decay_config.lag
     group: adstock
-    adstock_types: [linear, geometric, exponential]
+    adstock_types: [linear, geometric, exponential, binomial]
     label: "Lag"
-    help: "Linear: average over lag+1 weeks (0 = no carry-over). Geometric/exponential: how many decay terms in the kernel."
+    help: "Linear: average over lag+1 weeks (0 = no carry-over). Geometric/exponential/binomial: max lag L (Meridian-style normalized kernel over s=0..L)."
     min: 0
     max: 52
     step: 1
@@ -106,9 +115,10 @@ per_channel_selects:
       - diminishing_returns
   - path: channel.adstock_decay_config.type
     label: "Adstock type"
-    help: "linear = flat moving average; geometric/exponential = exponentially decaying weights; weighted = custom kernel. Open the reference expander in this section for details."
+    help: "geometric/exponential = Meridian-style α^s decay; binomial = Meridian (1−s/(1+L))^(1/α−1); linear = flat moving average; weighted = custom kernel."
     options:
-      - linear
       - geometric
+      - binomial
       - exponential
+      - linear
       - weighted

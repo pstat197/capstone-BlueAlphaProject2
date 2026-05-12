@@ -7,6 +7,10 @@ from typing import Any, Dict, List, Tuple
 
 import streamlit as st
 
+from app.ui_channel_toggles import (
+    clear_toggle_widget_keys,
+    merge_channel_toggles_into_config,
+)
 from app.ui_form_state import (
     adstock_slider_visible,
     adstock_weights_key,
@@ -17,7 +21,90 @@ from app.ui_form_state import (
     saturation_slider_visible,
     select_session_key,
 )
+from app.ui_budget_shifts import merge_budget_shifts_from_widgets
+from app.ui_correlations import merge_correlations_from_widgets
 from app.ui_helpers import apply_overrides
+from app.ui_seasonality_panel import _read_basic_cycle_multipliers, warm_basic_cycle_editor_if_needed
+from scripts.revenue_simulation.seasonality_fit import (
+    fit_pattern_multipliers_to_fourier,
+    sin_to_deterministic_fourier,
+)
+
+
+def _parse_float_or_default(raw: Any, default: float) -> float:
+    val, ok = parse_optional_num(raw, as_int=False)
+    if not ok or val is None:
+        return float(default)
+    return float(val)
+
+
+def _parse_int_or_default(raw: Any, default: int) -> int:
+    val, ok = parse_optional_num(raw, as_int=True)
+    if not ok or val is None:
+        return int(default)
+    return int(val)
+
+
+def _parse_pattern_csv(raw: Any, default: List[float]) -> List[float]:
+    if raw is None:
+        return list(default)
+    s = str(raw).strip()
+    if not s:
+        return list(default)
+    parts = [p.strip() for p in s.replace(";", ",").split(",") if p.strip()]
+    out: List[float] = []
+    for p in parts:
+        try:
+            out.append(float(p))
+        except ValueError:
+            return list(default)
+    return out if out else list(default)
+
+
+def _collect_seasonality_overrides(n_channels: int) -> List[Dict[str, Any]]:
+    overrides: List[Dict[str, Any]] = []
+    # Use .get so tests that monkeypatch session_state with a plain dict still work.
+    base_cfg = st.session_state.get("sim_config", {})
+    for i in range(n_channels):
+        sea_type = str(st.session_state.get(f"sea_type_{i}", "none")).strip().lower()
+        if sea_type in ("", "none"):
+            overrides.append({"path": f"channel_list.{i}.channel.seasonality_config", "value": {}})
+            continue
+
+        if sea_type == "cycle":
+            warm_basic_cycle_editor_if_needed(i, base_cfg)
+            mults = _read_basic_cycle_multipliers(i)
+            cfg = fit_pattern_multipliers_to_fourier(mults)
+            overrides.append({"path": f"channel_list.{i}.channel.seasonality_config", "value": cfg or {}})
+            continue
+
+        if sea_type == "sin":
+            cfg = sin_to_deterministic_fourier(
+                {
+                    "type": "sin",
+                    "amplitude": _parse_float_or_default(st.session_state.get(f"sea_amp_{i}"), 0.2),
+                    "period": _parse_int_or_default(st.session_state.get(f"sea_period_{i}"), 52),
+                    "phase": _parse_float_or_default(st.session_state.get(f"sea_phase_{i}"), 0.0),
+                }
+            )
+        elif sea_type == "fourier":
+            cfg = {
+                "type": "fourier",
+                "period": _parse_int_or_default(st.session_state.get(f"sea_period_{i}"), 52),
+                "K": _parse_int_or_default(st.session_state.get(f"sea_k_{i}"), 2),
+                "scale": _parse_float_or_default(st.session_state.get(f"sea_scale_{i}"), 0.1),
+            }
+        elif sea_type == "categorical":
+            pattern = _parse_pattern_csv(
+                st.session_state.get(f"sea_pattern_{i}"), [1.0, 1.0, 1.0, 1.0]
+            )
+            cfg = fit_pattern_multipliers_to_fourier(pattern)
+            if not cfg:
+                cfg = {}
+        else:
+            cfg = {}
+        overrides.append({"path": f"channel_list.{i}.channel.seasonality_config", "value": cfg})
+    return overrides
 
 
 def collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Dict[str, Any]], List[str]]:
@@ -84,13 +171,15 @@ def collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Dic
             full_path = f"channel_list.{i}.{path_suffix}"
             overrides.append({"path": full_path, "value": st.session_state[key]})
 
+    overrides.extend(_collect_seasonality_overrides(n_channels))
     return overrides, warnings
 
 
 def clear_channel_widget_keys() -> None:
     for k in list(st.session_state.keys()):
-        if k.startswith(("pc_", "sel_", "ch_name_", "del_ch_", "adw_")):
+        if k.startswith(("pc_", "sel_", "ch_name_", "del_ch_", "adw_", "ch_exp_", "sea_")):
             del st.session_state[k]
+    clear_toggle_widget_keys()
 
 
 def clear_widget_keys() -> None:
@@ -106,16 +195,46 @@ def clear_widget_keys() -> None:
                 "seed_input",
                 "del_ch_",
                 "adw_",
+                "ch_exp_",
+                "sea_",
             )
-        ) or k in ("new_channel_name", "advanced_yaml"):
+        ) or k.startswith(("corr_a_", "corr_b_", "corr_rho_", "corr_rm_")) or k.startswith(
+            "bs_"
+        ) or k in (
+            "new_channel_name",
+            "media_transform_order",
+            "advanced_yaml",
+            "corr_ui_rows",
+            "corr_next_id",
+            "corr_extra_option",
+            "budget_shift_ui_rows",
+            "budget_shift_next_id",
+            "budget_shift_extra_option",
+            "budget_shifts_auto_mode",
+            "correlations_auto_mode",
+        ):
             del st.session_state[k]
+    clear_toggle_widget_keys()
 
 
 def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tuple[Dict[str, Any], List[str]]:
+    """Merge widget state into a config dict.
+
+    The second tuple element always lists merge warnings (invalid numbers,
+    skipped rules, etc.). The ``silent`` keyword is ignored and kept only so
+    older call sites can pass ``silent=True`` without changes.
+    """
     merged = copy.deepcopy(st.session_state.sim_config)
     merged["week_range"] = int(st.session_state.get("week_range_num", 52))
     merged["run_identifier"] = str(st.session_state.get("run_identifier_input", "run")).strip() or "run"
     merged["seed"] = int(st.session_state.get("seed_input", 0))
+
+    _mo = str(st.session_state.get("media_transform_order", "adstock_first")).strip().lower()
+    merged["media_transform_order"] = "saturation_first" if _mo == "saturation_first" else "adstock_first"
+
+    from app.ui_seasonality_panel import ensure_seasonality_widgets_warmed
+
+    ensure_seasonality_widgets_warmed(merged)
 
     n_channels = len(merged.get("channel_list") or [])
     overrides, warns = collect_overrides(schema, n_channels)
@@ -129,4 +248,38 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
                 ch = merged["channel_list"][i].get("channel") or merged["channel_list"][i]
                 if isinstance(ch, dict):
                     ch["channel_name"] = nm
-    return merged, ([] if silent else warns)
+
+    corrs, corr_warns = merge_correlations_from_widgets(merged)
+    merged["correlations"] = corrs
+    warns.extend(corr_warns)
+
+    shifts, shift_warns = merge_budget_shifts_from_widgets(merged)
+    merged["budget_shifts"] = shifts
+    warns.extend(shift_warns)
+
+    bs_mode = str(
+        st.session_state.get("budget_shifts_auto_mode")
+        or merged.get("budget_shifts_auto_mode")
+        or st.session_state.get("budget_shift_extra_option")
+        or "none"
+    ).strip().lower()
+    if bs_mode not in ("none", "global", "global_and_channel"):
+        bs_mode = "none"
+    merged["budget_shifts_auto_mode"] = bs_mode
+
+    corr_mode = str(
+        st.session_state.get("correlations_auto_mode")
+        or merged.get("correlations_auto_mode")
+        or st.session_state.get("corr_extra_option")
+        or "none"
+    ).strip().lower()
+    if corr_mode not in ("none", "random"):
+        corr_mode = "none"
+    merged["correlations_auto_mode"] = corr_mode
+
+    toggle_warns = merge_channel_toggles_into_config(merged)
+    warns.extend(toggle_warns)
+
+    if silent:
+        return merged, []
+    return merged, warns

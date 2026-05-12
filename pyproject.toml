@@ -9,18 +9,16 @@ description = "Marketing simulation pipeline and Streamlit UI"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "numpy",
-    "pandas",
-    "matplotlib>=3.8.0",
-    "PyYAML",
-    "pytest",
+    "numpy>=1.25",
+    "pandas>=2.0",
+    "PyYAML>=6.0",
     "streamlit>=1.28.0",
     "plotly>=5.18.0",
 ]
 
 [project.optional-dependencies]
-mmm = [
-    "google-meridian>=1.4.0",
+tests = [
+    "pytest",
 ]
 api = [
     "fastapi>=0.115.0",

@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import platform
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 # Bump when simulation outputs change for the same YAML (invalidate old cache files).
-CACHE_VERSION = 2
+CACHE_VERSION = 6
 
 _CACHE_ROOT = Path(__file__).resolve().parent / ".cache" / "runs"
 
@@ -23,9 +25,31 @@ def _ensure_cache_dir() -> Path:
 
 def canonical_config_hash(user_data: Dict[str, Any]) -> str:
     """Stable SHA-256 hash of user config dict + cache version."""
-    payload = {"cache_version": CACHE_VERSION, "config": user_data}
-    raw = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    payload = {
+        "cache_version": CACHE_VERSION,
+        "runtime": {
+            "python_major_minor": f"{platform.python_version_tuple()[0]}.{platform.python_version_tuple()[1]}",
+            "numpy_major_minor": ".".join(np.__version__.split(".")[:2]),
+        },
+        "config": _canonicalize_for_hash(user_data),
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _canonicalize_for_hash(obj: Any) -> Any:
+    """Convert to strict JSON-serializable primitives for deterministic hashing."""
+    if obj is None or isinstance(obj, (bool, str, int, float)):
+        return obj
+    if isinstance(obj, np.generic):
+        return _canonicalize_for_hash(obj.item())
+    if isinstance(obj, np.ndarray):
+        return [_canonicalize_for_hash(x) for x in obj.tolist()]
+    if isinstance(obj, dict):
+        return {str(k): _canonicalize_for_hash(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_canonicalize_for_hash(v) for v in obj]
+    raise TypeError(f"Unsupported config value for cache hashing: {type(obj).__name__}")
 
 
 def cache_paths(config_hash: str) -> Tuple[Path, Path]:
@@ -74,6 +98,12 @@ def try_load_cached(config_hash: str) -> Optional[Tuple[pd.DataFrame, Dict[str, 
     return df, meta
 
 
+def cache_entry_exists(config_hash: str) -> bool:
+    """Non-destructive existence check for a cache hash."""
+    csv_path, _ = cache_paths(config_hash)
+    return csv_path.is_file()
+
+
 def save_cache(config_hash: str, df: pd.DataFrame, run_identifier: str) -> None:
     csv_path, json_path = cache_paths(config_hash)
     _ensure_cache_dir()
@@ -93,7 +123,8 @@ def run_with_cache(
     """
     runner: callable taking user_data -> (DataFrame, run_identifier, corr_results)
     Returns (df, run_identifier, cache_hit, config_hash, corr_results).
-    corr_results is None on cache hits (correlation analysis is cheap to skip).
+    corr_results is None on cache hits; the UI rebuilds correlation summaries from the
+    cached CSV and ``sim_config`` when you open results.
     """
     h = canonical_config_hash(user_data)
     cached = try_load_cached(h)

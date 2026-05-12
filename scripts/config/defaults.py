@@ -3,24 +3,20 @@ Single source of truth for per-channel defaults: loaded from default.yaml.
 Change default.yaml only; code here just reads it and raises if config is invalid.
 """
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import yaml
 
 _DEFAULT_YAML_PATH = Path(__file__).resolve().parent / "default.yaml"
-_cached_default_channel: Optional[Dict[str, Any]] = None
 
 
 def get_default_channel_template() -> Dict[str, Any]:
     """
     Return the default channel dict from default.yaml (first channel).
-    Cached after first load.
-    Raises if default.yaml is missing/empty/invalid.
-    """
-    global _cached_default_channel
-    if _cached_default_channel is not None:
-        return dict(_cached_default_channel)
 
+    Reads from disk each call (no in-process cache) so edits to default.yaml
+    are always visible without restarting a long-lived process.
+    """
     if not _DEFAULT_YAML_PATH.exists():
         raise FileNotFoundError(f"Required default config not found: {_DEFAULT_YAML_PATH}")
 
@@ -35,5 +31,4 @@ def get_default_channel_template() -> Dict[str, Any]:
 
     item = raw[0]
     ch = item.get("channel") or item
-    _cached_default_channel = dict(ch)
-    return dict(_cached_default_channel)
+    return dict(ch)

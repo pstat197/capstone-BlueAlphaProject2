@@ -4,30 +4,32 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-import yaml
 import pandas as pd
 import numpy as np
 
-from scripts.spend_simulation.spend_generation import generate_spend
+from scripts.config.loader import load_config
+from scripts.spend_simulation.spend_generation import generate_spend_with_details
 from scripts.spend_simulation.correlation_analysis import analyze_spend_correlations, print_correlation_report
 from scripts.impressions_simulation.impressions_generation import generate_impressions
-from scripts.revenue_simulation.revenue_generation import generate_revenue
+from scripts.revenue_simulation.revenue_generation import RevenueGenerationResult, generate_revenue
 
 from scripts.synth_input_classes.input_configurations import InputConfigurations
+from scripts.ground_truth_io import extract_ground_truth, write_ground_truth_json
 
 
 def construct_csv(
     config: InputConfigurations,
-    spend_matrix: "np.ndarray",  # matrix: weeks x channels
-    impressions_matrix: "np.ndarray",  # matrix: weeks x channels
-    revenue_matrix: "np.ndarray",  # matrix: weeks x channels
+    spend_matrix: np.ndarray,  # matrix: weeks x channels
+    impressions_matrix: np.ndarray,  # matrix: weeks x channels
+    revenue_result: RevenueGenerationResult,
 ) -> pd.DataFrame:
     """
     Construct a DataFrame: each row corresponds to a week.
     Columns:
       - 'week': week number (starting from 1)
-      - 'revenue': total revenue for the week (sum across channels)
+      - 'revenue': total weekly revenue (Meridian additive mean: μ_t^sim + media sum + noise; μ_t^sim = (baseline+trend·t)×σ_t per revenue_generation / ground truth)
       - For each channel: f"{channel}_impressions", f"{channel}_spend", f"{channel}_revenue"
+        (channel revenue is **media-only** incremental contribution)
       - 'total_impressions', 'total_spend'
     """
     # Get channel names and week count
@@ -40,26 +42,17 @@ def construct_csv(
     channel_spend_cols = [f"{name}_spend" for name in channel_names]
     channel_revenue_cols = [f"{name}_revenue" for name in channel_names]
 
-    # Build rows
-    data = []
-    for week in range(num_weeks):
-        row: dict = {"week": week + 1}
-        total_impressions = 0
-        total_spend = 0
-        for ch in range(num_channels):
-            imp = impressions_matrix[week, ch]
-            spd = spend_matrix[week, ch]
-            row[channel_impression_cols[ch]] = imp
-            row[channel_spend_cols[ch]] = spd
-            row[channel_revenue_cols[ch]] = float(revenue_matrix[week, ch])
-            total_impressions += imp
-            total_spend += spd
-        row["revenue"] = float(revenue_matrix[week].sum())
-        row["total_impressions"] = total_impressions
-        row["total_spend"] = total_spend
-        data.append(row)
+    data: Dict[str, Any] = {
+        "week": np.arange(1, num_weeks + 1, dtype=int),
+        "revenue": revenue_result.total_revenue.astype(float),
+        "total_impressions": impressions_matrix.sum(axis=1).astype(float),
+        "total_spend": spend_matrix.sum(axis=1).astype(float),
+    }
+    for i in range(num_channels):
+        data[channel_impression_cols[i]] = impressions_matrix[:, i].astype(float)
+        data[channel_spend_cols[i]] = spend_matrix[:, i].astype(float)
+        data[channel_revenue_cols[i]] = revenue_result.channel_media_revenue[:, i].astype(float)
 
-    # One block per channel: impressions, spend, revenue (easier to read in CSV / print(df.head()))
     columns = ["week", "revenue"]
     for i in range(num_channels):
         columns += [
@@ -68,7 +61,7 @@ def construct_csv(
             channel_revenue_cols[i],
         ]
     columns += ["total_impressions", "total_spend"]
-    df = pd.DataFrame(data, columns=columns)
+    df = pd.DataFrame(data)[columns]
     return df
 
 
@@ -77,31 +70,35 @@ def run_simulation(
 ) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
     """Run spend -> impressions -> revenue and return (DataFrame, correlation_results).
 
-    correlation_results is None when no correlations are configured.
+    correlation_results includes both operational (post-toggle-mask) and generative
+    (pre-toggle-mask) spend correlation analyses.
     """
-    spend_matrix = generate_spend(config)
+    spend_pre_mask, spend_matrix = generate_spend_with_details(config)
 
     corr_results: Optional[Dict[str, Any]] = None
-    if config.get_correlations():
-        corr_results = analyze_spend_correlations(config, spend_matrix)
+    if spend_matrix.size > 0 and spend_matrix.shape[1] >= 1:
+        operational = analyze_spend_correlations(config, spend_matrix)
+        generative = analyze_spend_correlations(config, spend_pre_mask)
+        corr_results = {
+            **operational,
+            "operational_corr": operational,
+            "generative_corr": generative,
+            "correlation_basis_default": "operational",
+        }
 
     impressions_matrix = generate_impressions(config, spend_matrix)
-    revenue_by_channel = generate_revenue(config, impressions_matrix)
-    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel)
+    revenue_result = generate_revenue(config, impressions_matrix)
+    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_result)
     return df, corr_results
 
 
 def main(yaml_path):
-
-    # load config
+    # Load config through the canonical loader path so CLI behavior matches UI/tests:
+    # deep-merge defaults, auto-mode expansion, and validation all apply.
     path = Path(yaml_path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
-
-    with open(path, "r") as f:
-        data = yaml.safe_load(f)
-
-    config = InputConfigurations.from_yaml_dict(data)
+    config = load_config(str(path))
 
     df, corr_results = run_simulation(config)
 
@@ -116,6 +113,14 @@ def main(yaml_path):
     output_path = f"output/{config.get_run_identifier()}_{timestamp}.csv"
     df.to_csv(output_path, index=False)
     print(f"Saved to: {output_path}")
+
+    # Always write generative "ground truth" parameters for this run.
+    gt_path = Path("output") / f"{config.get_run_identifier()}_{timestamp}_ground_truth.json"
+    try:
+        write_ground_truth_json(gt_path, extract_ground_truth(config))
+        print(f"Saved ground truth to: {gt_path}")
+    except Exception as e:
+        print(f"WARNING: Could not write ground truth file {gt_path}: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run with a YAML config (e.g. example.yaml)")
@@ -135,7 +140,10 @@ if __name__ == "__main__":
     yaml_path = args.config or args.config_file
 
     if not yaml_path:
-        parser.error("Provide a YAML config path, e.g. python main.py example.yaml or python main.py -c path/to/config.yaml")
+        parser.error(
+            "Provide a YAML config path, e.g. python -m scripts.main example.yaml "
+            "or python -m scripts.main -c path/to/config.yaml"
+        )
 
     print(f"Running with config: {yaml_path}")
     print("--------------------------------")

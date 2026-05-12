@@ -2,6 +2,7 @@ import { Copy, Wand2 } from "lucide-react";
 import { useMemo } from "react";
 
 import { ChannelAvailabilityCard } from "@/components/simulator/channel-availability";
+import { CurvePreview } from "@/components/simulator/curve-preview";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -443,6 +444,8 @@ export function ChannelDetail({ index, onIndexChange }: ChannelDetailProps) {
           </div>
         </CardContent>
       </Card>
+
+      <CurvePreview channel={channel} />
     </div>
   );
 }

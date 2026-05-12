@@ -1,23 +1,45 @@
+import { Copy, Wand2 } from "lucide-react";
 import { useMemo } from "react";
 
+import { ChannelAvailabilityCard } from "@/components/simulator/channel-availability";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
-import { getChannel, updateChannelAt } from "@/lib/config-utils";
+import {
+  duplicateChannelAt,
+  getChannel,
+  suggestHillK,
+  updateChannelAt,
+} from "@/lib/config-utils";
 import { useConfig } from "@/state/config-store";
 import type { ChannelDef, SimConfig } from "@/types/api";
 
 interface ChannelDetailProps {
   index: number;
+  onIndexChange?: (next: number) => void;
 }
 
 type SaturationType = NonNullable<NonNullable<ChannelDef["saturation_config"]>["type"]>;
 type AdstockType = NonNullable<NonNullable<ChannelDef["adstock_decay_config"]>["type"]>;
 
 const SATURATION_OPTIONS: SaturationType[] = ["linear", "hill", "diminishing_returns"];
-const ADSTOCK_OPTIONS: AdstockType[] = ["linear", "geometric", "exponential", "weighted"];
+const ADSTOCK_OPTIONS: AdstockType[] = [
+  "geometric",
+  "binomial",
+  "exponential",
+  "linear",
+  "weighted",
+];
+
+/**
+ * Which adstock types take the scalar `lambda` decay parameter. `linear` uses a
+ * flat moving average (no lambda), `weighted` reads `weights` directly.
+ */
+const LAMBDA_ADSTOCK_TYPES: AdstockType[] = ["geometric", "exponential", "binomial"];
 
 function FieldRow({
   children,
@@ -42,14 +64,16 @@ function NumInput({
   min,
   max,
   asInt = false,
+  className,
 }: {
-  id: string;
+  id?: string;
   value: number | undefined;
   onChange: (v: number | undefined) => void;
   step?: number;
   min?: number;
   max?: number;
   asInt?: boolean;
+  className?: string;
 }) {
   return (
     <Input
@@ -65,11 +89,12 @@ function NumInput({
         const n = asInt ? parseInt(raw, 10) : parseFloat(raw);
         onChange(Number.isFinite(n) ? n : undefined);
       }}
+      className={className}
     />
   );
 }
 
-export function ChannelDetail({ index }: ChannelDetailProps) {
+export function ChannelDetail({ index, onIndexChange }: ChannelDetailProps) {
   const { config, setConfig } = useConfig();
   const channel = useMemo(() => {
     const list = config.channel_list ?? [];
@@ -92,19 +117,41 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
     });
   };
 
+  const handleDuplicate = () => {
+    const { config: nextConfig, newIndex } = duplicateChannelAt(config, index);
+    setConfig(nextConfig, { resetYamlDirty: true });
+    onIndexChange?.(newIndex);
+  };
+
   const sat = channel.saturation_config ?? { type: "linear" };
   const ad = channel.adstock_decay_config ?? { type: "linear" };
   const noise = channel.noise_variance ?? {};
   const spend = channel.spend_range ?? [0, 0];
 
+  /* `undefined` means "use default = enabled". `false` is the only way to disable. */
+  const satEnabled = channel.saturation_enabled !== false;
+  const adEnabled = channel.adstock_enabled !== false;
+
+  const suggestedK = suggestHillK(channel);
+
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle>Channel · {channel.channel_name || `#${index + 1}`}</CardTitle>
-          <CardDescription>
-            All fields here flow into the YAML on the right-hand sidebar entry.
-          </CardDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Channel · {channel.channel_name || `#${index + 1}`}</CardTitle>
+              <CardDescription>
+                All fields here flow into the YAML on the right-hand sidebar entry.
+              </CardDescription>
+            </div>
+            <Tooltip content="Duplicate this channel with the same settings">
+              <Button size="sm" variant="secondary" onClick={handleDuplicate}>
+                <Copy className="h-3.5 w-3.5" />
+                Duplicate
+              </Button>
+            </Tooltip>
+          </div>
         </CardHeader>
         <CardContent className="space-y-5">
           <FieldRow hint="Used everywhere as the channel label and column prefix in the output CSV.">
@@ -127,7 +174,7 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
                 min={0}
               />
             </FieldRow>
-            <FieldRow hint="Weekly revenue not explained by media (added after ROI scaling).">
+            <FieldRow hint="Per-channel baseline (used when this channel feeds the outcome path).">
               <Label htmlFor="ch_baseline">Baseline revenue</Label>
               <NumInput
                 id="ch_baseline"
@@ -151,7 +198,6 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
               <Label>Spend range</Label>
               <div className="flex items-center gap-2">
                 <NumInput
-                  id="ch_spend_min"
                   value={typeof spend[0] === "number" ? spend[0] : undefined}
                   onChange={(v) => patch({ spend_range: [v ?? 0, spend[1] ?? 0] })}
                   step={500}
@@ -159,7 +205,6 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
                 />
                 <span className="text-xs text-slate-400">–</span>
                 <NumInput
-                  id="ch_spend_max"
                   value={typeof spend[1] === "number" ? spend[1] : undefined}
                   onChange={(v) => patch({ spend_range: [spend[0] ?? 0, v ?? 0] })}
                   step={500}
@@ -171,34 +216,25 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
         </CardContent>
       </Card>
 
+      <ChannelAvailabilityCard index={index} />
+
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle>Noise</CardTitle>
+          <CardTitle>Revenue noise</CardTitle>
           <CardDescription>
-            Variance scales the gaussian wobble on weekly impressions and revenue.
+            Variance σ² of a weekly N(0, σ²) shock on revenue (squared KPI units). Used for the
+            outcome path when this channel feeds it; ignored otherwise.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
-          <FieldRow hint="Std dev = √(value) × base impressions. 0 disables impression noise.">
-            <Label htmlFor="ch_noise_imp">Impression noise variance</Label>
-            <NumInput
-              id="ch_noise_imp"
-              value={noise.impression}
-              onChange={(v) => patch({ noise_variance: { ...noise, impression: v } })}
-              step={0.01}
-              min={0}
-              max={1}
-            />
-          </FieldRow>
-          <FieldRow hint="Std dev = √(value) × |revenue before noise|. 0 disables revenue noise.">
-            <Label htmlFor="ch_noise_rev">Revenue noise variance</Label>
+        <CardContent>
+          <FieldRow hint="Set to 0 to disable revenue noise. Typical values are large (e.g. 1e6 for 1k σ).">
+            <Label htmlFor="ch_noise_rev">Variance (σ²)</Label>
             <NumInput
               id="ch_noise_rev"
               value={noise.revenue}
               onChange={(v) => patch({ noise_variance: { ...noise, revenue: v } })}
-              step={0.01}
+              step={1000}
               min={0}
-              max={1}
             />
           </FieldRow>
         </CardContent>
@@ -206,12 +242,28 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle>Saturation</CardTitle>
-          <CardDescription>
-            How impressions translate into effective media: linear, hill, or diminishing returns.
-          </CardDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Saturation</CardTitle>
+              <CardDescription>
+                How impressions translate into effective media. Toggle off to skip the saturation
+                step for this channel.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-xs text-slate-500">Enabled</span>
+              <Switch
+                checked={satEnabled}
+                onCheckedChange={(checked) =>
+                  patch({ saturation_enabled: checked ? undefined : false })
+                }
+              />
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent
+          className={`space-y-4 ${satEnabled ? "" : "pointer-events-none opacity-50"}`}
+        >
           <FieldRow>
             <Label htmlFor="ch_sat_type">Type</Label>
             <Select
@@ -247,8 +299,26 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
               </FieldRow>
             )}
             {sat.type === "hill" && (
-              <FieldRow hint="Impression scale where the curve bends. Larger = need more impressions before flattening.">
-                <Label htmlFor="ch_sat_K">K</Label>
+              <FieldRow hint="Half-saturation scale in weekly impression units (≈ mean spend / CPM × 1000).">
+                <div className="flex items-end justify-between gap-2">
+                  <Label htmlFor="ch_sat_K">K</Label>
+                  {suggestedK !== null && (
+                    <Tooltip
+                      content={`Suggest K ≈ ${suggestedK.toLocaleString()} (mean spend / CPM × 1000)`}
+                    >
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          patch({ saturation_config: { ...sat, K: suggestedK } })
+                        }
+                      >
+                        <Wand2 className="h-3.5 w-3.5" />
+                        Suggest
+                      </Button>
+                    </Tooltip>
+                  )}
+                </div>
                 <NumInput
                   id="ch_sat_K"
                   value={sat.K}
@@ -277,14 +347,32 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle>Adstock (carry-over)</CardTitle>
-          <CardDescription>How past spend keeps contributing in subsequent weeks.</CardDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Adstock (carry-over)</CardTitle>
+              <CardDescription>
+                How past spend keeps contributing in subsequent weeks. Toggle off to skip the
+                adstock step for this channel.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-xs text-slate-500">Enabled</span>
+              <Switch
+                checked={adEnabled}
+                onCheckedChange={(checked) =>
+                  patch({ adstock_enabled: checked ? undefined : false })
+                }
+              />
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent
+          className={`space-y-4 ${adEnabled ? "" : "pointer-events-none opacity-50"}`}
+        >
           <FieldRow>
             <Label htmlFor="ch_ad_type">Type</Label>
             <Select
-              value={ad.type ?? "linear"}
+              value={ad.type ?? "geometric"}
               onValueChange={(v) =>
                 patch({ adstock_decay_config: { ...ad, type: v as AdstockType } })
               }
@@ -302,9 +390,15 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
             </Select>
           </FieldRow>
           <div className="grid grid-cols-2 gap-4">
-            {(ad.type === "geometric" || ad.type === "exponential") && (
-              <FieldRow hint="Closer to 1 = longer memory; closer to 0 = fast fade.">
-                <Label htmlFor="ch_ad_lambda">Lambda</Label>
+            {LAMBDA_ADSTOCK_TYPES.includes((ad.type ?? "geometric") as AdstockType) && (
+              <FieldRow
+                hint={
+                  ad.type === "binomial"
+                    ? "Maps to Meridian's α* = 1/α − 1 over s ∈ [0, L]."
+                    : "Closer to 1 = longer memory; closer to 0 = fast fade."
+                }
+              >
+                <Label htmlFor="ch_ad_lambda">Lambda (α)</Label>
                 <NumInput
                   id="ch_ad_lambda"
                   value={ad.lambda}
@@ -315,7 +409,7 @@ export function ChannelDetail({ index }: ChannelDetailProps) {
                 />
               </FieldRow>
             )}
-            <FieldRow hint="Linear = average over (lag+1) weeks. Geometric/exp = number of decay terms in the kernel.">
+            <FieldRow hint="Linear = window length. Geometric/exp/binomial = number of decay terms.">
               <Label htmlFor="ch_ad_lag">Lag</Label>
               <NumInput
                 id="ch_ad_lag"

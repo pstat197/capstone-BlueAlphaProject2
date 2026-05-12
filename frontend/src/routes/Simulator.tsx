@@ -102,7 +102,10 @@ export default function SimulatorRoute() {
         </div>
         <div className="min-w-0">
           {effectiveSelected.kind === "channel" && channelCount > 0 ? (
-            <ChannelDetail index={effectiveSelected.index} />
+            <ChannelDetail
+              index={effectiveSelected.index}
+              onIndexChange={(next) => setSelected({ kind: "channel", index: next })}
+            />
           ) : (
             <YamlEditorCard />
           )}

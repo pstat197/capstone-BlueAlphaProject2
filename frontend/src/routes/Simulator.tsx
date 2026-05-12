@@ -8,12 +8,14 @@ import { ChannelDetail } from "@/components/simulator/channel-detail";
 import { ChannelList, type SimulatorPane } from "@/components/simulator/channel-list";
 import { RunSettingsCard } from "@/components/simulator/run-settings-card";
 import { ScenariosCard } from "@/components/simulator/scenarios-card";
+import { ValidationBanner } from "@/components/simulator/validation-banner";
 import { YamlEditorCard } from "@/components/simulator/yaml-editor-card";
 import { StickyActionBar } from "@/components/layout/sticky-action-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { formatHash } from "@/lib/config-utils";
+import { hasBlockingErrors, useConfigValidation } from "@/lib/use-config-validation";
 import { usePrerunCache } from "@/lib/use-prerun-cache";
 import { useConfig } from "@/state/config-store";
 import type { RunResponse } from "@/types/api";
@@ -59,6 +61,8 @@ export default function SimulatorRoute() {
   }, [selected, channelCount]);
 
   const prerun = usePrerunCache(config);
+  const validation = useConfigValidation(config);
+  const blocked = hasBlockingErrors(validation.data?.issues);
 
   const runMutation = useMutation({
     mutationFn: () => api.createRun(config),
@@ -99,13 +103,19 @@ export default function SimulatorRoute() {
         )}
       </header>
 
+      <ValidationBanner issues={validation.data?.issues} loading={validation.loading} />
+
       <RunSettingsCard />
       <AdvancedSettingsCard />
       <ScenariosCard />
 
       <div className="grid flex-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div className="lg:max-h-[calc(100vh-260px)]">
-          <ChannelList selected={effectiveSelected} onSelect={setSelected} />
+          <ChannelList
+            selected={effectiveSelected}
+            onSelect={setSelected}
+            issues={validation.data?.issues}
+          />
         </div>
         <div className="min-w-0">
           {effectiveSelected.kind === "channel" && channelCount > 0 ? (
@@ -163,13 +173,19 @@ export default function SimulatorRoute() {
             <Button
               size="default"
               onClick={() => runMutation.mutate()}
-              disabled={runMutation.isPending || channelCount === 0}
+              disabled={runMutation.isPending || channelCount === 0 || blocked}
               variant={prerun.cached ? "secondary" : "default"}
+              title={blocked ? "Fix configuration errors to run" : undefined}
             >
               {runMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Running…
+                </>
+              ) : blocked ? (
+                <>
+                  <Play className="h-4 w-4" />
+                  Fix errors to run
                 </>
               ) : prerun.cached ? (
                 <>

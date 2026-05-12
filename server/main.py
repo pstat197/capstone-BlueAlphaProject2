@@ -37,6 +37,7 @@ from scripts.ground_truth_io import extract_ground_truth  # noqa: E402
 from server.correlations import derive_correlation_results  # noqa: E402
 from server.serializers import serialize_correlation, serialize_run_dataframe  # noqa: E402
 from server.store import get_run_record, list_run_records, save_run_record  # noqa: E402
+from server.validate import validate_config  # noqa: E402
 
 app = FastAPI(
     title="BlueAlpha Simulator API",
@@ -133,6 +134,18 @@ def validate_yaml(payload: YamlValidateRequest) -> YamlValidateResponse:
 @app.post("/api/yaml/dump", response_model=YamlDumpResponse)
 def dump_yaml(payload: YamlDumpRequest) -> YamlDumpResponse:
     return YamlDumpResponse(yaml_text=yaml_dump(payload.config or {}))
+
+
+@app.post("/api/config/validate")
+def validate_config_endpoint(payload: RunRequest) -> Dict[str, Any]:
+    """Structured, field-level validation for the React form.
+
+    Returns ``{"ok": bool, "issues": [{path, message, severity, section}]}``.
+    Errors carry an empty path when the issue is global (e.g. the loader
+    raised), otherwise a JSON-Pointer-ish array the UI can use to pin
+    badges to specific controls.
+    """
+    return validate_config(payload.config or {})
 
 
 # ---------------------------------------------------------------------------

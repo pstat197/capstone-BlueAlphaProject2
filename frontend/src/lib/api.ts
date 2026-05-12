@@ -4,6 +4,7 @@ import type {
   RunListItem,
   RunResponse,
   SimConfig,
+  ValidateConfigResponse,
 } from "@/types/api";
 
 const BASE = ""; // Vite dev proxies /api -> 127.0.0.1:8000
@@ -62,6 +63,12 @@ export const api = {
       run_identifier: string | null;
       last_seen_at: string | null;
     }>(`/api/cache/${configHash}`),
+
+  validateConfig: (config: SimConfig) =>
+    request<ValidateConfigResponse>("/api/config/validate", {
+      method: "POST",
+      body: JSON.stringify({ config }),
+    }),
 
   clearCache: () =>
     request<{ removed: number }>("/api/cache/clear", { method: "POST" }),

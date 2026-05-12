@@ -241,3 +241,18 @@ export interface MeridianStatus {
   ui_status: string;
   message: string;
 }
+
+/** Path is a JSON-Pointer-ish array (e.g. ["channel_list", 0, "channel", "true_roi"]).
+ *  Empty for global issues. */
+export interface ConfigIssue {
+  path: Array<string | number>;
+  message: string;
+  severity: "error" | "warning";
+  /** Coarse rollup so the UI can light up section badges. */
+  section: "general" | "outcome" | "channels" | "correlations" | "budget_shifts" | null;
+}
+
+export interface ValidateConfigResponse {
+  ok: boolean;
+  issues: ConfigIssue[];
+}

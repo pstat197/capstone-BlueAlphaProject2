@@ -1,4 +1,4 @@
-import { Code2, Copy, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Code2, Copy, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,8 +13,9 @@ import {
   removeChannelAt,
 } from "@/lib/config-utils";
 import { cn } from "@/lib/cn";
+import { channelErrorCount } from "@/lib/use-config-validation";
 import { useConfig } from "@/state/config-store";
-import type { ChannelEnabled } from "@/types/api";
+import type { ChannelEnabled, ConfigIssue } from "@/types/api";
 
 /**
  * Pre-compute the visual status of a channel for the row badges so the
@@ -42,9 +43,11 @@ export type SimulatorPane =
 interface ChannelListProps {
   selected: SimulatorPane;
   onSelect: (pane: SimulatorPane) => void;
+  /** Validation issues from /api/config/validate, used to badge bad rows. */
+  issues?: ConfigIssue[];
 }
 
-export function ChannelList({ selected, onSelect }: ChannelListProps) {
+export function ChannelList({ selected, onSelect, issues }: ChannelListProps) {
   const { config, setConfig, setYamlDirty } = useConfig();
   const [newName, setNewName] = useState("");
 
@@ -118,6 +121,7 @@ export function ChannelList({ selected, onSelect }: ChannelListProps) {
               ch.adstock_enabled !== false,
               ch.saturation_enabled !== false,
             );
+            const errCount = channelErrorCount(issues, index);
             return (
               <li key={index}>
                 <div
@@ -125,7 +129,9 @@ export function ChannelList({ selected, onSelect }: ChannelListProps) {
                     "group flex w-full items-center gap-2 rounded-lg px-3 py-2 transition-colors",
                     isActive
                       ? "bg-brand-50 text-brand-700 ring-1 ring-brand-200"
-                      : "text-slate-700 hover:bg-slate-100/70",
+                      : errCount > 0
+                        ? "text-slate-700 hover:bg-slate-100/70 ring-1 ring-rose-200/70"
+                        : "text-slate-700 hover:bg-slate-100/70",
                   )}
                 >
                   <button
@@ -134,6 +140,15 @@ export function ChannelList({ selected, onSelect }: ChannelListProps) {
                     className="min-w-0 flex-1 text-left"
                   >
                     <div className="flex flex-wrap items-center gap-1.5">
+                      {errCount > 0 && (
+                        <Tooltip
+                          content={`${errCount} configuration error${errCount === 1 ? "" : "s"}`}
+                        >
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+                            <AlertCircle className="h-3 w-3" />
+                          </span>
+                        </Tooltip>
+                      )}
                       <span className="truncate text-sm font-medium">
                         {ch.channel_name || `Channel ${index + 1}`}
                       </span>

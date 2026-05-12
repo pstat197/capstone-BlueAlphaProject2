@@ -3,6 +3,7 @@ import { Loader2, Play, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { AdvancedSettingsCard } from "@/components/simulator/advanced-settings-card";
 import { ChannelDetail } from "@/components/simulator/channel-detail";
 import { ChannelList, type SimulatorPane } from "@/components/simulator/channel-list";
 import { RunSettingsCard } from "@/components/simulator/run-settings-card";
@@ -95,6 +96,7 @@ export default function SimulatorRoute() {
       </header>
 
       <RunSettingsCard />
+      <AdvancedSettingsCard />
 
       <div className="grid flex-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div className="lg:max-h-[calc(100vh-260px)]">

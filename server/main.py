@@ -23,6 +23,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from app.cache import (  # noqa: E402
+    cache_entry_exists,
     canonical_config_hash,
     clear_run_cache,
     run_with_cache,
@@ -250,6 +251,21 @@ def clear_cache() -> Dict[str, Any]:
 @app.post("/api/config/hash")
 def hash_config(payload: RunRequest) -> Dict[str, str]:
     return {"config_hash": canonical_config_hash(payload.config or {})}
+
+
+@app.get("/api/cache/{config_hash}")
+def cache_status(config_hash: str) -> Dict[str, Any]:
+    """Lightweight cache lookup: tells the React UI whether a hash is cached
+    without loading the dataframe. The Simulator page debounces a call to
+    this so the run button can show a "cached — re-open" affordance live."""
+    exists = cache_entry_exists(config_hash)
+    record = get_run_record(config_hash)
+    return {
+        "config_hash": config_hash,
+        "cached": bool(exists),
+        "run_identifier": (record or {}).get("run_identifier") if record else None,
+        "last_seen_at": (record or {}).get("last_seen_at") if record else None,
+    }
 
 
 # ---------------------------------------------------------------------------

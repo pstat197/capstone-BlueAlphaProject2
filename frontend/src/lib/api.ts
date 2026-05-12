@@ -55,6 +55,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ config }),
     }),
+  cacheStatus: (configHash: string) =>
+    request<{
+      config_hash: string;
+      cached: boolean;
+      run_identifier: string | null;
+      last_seen_at: string | null;
+    }>(`/api/cache/${configHash}`),
 
   clearCache: () =>
     request<{ removed: number }>("/api/cache/clear", { method: "POST" }),

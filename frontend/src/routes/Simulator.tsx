@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Play, RotateCcw } from "lucide-react";
+import { ExternalLink, Loader2, Play, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { AdvancedSettingsCard } from "@/components/simulator/advanced-settings-card";
 import { ChannelDetail } from "@/components/simulator/channel-detail";
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { formatHash } from "@/lib/config-utils";
+import { usePrerunCache } from "@/lib/use-prerun-cache";
 import { useConfig } from "@/state/config-store";
 import type { RunResponse } from "@/types/api";
 
@@ -56,6 +57,8 @@ export default function SimulatorRoute() {
     }
     return selected;
   }, [selected, channelCount]);
+
+  const prerun = usePrerunCache(config);
 
   const runMutation = useMutation({
     mutationFn: () => api.createRun(config),
@@ -127,6 +130,23 @@ export default function SimulatorRoute() {
               </strong>{" "}
               weeks
             </span>
+            {prerun.hash && (
+              <Badge
+                variant={prerun.cached ? "success" : "muted"}
+                className="font-mono text-[10px]"
+              >
+                {prerun.cached ? "cached" : "new"} {formatHash(prerun.hash)}
+              </Badge>
+            )}
+            {prerun.cached && prerun.hash && (
+              <Link
+                to={`/results/${prerun.hash}`}
+                className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 underline-offset-2 hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open cached results
+              </Link>
+            )}
             {error && (
               <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700">
                 {error}
@@ -144,11 +164,17 @@ export default function SimulatorRoute() {
               size="default"
               onClick={() => runMutation.mutate()}
               disabled={runMutation.isPending || channelCount === 0}
+              variant={prerun.cached ? "secondary" : "default"}
             >
               {runMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Running…
+                </>
+              ) : prerun.cached ? (
+                <>
+                  <Play className="h-4 w-4" />
+                  Re-run from cache
                 </>
               ) : (
                 <>

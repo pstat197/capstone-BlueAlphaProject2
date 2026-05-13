@@ -95,6 +95,27 @@ per_channel_sliders:
     min: 0
     max: 52
     step: 1
+  - path: channel.conversion_rate
+    group: subscriptions
+    label: "Conversion rate"
+    help: "Fraction of effective (saturated, adstocked) impressions that convert to subscriptions. E.g. 0.001 = 1 per 1000 effective impressions."
+    min: 0.0
+    max: 1.0
+    step: 0.0001
+  - path: channel.baseline_subscriptions
+    group: subscriptions
+    label: "Baseline subscriptions"
+    help: "Weekly organic subscriptions not driven by media (added after conversion scaling). Output is rounded to non-negative integers."
+    min: 0
+    max: 10000
+    step: 10
+  - path: channel.noise_variance.subscription
+    group: subscriptions
+    label: "Subscription noise"
+    help: "Scales random wobble on weekly subscriptions. Std dev = √(this) × |subscriptions before noise|. 0 = no subscription noise."
+    min: 0.0
+    max: 1.0
+    step: 0.01
 
 per_channel_selects:
   - path: channel.saturation_config.type

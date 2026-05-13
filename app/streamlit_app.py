@@ -54,7 +54,7 @@ def _render_simulator_tab(schema: dict) -> None:
         "Length and labeling for each run. **Random seed** fixes sampling so the same settings reproduce "
         "the same series and cache behavior."
     )
-    col_w, col_r, col_s = st.columns(3)
+    col_w, col_r, col_s, col_k = st.columns(4)
     with col_w:
         st.number_input(
             "Week range",
@@ -81,6 +81,14 @@ def _render_simulator_tab(schema: dict) -> None:
             step=1,
             key="seed_input",
             help="Fixes randomness so runs and cache keys are reproducible.",
+            on_change=yaml_sync_from_form,
+        )
+    with col_k:
+        st.selectbox(
+            "KPI mode",
+            options=["revenue", "subscriptions", "both"],
+            key="kpi_mode_select",
+            help="'revenue' = default. 'subscriptions' adds subscription columns driven by conversion rate. 'both' generates revenue and subscription KPIs.",
             on_change=yaml_sync_from_form,
         )
 
@@ -212,6 +220,10 @@ def main() -> None:
     if "seed_input" not in st.session_state:
         s = st.session_state.sim_config.get("seed")
         st.session_state.seed_input = int(s) if s is not None else 0
+    if "kpi_mode_select" not in st.session_state:
+        st.session_state.kpi_mode_select = str(
+            st.session_state.sim_config.get("kpi_mode", "revenue")
+        )
 
     if st.session_state.pop("_sync_top_widgets_from_sim_config", False):
         st.session_state.week_range_num = int(st.session_state.sim_config.get("week_range", 52))
@@ -220,6 +232,9 @@ def main() -> None:
         )
         s = st.session_state.sim_config.get("seed")
         st.session_state.seed_input = int(s) if s is not None else 0
+        st.session_state.kpi_mode_select = str(
+            st.session_state.sim_config.get("kpi_mode", "revenue")
+        )
 
     pending_yaml = st.session_state.pop("pending_yaml_dump", None)
     if pending_yaml is not None:
@@ -251,6 +266,9 @@ def main() -> None:
             )
             s = st.session_state.sim_config.get("seed")
             st.session_state.seed_input = int(s) if s is not None else 0
+            st.session_state.kpi_mode_select = str(
+                st.session_state.sim_config.get("kpi_mode", "revenue")
+            )
             st.session_state["pending_yaml_dump"] = yaml_dump(st.session_state.sim_config)
             st.session_state.yaml_manual_edit = False
             st.rerun()

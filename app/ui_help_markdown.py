@@ -42,3 +42,14 @@ Both values are **non-negative**. **0** turns that noise off.
 - Random noise is Gaussian with **standard deviation = √(revenue noise) × |R|**.
 - So noise scales with **how big the channel’s contribution already is** that week; small `R` → small absolute noise, large `R` → larger absolute noise (same relative spread).
 """
+
+SUBSCRIPTION_PARAMETERS_GUIDE_MD = """
+Subscriptions use the **same** saturation and adstock transforms as revenue (the media effect shape is a channel property), but apply a different scale:
+
+**Pipeline:** impressions → saturation → adstock → × conversion_rate + baseline_subscriptions + noise → round to integer
+
+- **Conversion rate**: fraction of effective impressions that become subscribers (e.g., 0.001 = 1 per 1000).
+- **Baseline subscriptions**: organic weekly sign-ups independent of media.
+- **Subscription noise**: random variation, same mechanism as revenue noise but applied to subscription counts.
+- Output is **clipped to ≥ 0** and **rounded to the nearest integer**.
+"""

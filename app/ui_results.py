@@ -11,7 +11,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from app.cache import cached_dataframe_schema_ok
-from app.ui_chart_constants import ACCENT2, BLUE, CHART_PAL_CVD, ORANGE
+from app.ui_chart_constants import ACCENT2, BLUE, CHART_PAL_CVD, ORANGE, PURPLE
 from app.ui_yaml_io import yaml_dump
 
 
@@ -45,15 +45,21 @@ def make_charts(
     overlay: bool = False,
     night: bool = False,
     colorblind: bool = False,
+    kpi_mode: str = "revenue",
 ) -> go.Figure:
-    c1, c2, c3 = CHART_PAL_CVD if colorblind else (BLUE, ORANGE, ACCENT2)
+    pal = CHART_PAL_CVD if colorblind else (BLUE, ORANGE, ACCENT2, PURPLE)
+    c_rev, c_sp, c_im, c_sub = pal[0], pal[1], pal[2], pal[3] if len(pal) > 3 else PURPLE
     grid = "rgba(148,163,184,0.2)" if night else "rgba(15,23,42,0.08)"
     paper = "rgba(15,23,42,0.3)" if night else "rgba(255,255,255,0)"
     plot_bg = "rgba(30,41,59,0.5)" if night else "rgba(248,250,252,0.9)"
     title_color = "#e2e8f0" if night else "#0f172a"
 
+    has_subs = "subscriptions" in df.columns
+
     r_col, sp_col, im_col = "revenue", "total_spend", "total_impressions"
     sub_r, sub_sp, sub_im = "Revenue", "Total spend", "Total impressions"
+    subs_col = "subscriptions" if has_subs else None
+    sub_subs = "Subscriptions"
     if channel:
         rc, sc, ic = f"{channel}_revenue", f"{channel}_spend", f"{channel}_impressions"
         if rc in df.columns and sc in df.columns and ic in df.columns:
@@ -61,45 +67,33 @@ def make_charts(
             sub_r = f"Revenue ({channel})"
             sub_sp = f"Spend ({channel})"
             sub_im = f"Impressions ({channel})"
+            subs_c = f"{channel}_subscriptions"
+            if has_subs and subs_c in df.columns:
+                subs_col = subs_c
+                sub_subs = f"Subscriptions ({channel})"
         else:
             channel = None
 
     if overlay:
-        r = _norm_series(df[r_col])
-        sp = _norm_series(df[sp_col])
-        im = _norm_series(df[im_col])
         fig = go.Figure()
-        nm_r = f"{sub_r} (normalized)"
-        nm_sp = f"{sub_sp} (normalized)"
-        nm_im = f"{sub_im} (normalized)"
-        fig.add_trace(
-            go.Scatter(
-                x=df["week"],
-                y=r,
-                name=nm_r,
-                mode="lines",
-                line=dict(color=c1, width=2),
+        series = [
+            (r_col, sub_r, c_rev),
+            (sp_col, sub_sp, c_sp),
+            (im_col, sub_im, c_im),
+        ]
+        if has_subs and subs_col:
+            series.append((subs_col, sub_subs, c_sub))
+        for col, label, color in series:
+            fig.add_trace(
+                go.Scatter(
+                    x=df["week"],
+                    y=_norm_series(df[col]),
+                    name=f"{label} (normalized)",
+                    mode="lines",
+                    line=dict(color=color, width=2),
+                )
             )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=df["week"],
-                y=sp,
-                name=nm_sp,
-                mode="lines",
-                line=dict(color=c2, width=2),
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=df["week"],
-                y=im,
-                name=nm_im,
-                mode="lines",
-                line=dict(color=c3, width=2),
-            )
-        )
-        overlay_title = "Series overlaid (min–max normalized per series)"
+        overlay_title = "Series overlaid (min-max normalized per series)"
         if channel:
             overlay_title = f"{overlay_title} · {channel}"
         fig.update_layout(
@@ -112,53 +106,48 @@ def make_charts(
             xaxis=dict(gridcolor=grid, title="Week", color=title_color),
             yaxis=dict(
                 gridcolor=grid,
-                title="Normalized 0–1",
+                title="Normalized 0-1",
                 color=title_color,
                 rangemode="tozero",
             ),
         )
         return fig
 
+    rows: List[tuple] = []
+    if kpi_mode == "subscriptions" and has_subs and subs_col:
+        rows.append((subs_col, sub_subs, c_sub))
+    elif kpi_mode == "both" and has_subs and subs_col:
+        rows.append((r_col, sub_r, c_rev))
+        rows.append((subs_col, sub_subs, c_sub))
+    else:
+        rows.append((r_col, sub_r, c_rev))
+    rows.append((sp_col, sub_sp, c_sp))
+    rows.append((im_col, sub_im, c_im))
+
+    n_rows = len(rows)
     fig = make_subplots(
-        rows=3,
+        rows=n_rows,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.08,
-        subplot_titles=(sub_r, sub_sp, sub_im),
+        subplot_titles=tuple(label for _, label, _ in rows),
     )
-    fig.add_trace(
-        go.Scatter(
-            x=df["week"], y=df[r_col], name=sub_r, mode="lines", line=dict(color=c1, width=2)
-        ),
-        row=1,
-        col=1,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["week"], y=df[sp_col], name=sub_sp, mode="lines", line=dict(color=c2, width=2)
-        ),
-        row=2,
-        col=1,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["week"],
-            y=df[im_col],
-            name=sub_im,
-            mode="lines",
-            line=dict(color=c3, width=2),
-        ),
-        row=3,
-        col=1,
-    )
+    for idx, (col, label, color) in enumerate(rows, start=1):
+        fig.add_trace(
+            go.Scatter(
+                x=df["week"], y=df[col], name=label, mode="lines", line=dict(color=color, width=2)
+            ),
+            row=idx,
+            col=1,
+        )
     fig.update_layout(
-        height=720,
+        height=240 * n_rows,
         showlegend=False,
         margin=dict(l=40, r=20, t=60, b=40),
         paper_bgcolor=paper,
         plot_bgcolor=plot_bg,
     )
-    fig.update_xaxes(title_text="Week", row=3, col=1, gridcolor=grid, color=title_color)
+    fig.update_xaxes(title_text="Week", row=n_rows, col=1, gridcolor=grid, color=title_color)
     fig.update_yaxes(gridcolor=grid, color=title_color, rangemode="tozero")
     for a in fig.layout.annotations:
         a.font = dict(color=title_color, size=12)
@@ -528,8 +517,10 @@ def render_results_panel(df: pd.DataFrame, *, compact_toolbar: bool) -> None:
         scope = str(st.session_state.results_chart_scope)
         ch_view: Optional[str] = None if scope == scope_options[0] else scope
         overlay = bool(st.session_state.overlay_results_charts)
+        kpi_mode = str(st.session_state.get("kpi_mode_select", "revenue"))
         st.plotly_chart(
-            make_charts(df, channel=ch_view, overlay=overlay, night=night, colorblind=colorblind),
+            make_charts(df, channel=ch_view, overlay=overlay, night=night, colorblind=colorblind,
+                        kpi_mode=kpi_mode),
             use_container_width=True,
         )
 

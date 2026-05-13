@@ -11,7 +11,7 @@ import numpy as np
 from scripts.spend_simulation.spend_generation import generate_spend
 from scripts.spend_simulation.correlation_analysis import analyze_spend_correlations, print_correlation_report
 from scripts.impressions_simulation.impressions_generation import generate_impressions
-from scripts.revenue_simulation.revenue_generation import generate_revenue
+from scripts.revenue_simulation.revenue_generation import generate_revenue, generate_subscriptions
 
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 
@@ -21,26 +21,18 @@ def construct_csv(
     spend_matrix: "np.ndarray",  # matrix: weeks x channels
     impressions_matrix: "np.ndarray",  # matrix: weeks x channels
     revenue_matrix: "np.ndarray",  # matrix: weeks x channels
+    subscriptions_matrix: "Optional[np.ndarray]" = None,  # matrix: weeks x channels
 ) -> pd.DataFrame:
-    """
-    Construct a DataFrame: each row corresponds to a week.
-    Columns:
-      - 'week': week number (starting from 1)
-      - 'revenue': total revenue for the week (sum across channels)
-      - For each channel: f"{channel}_impressions", f"{channel}_spend", f"{channel}_revenue"
-      - 'total_impressions', 'total_spend'
-    """
-    # Get channel names and week count
     channel_names = [ch.get_channel_name() for ch in config.get_channel_list()]
     num_weeks = spend_matrix.shape[0]
     num_channels = spend_matrix.shape[1]
 
-    # Prepare column names for each channel
     channel_impression_cols = [f"{name}_impressions" for name in channel_names]
     channel_spend_cols = [f"{name}_spend" for name in channel_names]
     channel_revenue_cols = [f"{name}_revenue" for name in channel_names]
+    has_subs = subscriptions_matrix is not None
+    channel_subs_cols = [f"{name}_subscriptions" for name in channel_names] if has_subs else []
 
-    # Build rows
     data = []
     for week in range(num_weeks):
         row: dict = {"week": week + 1}
@@ -52,22 +44,33 @@ def construct_csv(
             row[channel_impression_cols[ch]] = imp
             row[channel_spend_cols[ch]] = spd
             row[channel_revenue_cols[ch]] = float(revenue_matrix[week, ch])
+            if has_subs:
+                row[channel_subs_cols[ch]] = int(subscriptions_matrix[week, ch])
             total_impressions += imp
             total_spend += spd
         row["revenue"] = float(revenue_matrix[week].sum())
+        if has_subs:
+            row["subscriptions"] = int(subscriptions_matrix[week].sum())
         row["total_impressions"] = total_impressions
         row["total_spend"] = total_spend
         data.append(row)
 
-    # One block per channel: impressions, spend, revenue (easier to read in CSV / print(df.head()))
     columns = ["week", "revenue"]
+    if has_subs:
+        columns.append("subscriptions")
     for i in range(num_channels):
         columns += [
             channel_impression_cols[i],
             channel_spend_cols[i],
             channel_revenue_cols[i],
         ]
+        if has_subs:
+            columns.append(channel_subs_cols[i])
     columns += ["total_impressions", "total_spend"]
+    if has_subs:
+        columns.append("total_subscriptions")
+        for row in data:
+            row["total_subscriptions"] = row["subscriptions"]
     df = pd.DataFrame(data, columns=columns)
     return df
 
@@ -87,7 +90,13 @@ def run_simulation(
 
     impressions_matrix = generate_impressions(config, spend_matrix)
     revenue_by_channel = generate_revenue(config, impressions_matrix)
-    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel)
+
+    subscriptions_by_channel = None
+    if config.get_kpi_mode() in ("subscriptions", "both"):
+        subscriptions_by_channel = generate_subscriptions(config, impressions_matrix)
+
+    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel,
+                       subscriptions_matrix=subscriptions_by_channel)
     return df, corr_results
 
 

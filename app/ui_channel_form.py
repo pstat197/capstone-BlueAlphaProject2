@@ -21,6 +21,7 @@ from app.ui_help_markdown import (
     ADSTOCK_TYPES_GUIDE_MD,
     NOISE_PARAMETERS_GUIDE_MD,
     SATURATION_TYPES_GUIDE_MD,
+    SUBSCRIPTION_PARAMETERS_GUIDE_MD,
 )
 from app.ui_helpers import get_at, path_string_to_parts
 
@@ -94,6 +95,7 @@ def _group_slider_items(items: List[Dict[str, Any]]) -> Dict[str, List[Dict[str,
         "noise": [],
         "saturation": [],
         "adstock": [],
+        "subscriptions": [],
     }
     for it in items:
         g = str(it.get("group", "core"))
@@ -367,4 +369,20 @@ def render_channel_widgets(schema: Dict[str, Any], data: Dict[str, Any], n: int)
             _render_pc_fields_flex(i, ads, data)
             if eff_ad == "weighted":
                 _render_adstock_weights_field(i, data)
+
+            kpi_mode = st.session_state.get("kpi_mode_select", "revenue")
+            if kpi_mode in ("subscriptions", "both"):
+                st.markdown("##### Subscriptions")
+                st.caption(
+                    "Conversion rate scales effective media into subscriptions. "
+                    "Baseline subscriptions are added each week regardless of media. "
+                    "Output is rounded to non-negative integers."
+                )
+                with st.expander(
+                    "Subscription parameters — reference (click to open)",
+                    expanded=False,
+                ):
+                    st.markdown(SUBSCRIPTION_PARAMETERS_GUIDE_MD)
+                subs_fields = grouped.get("subscriptions", [])
+                _render_pc_fields_flex(i, subs_fields, data)
 

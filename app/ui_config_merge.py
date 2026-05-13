@@ -29,6 +29,7 @@ def collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Dic
     sat_opts = list(sat_select.get("options", [])) if sat_select else []
     ad_opts = list(ad_select.get("options", [])) if ad_select else []
     base_cfg = st.session_state.sim_config
+    kpi_mode = st.session_state.get("kpi_mode_select", "revenue")
 
     for i in range(n_channels):
         eff_sat = effective_curve_type(i, "channel.saturation_config.type", base_cfg, sat_opts)
@@ -39,12 +40,15 @@ def collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Dic
                 continue
             if item.get("group") == "adstock" and not adstock_slider_visible(item, eff_ad):
                 continue
+            if item.get("group") == "subscriptions" and kpi_mode == "revenue":
+                continue
             path_suffix = item["path"]
             list_index = item.get("list_index")
             key = pc_field_key(i, path_suffix, list_index)
             raw = st.session_state.get(key, "")
             is_lag = path_suffix.endswith("lag") or "adstock_decay_config.lag" in path_suffix
-            val, ok = parse_optional_num(raw, as_int=is_lag)
+            is_int = is_lag or path_suffix.endswith("baseline_subscriptions")
+            val, ok = parse_optional_num(raw, as_int=is_int)
             if not ok:
                 warnings.append(f"{item.get('label', path_suffix)}: invalid number, skipped.")
                 continue
@@ -57,7 +61,7 @@ def collect_overrides(schema: Dict[str, Any], n_channels: int) -> Tuple[List[Dic
                 overrides.append(
                     {"path": full_path, "value": float(val), "list_index": list_index}
                 )
-            elif is_lag:
+            elif is_int:
                 overrides.append({"path": full_path, "value": int(val)})
             else:
                 overrides.append({"path": full_path, "value": float(val)})
@@ -116,6 +120,7 @@ def merge_ui_into_config(schema: Dict[str, Any], *, silent: bool = False) -> Tup
     merged["week_range"] = int(st.session_state.get("week_range_num", 52))
     merged["run_identifier"] = str(st.session_state.get("run_identifier_input", "run")).strip() or "run"
     merged["seed"] = int(st.session_state.get("seed_input", 0))
+    merged["kpi_mode"] = str(st.session_state.get("kpi_mode_select", "revenue"))
 
     n_channels = len(merged.get("channel_list") or [])
     overrides, warns = collect_overrides(schema, n_channels)

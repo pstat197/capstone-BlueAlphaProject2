@@ -114,6 +114,32 @@ def _channel_revenue(
     return revenue
 
 
+def _channel_subscriptions(
+    channel: Channel,
+    impressions: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    saturated = _saturation_fn(impressions, channel.saturation_config)
+    transformed_imp = _adstock_decay(saturated, channel.adstock_decay_config)
+
+    subs = transformed_imp * float(channel.conversion_rate)
+    subs += float(channel.baseline_subscriptions)
+
+    noise_cfg = channel.noise_variance or {}
+    var_sub = float(noise_cfg.get("subscription", 0.0))
+    if var_sub < 0:
+        raise ValueError(
+            f"Subscription noise variance for channel {channel.channel_name} must be non-negative, got {var_sub}."
+        )
+    if var_sub > 0:
+        sigma = np.sqrt(var_sub) * np.abs(subs)
+        noise = rng.normal(loc=0.0, scale=sigma)
+        subs = subs + noise
+
+    subs = np.clip(subs, a_min=0.0, a_max=None)
+    return np.rint(subs).astype(int)
+
+
 def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray) -> np.ndarray:
     """
     Map impressions to weekly revenue per channel and total.
@@ -149,5 +175,29 @@ def generate_revenue(config: InputConfigurations, impressions_matrix: np.ndarray
     for c, channel in enumerate(channels):
         channel_impressions = impressions_matrix[:, c].astype(float)
         out[:, c] = _channel_revenue(channel, channel_impressions, rng)
+
+    return out
+
+
+def generate_subscriptions(config: InputConfigurations, impressions_matrix: np.ndarray) -> np.ndarray:
+    num_weeks, num_channels = impressions_matrix.shape
+    expected_weeks = config.get_week_range()
+    channels = config.get_channel_list()
+
+    if num_weeks != expected_weeks:
+        raise ValueError(
+            f"impressions_matrix has {num_weeks} weeks, config expects {expected_weeks}."
+        )
+    if num_channels != len(channels):
+        raise ValueError(
+            f"impressions_matrix has {num_channels} channels, config has {len(channels)}."
+        )
+
+    rng = config.get_rng()
+    out = np.zeros((num_weeks, num_channels), dtype=int)
+
+    for c, channel in enumerate(channels):
+        channel_impressions = impressions_matrix[:, c].astype(float)
+        out[:, c] = _channel_subscriptions(channel, channel_impressions, rng)
 
     return out

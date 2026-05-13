@@ -24,6 +24,8 @@ NO_NOISE_KEYS = {
     "noise_variance",
     "channel_name",
     "cpm_sampling_range",  # used only to sample cpm when cpm is missing
+    "conversion_rate",
+    "baseline_subscriptions",
 }
 
 

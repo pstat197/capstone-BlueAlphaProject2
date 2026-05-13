@@ -7,7 +7,7 @@ import { AdvancedSettingsCard } from "@/components/simulator/advanced-settings-c
 import { ChannelDetail } from "@/components/simulator/channel-detail";
 import { ChannelList, type SimulatorPane } from "@/components/simulator/channel-list";
 import { RunSettingsCard } from "@/components/simulator/run-settings-card";
-import { ScenariosCard } from "@/components/simulator/scenarios-card";
+import { ScenariosCard, type ScenariosTab } from "@/components/simulator/scenarios-card";
 import { ValidationBanner } from "@/components/simulator/validation-banner";
 import { YamlEditorCard } from "@/components/simulator/yaml-editor-card";
 import { StickyActionBar } from "@/components/layout/sticky-action-bar";
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { formatHash } from "@/lib/config-utils";
+import { useConfigPathNavigator } from "@/lib/use-config-path-navigator";
 import { hasBlockingErrors, useConfigValidation } from "@/lib/use-config-validation";
 import { usePrerunCache } from "@/lib/use-prerun-cache";
 import { useConfig } from "@/state/config-store";
@@ -25,6 +26,8 @@ export default function SimulatorRoute() {
   const queryClient = useQueryClient();
   const { config, setConfig, setLastHash, lastHash } = useConfig();
   const [selected, setSelected] = useState<SimulatorPane>({ kind: "channel", index: 0 });
+  const [scenariosTab, setScenariosTab] = useState<ScenariosTab>("seasonality");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const seededRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,6 +66,11 @@ export default function SimulatorRoute() {
   const prerun = usePrerunCache(config);
   const validation = useConfigValidation(config);
   const blocked = hasBlockingErrors(validation.data?.issues);
+  const navigateToPath = useConfigPathNavigator({
+    setSelected,
+    setScenariosTab,
+    setAdvancedOpen,
+  });
 
   const runMutation = useMutation({
     mutationFn: () => api.createRun(config),
@@ -103,11 +111,23 @@ export default function SimulatorRoute() {
         )}
       </header>
 
-      <ValidationBanner issues={validation.data?.issues} loading={validation.loading} />
+      <ValidationBanner
+        issues={validation.data?.issues}
+        loading={validation.loading}
+        onNavigate={navigateToPath}
+      />
 
-      <RunSettingsCard />
-      <AdvancedSettingsCard />
-      <ScenariosCard />
+      <RunSettingsCard issues={validation.data?.issues} />
+      <AdvancedSettingsCard
+        issues={validation.data?.issues}
+        open={advancedOpen}
+        onOpenChange={setAdvancedOpen}
+      />
+      <ScenariosCard
+        issues={validation.data?.issues}
+        tab={scenariosTab}
+        onTabChange={setScenariosTab}
+      />
 
       <div className="grid flex-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div className="lg:max-h-[calc(100vh-260px)]">

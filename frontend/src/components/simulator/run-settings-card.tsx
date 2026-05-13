@@ -1,10 +1,18 @@
 import { Calendar, FileText, Sparkles } from "lucide-react";
+import { useMemo } from "react";
 
+import { IssueCountBadge } from "@/components/simulator/issue-count-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tooltip } from "@/components/ui/tooltip";
+import { configPathAttr, countIssues } from "@/lib/use-config-validation";
 import { useConfig } from "@/state/config-store";
+import type { ConfigIssue } from "@/types/api";
+
+interface RunSettingsCardProps {
+  issues?: ConfigIssue[];
+}
 
 function NumField({
   id,
@@ -16,6 +24,7 @@ function NumField({
   helper,
   icon,
   asInt = false,
+  pathAttr,
 }: {
   id: string;
   label: string;
@@ -26,6 +35,7 @@ function NumField({
   helper?: string;
   icon?: React.ReactNode;
   asInt?: boolean;
+  pathAttr?: { "data-config-path": string };
 }) {
   return (
     <div className="space-y-1.5">
@@ -58,19 +68,32 @@ function NumField({
             onChange(Number.isFinite(num) ? num : undefined);
           }}
           className={icon ? "pl-9" : undefined}
+          {...(pathAttr ?? {})}
         />
       </div>
     </div>
   );
 }
 
-export function RunSettingsCard() {
+export function RunSettingsCard({ issues }: RunSettingsCardProps) {
   const { config, patchConfig } = useConfig();
+
+  const generalIssues = useMemo(
+    () => countIssues(issues, (issue) => issue.section === "general"),
+    [issues],
+  );
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Simulation settings</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          Simulation settings
+          <IssueCountBadge
+            errors={generalIssues.errors}
+            warnings={generalIssues.warnings}
+            label="general settings"
+          />
+        </CardTitle>
         <CardDescription>
           How long to run, what to call it, and how to fix randomness so runs reproduce.
         </CardDescription>
@@ -88,6 +111,7 @@ export function RunSettingsCard() {
           asInt
           helper="Simulation length in weeks. Larger = more series points."
           icon={<Calendar className="h-3.5 w-3.5" />}
+          pathAttr={configPathAttr(["week_range"])}
         />
         <div className="space-y-1.5">
           <Label htmlFor="run_identifier">Run name</Label>

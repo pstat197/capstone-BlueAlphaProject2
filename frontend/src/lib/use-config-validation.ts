@@ -87,6 +87,35 @@ export function hasBlockingErrors(issues: ConfigIssue[] | undefined): boolean {
   return (issues ?? []).some((i) => i.severity === "error");
 }
 
+/** Count issues matching an arbitrary predicate, split by severity. */
+export function countIssues(
+  issues: ConfigIssue[] | undefined,
+  predicate: (issue: ConfigIssue) => boolean,
+): { errors: number; warnings: number } {
+  let errors = 0;
+  let warnings = 0;
+  for (const issue of issues ?? []) {
+    if (!predicate(issue)) continue;
+    if (issue.severity === "error") errors += 1;
+    else if (issue.severity === "warning") warnings += 1;
+  }
+  return { errors, warnings };
+}
+
+/** Convenience: count issues whose JSON-Pointer path starts with the given prefix. */
+export function countIssuesAtPath(
+  issues: ConfigIssue[] | undefined,
+  prefix: ReadonlyArray<string | number>,
+): { errors: number; warnings: number } {
+  return countIssues(issues, (issue) => {
+    if (issue.path.length < prefix.length) return false;
+    for (let i = 0; i < prefix.length; i += 1) {
+      if (issue.path[i] !== prefix[i]) return false;
+    }
+    return true;
+  });
+}
+
 /** Stringify path like ["channel_list", 0, "channel", "true_roi"] →
  *  `channel_list[0].channel.true_roi`. */
 export function formatPath(path: Array<string | number>): string {
@@ -98,4 +127,15 @@ export function formatPath(path: Array<string | number>): string {
     else out += `.${token}`;
   }
   return out;
+}
+
+/** Spread onto a form control to make it discoverable by the issue navigator.
+ *
+ * @example
+ *   <Input id="week_range" {...configPathAttr(["week_range"])} ... />
+ */
+export function configPathAttr(
+  path: ReadonlyArray<string | number>,
+): { "data-config-path": string } {
+  return { "data-config-path": formatPath([...path]) };
 }

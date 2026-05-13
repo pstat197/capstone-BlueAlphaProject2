@@ -9,6 +9,9 @@ interface ValidationBannerProps {
   loading?: boolean;
   /** When true, the banner is rendered in a compact "clean" success state. */
   showClean?: boolean;
+  /** Click handler for "jump to the offending field". When omitted, the
+   *  issue path renders as static text. */
+  onNavigate?: (path: Array<string | number>) => void;
 }
 
 const sectionLabels: Record<string, string> = {
@@ -29,7 +32,12 @@ const sectionLabels: Record<string, string> = {
  * - Warnings (e.g. Fourier K above Nyquist) are rendered amber but do not
  *   block the Run button — see `hasBlockingErrors`.
  */
-export function ValidationBanner({ issues, loading, showClean }: ValidationBannerProps) {
+export function ValidationBanner({
+  issues,
+  loading,
+  showClean,
+  onNavigate,
+}: ValidationBannerProps) {
   const errors = (issues ?? []).filter((i) => i.severity === "error");
   const warnings = (issues ?? []).filter((i) => i.severity === "warning");
 
@@ -73,30 +81,61 @@ export function ValidationBanner({ issues, loading, showClean }: ValidationBanne
           </div>
           <ul className="space-y-1 text-xs leading-relaxed">
             {errors.map((issue, idx) => (
-              <li key={`err_${idx}`} className="flex flex-wrap gap-2">
-                <Badge variant="outline" className="bg-white text-[10px]">
-                  {sectionLabels[issue.section ?? "general"] ?? "General"}
-                </Badge>
-                <span className="font-mono text-[11px] text-rose-700/90">
-                  {formatPath(issue.path)}
-                </span>
-                <span>{issue.message}</span>
-              </li>
+              <IssueRow
+                key={`err_${idx}`}
+                issue={issue}
+                tone="error"
+                onNavigate={onNavigate}
+              />
             ))}
             {warnings.map((issue, idx) => (
-              <li key={`warn_${idx}`} className="flex flex-wrap gap-2">
-                <Badge variant="outline" className="bg-white text-[10px]">
-                  {sectionLabels[issue.section ?? "general"] ?? "General"}
-                </Badge>
-                <span className="font-mono text-[11px] text-amber-700/90">
-                  {formatPath(issue.path)}
-                </span>
-                <span>{issue.message}</span>
-              </li>
+              <IssueRow
+                key={`warn_${idx}`}
+                issue={issue}
+                tone="warn"
+                onNavigate={onNavigate}
+              />
             ))}
           </ul>
         </div>
       </div>
     </div>
+  );
+}
+
+function IssueRow({
+  issue,
+  tone,
+  onNavigate,
+}: {
+  issue: ConfigIssue;
+  tone: "error" | "warn";
+  onNavigate?: (path: Array<string | number>) => void;
+}) {
+  const sectionLabel = sectionLabels[issue.section ?? "general"] ?? "General";
+  const pathText = formatPath(issue.path);
+  const pathColor =
+    tone === "error" ? "text-rose-700/90" : "text-amber-700/90";
+  const navigable = Boolean(onNavigate) && issue.path.length > 0;
+
+  return (
+    <li className="flex flex-wrap items-baseline gap-2">
+      <Badge variant="outline" className="bg-white text-[10px]">
+        {sectionLabel}
+      </Badge>
+      {navigable ? (
+        <button
+          type="button"
+          onClick={() => onNavigate?.(issue.path)}
+          className={`font-mono text-[11px] ${pathColor} underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-current rounded`}
+          title="Jump to this field"
+        >
+          {pathText}
+        </button>
+      ) : (
+        <span className={`font-mono text-[11px] ${pathColor}`}>{pathText}</span>
+      )}
+      <span>{issue.message}</span>
+    </li>
   );
 }

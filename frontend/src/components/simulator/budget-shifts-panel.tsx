@@ -17,6 +17,7 @@ import {
   removeBudgetShiftAt,
   updateBudgetShiftAt,
 } from "@/lib/config-utils";
+import { configPathAttr } from "@/lib/use-config-validation";
 import { useConfig } from "@/state/config-store";
 import type { BudgetShift, BudgetShiftsAutoMode, SimConfig } from "@/types/api";
 
@@ -60,6 +61,7 @@ function NumCell({
   min = 0,
   asInt = false,
   placeholder,
+  pathAttr,
 }: {
   value: number | undefined;
   onChange: (v: number | undefined) => void;
@@ -67,6 +69,7 @@ function NumCell({
   min?: number;
   asInt?: boolean;
   placeholder?: string;
+  pathAttr?: { "data-config-path": string };
 }) {
   return (
     <Input
@@ -82,18 +85,20 @@ function NumCell({
         onChange(Number.isFinite(n) ? n : undefined);
       }}
       className="w-24"
+      {...(pathAttr ?? {})}
     />
   );
 }
 
 interface RowProps {
   rule: BudgetShift;
+  ruleIndex: number;
   channelOptions: string[];
   onChange: (patch: Partial<BudgetShift>) => void;
   onRemove: () => void;
 }
 
-function ShiftRow({ rule, channelOptions, onChange, onRemove }: RowProps) {
+function ShiftRow({ rule, ruleIndex, channelOptions, onChange, onRemove }: RowProps) {
   const isReallocate = rule.type === "reallocate";
   const isScaleChannel = rule.type === "scale_channel";
 
@@ -101,7 +106,10 @@ function ShiftRow({ rule, channelOptions, onChange, onRemove }: RowProps) {
     <li className="rounded-lg border border-brand-border bg-white px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
         <Select value={rule.type} onValueChange={(v) => onChange({ type: v as BudgetShift["type"] })}>
-          <SelectTrigger className="w-44">
+          <SelectTrigger
+            className="w-44"
+            {...configPathAttr(["budget_shifts", ruleIndex, "type"])}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -120,6 +128,7 @@ function ShiftRow({ rule, channelOptions, onChange, onRemove }: RowProps) {
           asInt
           min={1}
           placeholder="start"
+          pathAttr={configPathAttr(["budget_shifts", ruleIndex, "start_week"])}
         />
         <span className="text-xs text-slate-400">–</span>
         <NumCell
@@ -128,6 +137,7 @@ function ShiftRow({ rule, channelOptions, onChange, onRemove }: RowProps) {
           asInt
           min={1}
           placeholder="end"
+          pathAttr={configPathAttr(["budget_shifts", ruleIndex, "end_week"])}
         />
 
         {!isReallocate && (
@@ -154,6 +164,7 @@ function ShiftRow({ rule, channelOptions, onChange, onRemove }: RowProps) {
               value={(rule as { factor?: number }).factor}
               onChange={(v) => onChange({ factor: v } as Partial<BudgetShift>)}
               step={0.05}
+              pathAttr={configPathAttr(["budget_shifts", ruleIndex, "factor"])}
             />
           </>
         )}
@@ -198,6 +209,7 @@ function ShiftRow({ rule, channelOptions, onChange, onRemove }: RowProps) {
               onChange={(v) => onChange({ fraction: v } as Partial<BudgetShift>)}
               step={0.05}
               min={0}
+              pathAttr={configPathAttr(["budget_shifts", ruleIndex, "fraction"])}
             />
           </>
         )}
@@ -279,6 +291,7 @@ export function BudgetShiftsPanel() {
             <ShiftRow
               key={i}
               rule={rule}
+              ruleIndex={i}
               channelOptions={channelOptions}
               onChange={(patch) => handleUpdate(i, patch)}
               onRemove={() => handleRemove(i)}

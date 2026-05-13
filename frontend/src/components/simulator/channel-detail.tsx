@@ -16,6 +16,7 @@ import {
   suggestHillK,
   updateChannelAt,
 } from "@/lib/config-utils";
+import { configPathAttr } from "@/lib/use-config-validation";
 import { useConfig } from "@/state/config-store";
 import type { ChannelDef, SimConfig } from "@/types/api";
 
@@ -66,6 +67,7 @@ function NumInput({
   max,
   asInt = false,
   className,
+  pathAttr,
 }: {
   id?: string;
   value: number | undefined;
@@ -75,6 +77,7 @@ function NumInput({
   max?: number;
   asInt?: boolean;
   className?: string;
+  pathAttr?: { "data-config-path": string };
 }) {
   return (
     <Input
@@ -91,6 +94,7 @@ function NumInput({
         onChange(Number.isFinite(n) ? n : undefined);
       }}
       className={className}
+      {...(pathAttr ?? {})}
     />
   );
 }
@@ -161,6 +165,7 @@ export function ChannelDetail({ index, onIndexChange }: ChannelDetailProps) {
               id="ch_name"
               value={channel.channel_name}
               onChange={(e) => patch({ channel_name: e.target.value })}
+              {...configPathAttr(["channel_list", index, "channel", "channel_name"])}
             />
           </FieldRow>
 
@@ -173,6 +178,7 @@ export function ChannelDetail({ index, onIndexChange }: ChannelDetailProps) {
                 onChange={(v) => patch({ true_roi: v })}
                 step={0.1}
                 min={0}
+                pathAttr={configPathAttr(["channel_list", index, "channel", "true_roi"])}
               />
             </FieldRow>
             <FieldRow hint="Per-channel baseline (used when this channel feeds the outcome path).">
@@ -193,11 +199,15 @@ export function ChannelDetail({ index, onIndexChange }: ChannelDetailProps) {
                 onChange={(v) => patch({ cpm: v })}
                 step={0.5}
                 min={0}
+                pathAttr={configPathAttr(["channel_list", index, "channel", "cpm"])}
               />
             </FieldRow>
             <FieldRow hint="Lower / upper bounds of weekly spend sampling (gamma distribution).">
               <Label>Spend range</Label>
-              <div className="flex items-center gap-2">
+              <div
+                className="flex items-center gap-2"
+                {...configPathAttr(["channel_list", index, "channel", "spend_range"])}
+              >
                 <NumInput
                   value={typeof spend[0] === "number" ? spend[0] : undefined}
                   onChange={(v) => patch({ spend_range: [v ?? 0, spend[1] ?? 0] })}

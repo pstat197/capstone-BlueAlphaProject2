@@ -17,6 +17,7 @@ import {
   removeCorrelationAt,
   updateCorrelationAt,
 } from "@/lib/config-utils";
+import { configPathAttr } from "@/lib/use-config-validation";
 import { useConfig } from "@/state/config-store";
 import type { CorrelationsAutoMode, SimConfig } from "@/types/api";
 
@@ -41,9 +42,11 @@ function channelNames(config: SimConfig): string[] {
 function RhoInput({
   value,
   onChange,
+  pathAttr,
 }: {
   value: number;
   onChange: (v: number) => void;
+  pathAttr?: { "data-config-path": string };
 }) {
   return (
     <Input
@@ -59,6 +62,7 @@ function RhoInput({
         if (Number.isFinite(n)) onChange(Math.max(-1, Math.min(1, n)));
       }}
       className="w-24"
+      {...(pathAttr ?? {})}
     />
   );
 }
@@ -155,7 +159,10 @@ export function CorrelationsPanel() {
                 value={pair.channels[0] ?? ""}
                 onValueChange={(v) => handleUpdatePair(i, 0, v)}
               >
-                <SelectTrigger className="w-36">
+                <SelectTrigger
+                  className="w-36"
+                  {...configPathAttr(["correlations", i, "channels"])}
+                >
                   <SelectValue placeholder="channel A" />
                 </SelectTrigger>
                 <SelectContent>
@@ -183,7 +190,11 @@ export function CorrelationsPanel() {
                 </SelectContent>
               </Select>
               <span className="ml-3 text-[11px] uppercase tracking-wide text-slate-500">ρ</span>
-              <RhoInput value={pair.rho} onChange={(v) => handleUpdateRho(i, v)} />
+              <RhoInput
+                value={pair.rho}
+                onChange={(v) => handleUpdateRho(i, v)}
+                pathAttr={configPathAttr(["correlations", i, "rho"])}
+              />
               <div className="flex-1" />
               <Tooltip content="Remove this pair">
                 <button

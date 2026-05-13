@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import { IssueCountBadge } from "@/components/simulator/issue-count-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,17 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { configPathAttr, countIssues } from "@/lib/use-config-validation";
 import { useConfig } from "@/state/config-store";
-import type { GlobalKillSwitch, OutcomeRevenue } from "@/types/api";
+import type { ConfigIssue, GlobalKillSwitch, OutcomeRevenue } from "@/types/api";
+
+interface AdvancedSettingsCardProps {
+  issues?: ConfigIssue[];
+  /** Optional controlled open state. When provided, the card defers to the
+   *  parent for visibility — used so the validation navigator can expand it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
 
 function FieldHelp({ text }: { text: string }) {
   return (
@@ -36,6 +46,7 @@ function NumInput({
   max,
   asInt = false,
   placeholder,
+  pathAttr,
 }: {
   id?: string;
   value: number | undefined;
@@ -45,6 +56,7 @@ function NumInput({
   max?: number;
   asInt?: boolean;
   placeholder?: string;
+  pathAttr?: { "data-config-path": string };
 }) {
   return (
     <Input
@@ -61,6 +73,7 @@ function NumInput({
         const n = asInt ? parseInt(raw, 10) : parseFloat(raw);
         onChange(Number.isFinite(n) ? n : undefined);
       }}
+      {...(pathAttr ?? {})}
     />
   );
 }
@@ -72,9 +85,19 @@ function NumInput({
  * Hidden behind an "Expand" toggle by default so the simulator page stays
  * scannable — most users tweak channels, not these.
  */
-export function AdvancedSettingsCard() {
+export function AdvancedSettingsCard({
+  issues,
+  open: controlledOpen,
+  onOpenChange,
+}: AdvancedSettingsCardProps) {
   const { config, patchConfig } = useConfig();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    const resolved = typeof next === "function" ? next(open) : next;
+    setUncontrolledOpen(resolved);
+    onOpenChange?.(resolved);
+  };
 
   const outcome: OutcomeRevenue = (config.outcome_revenue ?? {}) as OutcomeRevenue;
   const outcomeNoise = outcome.noise_variance ?? {};
@@ -110,12 +133,33 @@ export function AdvancedSettingsCard() {
     }
   };
 
+  /** Outcome-section issues drive a badge on this collapsed card so users see
+   *  problems without having to expand it first. Seasonality issues are
+   *  excluded — they live under the Scenarios card. */
+  const outcomeIssues = useMemo(
+    () =>
+      countIssues(
+        issues,
+        (issue) =>
+          issue.section === "outcome" &&
+          !issue.path.some((p) => p === "seasonality_config"),
+      ),
+    [issues],
+  );
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle>Outcome path &amp; advanced</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              Outcome path &amp; advanced
+              <IssueCountBadge
+                errors={outcomeIssues.errors}
+                warnings={outcomeIssues.warnings}
+                label="outcome"
+              />
+            </CardTitle>
             <CardDescription>
               Outcome-level baseline / trend / noise, pipeline transform order, and global
               kill-switches.
@@ -154,6 +198,7 @@ export function AdvancedSettingsCard() {
                   onChange={(v) => patchOutcome({ baseline_revenue: v })}
                   step={100}
                   min={0}
+                  pathAttr={configPathAttr(["outcome_revenue", "baseline_revenue"])}
                 />
               </div>
               <div className="space-y-1.5">
@@ -183,6 +228,11 @@ export function AdvancedSettingsCard() {
                   }
                   step={1000}
                   min={0}
+                  pathAttr={configPathAttr([
+                    "outcome_revenue",
+                    "noise_variance",
+                    "revenue",
+                  ])}
                 />
               </div>
             </div>
@@ -208,7 +258,7 @@ export function AdvancedSettingsCard() {
                     })
                   }
                 >
-                  <SelectTrigger id="mto">
+                  <SelectTrigger id="mto" {...configPathAttr(["media_transform_order"])}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -235,6 +285,7 @@ export function AdvancedSettingsCard() {
                   step={1}
                   asInt
                   placeholder="leave blank to use channel_list as-is"
+                  pathAttr={configPathAttr(["number_of_channels"])}
                 />
               </div>
             </div>

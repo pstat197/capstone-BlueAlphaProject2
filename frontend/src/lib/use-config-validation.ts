@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
+import { useCanonicalHash } from "@/lib/use-canonical-hash";
 import type { ConfigIssue, SimConfig, ValidateConfigResponse } from "@/types/api";
 
 const DEBOUNCE_MS = 350;
@@ -12,40 +12,37 @@ interface ValidationState {
   error: string | null;
 }
 
-/** Debounces the serialized config so that identical shapes only key one
- *  query in the React Query cache, even when the user is mid-typing. */
-function useDebouncedSerialized(config: SimConfig, ms: number): string {
-  const serialized = useMemo(() => JSON.stringify(config), [config]);
-  const [debounced, setDebounced] = useState(serialized);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(serialized), ms);
-    return () => clearTimeout(timer);
-  }, [serialized, ms]);
-  return debounced;
-}
-
 /**
  * Validate the current config via the FastAPI server.
  *
- * Backed by React Query so the result survives route changes (e.g.
- * Simulator → Results → back) without re-hitting the server, and so
- * identical configs visited again are served from cache. The last good
- * result is kept visible while the next request is in flight via
- * `placeholderData: keepPreviousData`, which prevents the banner from
- * flashing empty between keystrokes.
+ * Keyed off the **canonical config hash** rather than `JSON.stringify(config)`
+ * so that React Query's cache stays small even for big configs, and so we
+ * share a single hash request with {@link usePrerunCache}. Two structurally
+ * identical configs (e.g. visited via undo/redo) hash the same, hit the
+ * validation cache, and never trigger a network round-trip.
+ *
+ * The last good result is kept visible via `placeholderData: keepPreviousData`
+ * so the banner doesn't flash empty between keystrokes.
  */
 export function useConfigValidation(config: SimConfig): ValidationState {
-  const debounced = useDebouncedSerialized(config, DEBOUNCE_MS);
+  const { hash, debouncedConfig, isFetching: hashing } = useCanonicalHash(
+    config,
+    DEBOUNCE_MS,
+  );
+
   const query = useQuery<ValidateConfigResponse, Error>({
-    queryKey: ["config-validate", debounced],
-    queryFn: () => api.validateConfig(JSON.parse(debounced) as SimConfig),
+    queryKey: ["config-validate", hash],
+    // queryFn captures the same debounced snapshot the hash was computed
+    // from, so the validation result and the cache key can never drift.
+    queryFn: () => api.validateConfig(debouncedConfig),
+    enabled: Boolean(hash),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   return {
-    loading: query.isFetching,
+    loading: hashing || query.isFetching,
     data: query.data ?? null,
     error: query.error?.message ?? null,
   };

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { useCanonicalHash } from "@/lib/use-canonical-hash";
 import type { SimConfig } from "@/types/api";
 
 /**
@@ -27,34 +27,12 @@ export interface PrerunCache {
  * through TanStack Query so React's identity churn doesn't refetch when the
  * actual content hasn't changed.
  *
- * The debounce is deliberately short (350ms) — long enough that typing into a
- * number input doesn't fire a hash request per keystroke, short enough that
- * the badge feels live.
+ * The hash step is factored out into {@link useCanonicalHash} so the same
+ * request is shared with `useConfigValidation` (one network call, two
+ * consumers).
  */
 export function usePrerunCache(config: SimConfig, debounceMs = 350): PrerunCache {
-  /*
-   * Use the JSON representation of the config as the query key. The config
-   * object identity changes on every reducer pass even when nothing material
-   * changed, which would otherwise refetch constantly.
-   */
-  const configKey = JSON.stringify(config);
-  const [debouncedKey, setDebouncedKey] = useState(configKey);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedKey(configKey), debounceMs);
-    return () => clearTimeout(t);
-  }, [configKey, debounceMs]);
-
-  const ready = (config.channel_list ?? []).length > 0;
-
-  const hashQuery = useQuery({
-    queryKey: ["config-hash", debouncedKey],
-    queryFn: () => api.hashConfig(config),
-    enabled: ready,
-    staleTime: 60_000,
-  });
-
-  const hash = hashQuery.data?.config_hash ?? null;
+  const { hash, isFetching: hashFetching } = useCanonicalHash(config, debounceMs);
 
   const cacheQuery = useQuery({
     queryKey: ["cache-status", hash],
@@ -67,6 +45,6 @@ export function usePrerunCache(config: SimConfig, debounceMs = 350): PrerunCache
     hash,
     cached: cacheQuery.data?.cached ?? false,
     runId: cacheQuery.data?.run_identifier ?? null,
-    loading: hashQuery.isFetching || cacheQuery.isFetching,
+    loading: hashFetching || cacheQuery.isFetching,
   };
 }

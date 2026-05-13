@@ -19,4 +19,10 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // CodeMirror's YAML grammar + state machinery ships as a single
+    // ~525KB chunk. We lazy-load it only when the YAML pane is opened,
+    // so a higher threshold reflects the real shipped initial JS budget.
+    chunkSizeWarningLimit: 700,
+  },
 });

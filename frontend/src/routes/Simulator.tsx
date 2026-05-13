@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Loader2, Play, RotateCcw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { AdvancedSettingsCard } from "@/components/simulator/advanced-settings-card";
@@ -9,10 +9,10 @@ import { ChannelList, type SimulatorPane } from "@/components/simulator/channel-
 import { RunSettingsCard } from "@/components/simulator/run-settings-card";
 import { ScenariosCard, type ScenariosTab } from "@/components/simulator/scenarios-card";
 import { ValidationBanner } from "@/components/simulator/validation-banner";
-import { YamlEditorCard } from "@/components/simulator/yaml-editor-card";
 import { StickyActionBar } from "@/components/layout/sticky-action-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { formatHash } from "@/lib/config-utils";
 import { useConfigPathNavigator } from "@/lib/use-config-path-navigator";
@@ -20,6 +20,14 @@ import { hasBlockingErrors, useConfigValidation } from "@/lib/use-config-validat
 import { usePrerunCache } from "@/lib/use-prerun-cache";
 import { useConfig } from "@/state/config-store";
 import type { RunResponse } from "@/types/api";
+
+/* CodeMirror is heavy (~80KB gzipped); defer it until the user actually
+ * opens the YAML pane. */
+const YamlEditorCard = lazy(() =>
+  import("@/components/simulator/yaml-editor-card").then((m) => ({
+    default: m.YamlEditorCard,
+  })),
+);
 
 export default function SimulatorRoute() {
   const navigate = useNavigate();
@@ -144,7 +152,9 @@ export default function SimulatorRoute() {
               onIndexChange={(next) => setSelected({ kind: "channel", index: next })}
             />
           ) : (
-            <YamlEditorCard />
+            <Suspense fallback={<Skeleton className="h-[420px] w-full" />}>
+              <YamlEditorCard />
+            </Suspense>
           )}
         </div>
       </div>

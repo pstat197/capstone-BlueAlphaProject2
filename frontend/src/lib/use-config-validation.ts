@@ -1,3 +1,4 @@
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
@@ -11,50 +12,43 @@ interface ValidationState {
   error: string | null;
 }
 
+/** Debounces the serialized config so that identical shapes only key one
+ *  query in the React Query cache, even when the user is mid-typing. */
+function useDebouncedSerialized(config: SimConfig, ms: number): string {
+  const serialized = useMemo(() => JSON.stringify(config), [config]);
+  const [debounced, setDebounced] = useState(serialized);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(serialized), ms);
+    return () => clearTimeout(timer);
+  }, [serialized, ms]);
+  return debounced;
+}
+
 /**
- * Debounced POST /api/config/validate. The hook is intentionally tolerant:
- * a network failure leaves the last successful result in place so the UI
- * doesn't flash empty errors as the user types, and an in-flight request
- * is superseded by the next config change (cheap throwaway).
+ * Validate the current config via the FastAPI server.
+ *
+ * Backed by React Query so the result survives route changes (e.g.
+ * Simulator → Results → back) without re-hitting the server, and so
+ * identical configs visited again are served from cache. The last good
+ * result is kept visible while the next request is in flight via
+ * `placeholderData: keepPreviousData`, which prevents the banner from
+ * flashing empty between keystrokes.
  */
 export function useConfigValidation(config: SimConfig): ValidationState {
-  const [state, setState] = useState<ValidationState>({
-    loading: false,
-    data: null,
-    error: null,
+  const debounced = useDebouncedSerialized(config, DEBOUNCE_MS);
+  const query = useQuery<ValidateConfigResponse, Error>({
+    queryKey: ["config-validate", debounced],
+    queryFn: () => api.validateConfig(JSON.parse(debounced) as SimConfig),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
-  const serialized = useMemo(() => JSON.stringify(config), [config]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      setState((s) => ({ ...s, loading: true }));
-      api
-        .validateConfig(config)
-        .then((data) => {
-          if (cancelled) return;
-          setState({ loading: false, data, error: null });
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
-          setState((s) => ({
-            ...s,
-            loading: false,
-            error: err instanceof Error ? err.message : String(err),
-          }));
-        });
-    }, DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-    // We deliberately key off the serialized config so deep edits trigger
-    // a re-validate but identical shapes are deduped.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serialized]);
-
-  return state;
+  return {
+    loading: query.isFetching,
+    data: query.data ?? null,
+    error: query.error?.message ?? null,
+  };
 }
 
 // -- Helpers --------------------------------------------------------------

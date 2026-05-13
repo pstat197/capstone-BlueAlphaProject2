@@ -70,6 +70,18 @@ export const api = {
       body: JSON.stringify({ config }),
     }),
 
+  fitSeasonalityPattern: (pattern: number[], K?: number) =>
+    request<{
+      type: "fourier";
+      period: number;
+      K: number;
+      intercept: number;
+      coefficients: Array<[number, number]>;
+    }>("/api/seasonality/fit-pattern", {
+      method: "POST",
+      body: JSON.stringify({ pattern, K }),
+    }),
+
   clearCache: () =>
     request<{ removed: number }>("/api/cache/clear", { method: "POST" }),
 

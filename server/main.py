@@ -33,6 +33,9 @@ from app.pipeline_runner import run_pipeline  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
 from scripts.config.loader import load_config_from_dict  # noqa: E402
 from scripts.ground_truth_io import extract_ground_truth  # noqa: E402
+from scripts.revenue_simulation.seasonality_fit import (  # noqa: E402
+    fit_pattern_multipliers_to_fourier,
+)
 
 from server.correlations import derive_correlation_results  # noqa: E402
 from server.serializers import serialize_correlation, serialize_run_dataframe  # noqa: E402
@@ -134,6 +137,46 @@ def validate_yaml(payload: YamlValidateRequest) -> YamlValidateResponse:
 @app.post("/api/yaml/dump", response_model=YamlDumpResponse)
 def dump_yaml(payload: YamlDumpRequest) -> YamlDumpResponse:
     return YamlDumpResponse(yaml_text=yaml_dump(payload.config or {}))
+
+
+class FitPatternRequest(BaseModel):
+    """Categorical multipliers (one cycle), optional harmonic cap."""
+
+    pattern: List[float] = Field(
+        ..., description="One cycle of multipliers (e.g. monthly indices)."
+    )
+    K: Optional[int] = Field(
+        None,
+        ge=1,
+        description=(
+            "Harmonic cap. Defaults to a smoothing-friendly value computed from "
+            "the pattern length when omitted."
+        ),
+    )
+
+
+@app.post("/api/seasonality/fit-pattern")
+def fit_pattern_endpoint(payload: FitPatternRequest) -> Dict[str, Any]:
+    """Least-squares fit a categorical multiplier pattern to a deterministic
+    Fourier seasonality config. Returns ``{type, period, K, intercept,
+    coefficients}`` ready to drop into ``seasonality_config``.
+
+    Useful for translating observed weekly / monthly indices into a smooth
+    cycle the simulator can reproduce.
+    """
+    pattern = list(payload.pattern or [])
+    if len(pattern) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="pattern must contain at least 2 multipliers",
+        )
+    try:
+        result = fit_pattern_multipliers_to_fourier(pattern, K=payload.K)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not result:
+        raise HTTPException(status_code=400, detail="Could not fit pattern")
+    return result
 
 
 @app.post("/api/config/validate")

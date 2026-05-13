@@ -1,4 +1,4 @@
-import { Info, Plus, Trash2 } from "lucide-react";
+import { Info, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   CartesianGrid,
@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
+import { api } from "@/lib/api";
 import { getChannel, setChannel } from "@/lib/config-utils";
 import {
   fourierPreviewPoints,
@@ -449,6 +450,18 @@ function FourierEditor({
 
   return (
     <div className="space-y-4">
+      <PatternFitter
+        onFitted={(fitted) =>
+          writeFull({
+            type: "fourier",
+            period: fitted.period,
+            K: fitted.coefficients.length,
+            intercept: fitted.intercept,
+            coefficients: fitted.coefficients,
+          })
+        }
+      />
+
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
@@ -630,6 +643,176 @@ function FourierEditor({
           </ResponsiveContainer>
         </div>
       </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Pattern fitter (categorical multipliers → Fourier coefficients)
+// --------------------------------------------------------------------------
+
+interface PatternFitterProps {
+  onFitted: (fitted: {
+    period: number;
+    K: number;
+    intercept: number;
+    coefficients: Array<[number, number]>;
+  }) => void;
+}
+
+/**
+ * Inline helper that converts a comma-separated list of categorical
+ * multipliers (e.g. monthly indices like `0.8, 0.9, 1.1, ...`) into a
+ * smooth Fourier seasonality config via the backend's
+ * ``fit_pattern_multipliers_to_fourier``. The fitted coefficients
+ * replace the current Fourier state on success.
+ */
+function PatternFitter({ onFitted }: PatternFitterProps) {
+  const [open, setOpen] = useState(false);
+  const [raw, setRaw] = useState("");
+  const [kInput, setKInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const parsePattern = (): number[] | null => {
+    const tokens = raw
+      .split(/[,\s\n]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length < 2) return null;
+    const nums: number[] = [];
+    for (const t of tokens) {
+      const n = parseFloat(t);
+      if (!Number.isFinite(n)) return null;
+      nums.push(n);
+    }
+    return nums;
+  };
+
+  const handleFit = async () => {
+    setError(null);
+    const pattern = parsePattern();
+    if (!pattern) {
+      setError(
+        "Enter at least 2 finite numbers, separated by commas, spaces, or newlines.",
+      );
+      return;
+    }
+    const K = kInput.trim() === "" ? undefined : parseInt(kInput, 10);
+    if (kInput.trim() !== "" && (!Number.isFinite(K) || (K ?? 0) < 1)) {
+      setError("K must be a positive integer (or leave blank to auto-pick).");
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await api.fitSeasonalityPattern(pattern, K);
+      onFitted({
+        period: result.period,
+        K: result.K,
+        intercept: result.intercept,
+        coefficients: result.coefficients,
+      });
+      setOpen(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-200 bg-white px-3 py-2">
+        <div className="space-y-0.5">
+          <p className="text-xs font-medium text-slate-700">
+            Have observed multipliers?
+          </p>
+          <p className="text-[11px] text-slate-500">
+            Fit a smooth Fourier curve from a categorical pattern (e.g.
+            month indices).
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => setOpen(true)}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          Suggest from pattern
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-brand-border bg-white px-3 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium text-slate-800">
+            Fit Fourier from a categorical pattern
+          </p>
+          <p className="text-[11px] text-slate-500">
+            Enter one full cycle of multipliers around 1.0 (e.g. 12 monthly
+            indices). The fit uses least-squares against{" "}
+            <span className="font-mono">1 + Σ sin/cos</span>; period = pattern
+            length.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setOpen(false);
+            setError(null);
+          }}
+        >
+          Cancel
+        </Button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto] sm:items-end">
+        <div className="space-y-1.5">
+          <Label htmlFor="pf_pattern" className="text-[11px]">
+            Pattern (comma- or space-separated)
+          </Label>
+          <textarea
+            id="pf_pattern"
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            rows={2}
+            placeholder="e.g. 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.2, 1.1, 1.0, 0.9, 0.85, 0.8"
+            className="w-full rounded-md border border-brand-border bg-white px-2 py-1.5 font-mono text-xs text-slate-800 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pf_K" className="text-[11px]">
+            K (optional)
+          </Label>
+          <Input
+            id="pf_K"
+            type="number"
+            min={1}
+            step={1}
+            value={kInput}
+            onChange={(e) => setKInput(e.target.value)}
+            placeholder="auto"
+          />
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void handleFit()}
+          disabled={loading}
+        >
+          {loading ? "Fitting…" : "Fit"}
+        </Button>
+      </div>
+      {error && (
+        <p className="text-xs text-rose-700" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

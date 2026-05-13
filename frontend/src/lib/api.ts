@@ -3,6 +3,7 @@ import type {
   MeridianStatus,
   RunListItem,
   RunResponse,
+  SeasonalityConfig,
   SimConfig,
   ValidateConfigResponse,
 } from "@/types/api";
@@ -81,6 +82,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ pattern, K }),
     }),
+
+  evaluateSeasonality: (
+    config: SeasonalityConfig | Record<string, unknown>,
+    weeks: number,
+    seed?: number | null,
+  ) =>
+    request<{ multipliers: number[]; weeks: number }>(
+      "/api/seasonality/evaluate",
+      {
+        method: "POST",
+        body: JSON.stringify({ config, weeks, seed: seed ?? null }),
+      },
+    ),
 
   clearCache: () =>
     request<{ removed: number }>("/api/cache/clear", { method: "POST" }),

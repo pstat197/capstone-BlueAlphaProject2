@@ -29,6 +29,7 @@ import {
   sinToFourier,
   type FourierConfig,
 } from "@/lib/fourier";
+import { useSeasonalityPreview } from "@/lib/use-seasonality-preview";
 import { useConfig } from "@/state/config-store";
 import type {
   OutcomeRevenue,
@@ -401,10 +402,31 @@ function FourierEditor({
     [period, coefficients, intercept],
   );
 
-  const preview = useMemo(
-    () => fourierPreviewPoints(previewCfg, { weeks: Math.max(period * 2, 52) }),
-    [previewCfg, period],
+  const previewWeeks = Math.max(period * 2, 52);
+  const localPreview = useMemo(
+    () => fourierPreviewPoints(previewCfg, { weeks: previewWeeks }),
+    [previewCfg, previewWeeks],
   );
+
+  /*
+   * Server-side overlay: ask the actual simulator pipeline what it would
+   * draw for this exact config. For deterministic Fourier configs the two
+   * lines will sit on top of each other (visual proof the TS port matches);
+   * for any other shape (random fourier, hybrid, categorical) the overlay
+   * surfaces the values the TS port can't compute locally.
+   */
+  const serverPreview = useSeasonalityPreview(previewCfg, previewWeeks);
+  const serverMultipliers = serverPreview.multipliers;
+
+  const preview = useMemo(() => {
+    if (!serverMultipliers || serverMultipliers.length === 0) {
+      return localPreview.map((pt) => ({ ...pt, server: null as number | null }));
+    }
+    return localPreview.map((pt, idx) => ({
+      ...pt,
+      server: idx < serverMultipliers.length ? serverMultipliers[idx] : null,
+    }));
+  }, [localPreview, serverMultipliers]);
 
   const [previewMin, previewMax] = useMemo(() => {
     let mn = Infinity;
@@ -412,6 +434,10 @@ function FourierEditor({
     for (const pt of preview) {
       if (pt.multiplier < mn) mn = pt.multiplier;
       if (pt.multiplier > mx) mx = pt.multiplier;
+      if (pt.server != null) {
+        if (pt.server < mn) mn = pt.server;
+        if (pt.server > mx) mx = pt.server;
+      }
     }
     if (!Number.isFinite(mn) || !Number.isFinite(mx)) return [0.5, 1.5];
     const pad = Math.max(0.05, (mx - mn) * 0.15);
@@ -635,12 +661,50 @@ function FourierEditor({
               <Line
                 type="monotone"
                 dataKey="multiplier"
+                name="Editor preview"
                 stroke="#1d4ed8"
                 strokeWidth={2}
                 dot={false}
+                isAnimationActive={false}
               />
+              {serverMultipliers && serverMultipliers.length > 0 ? (
+                <Line
+                  type="monotone"
+                  dataKey="server"
+                  name="Simulator output"
+                  stroke="#0ea5e9"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ) : null}
             </LineChart>
           </ResponsiveContainer>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-0.5 w-4 bg-brand-600" aria-hidden />
+            Editor preview (local)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block h-0.5 w-4 bg-sky-500"
+              style={{
+                backgroundImage:
+                  "linear-gradient(to right, currentColor 0 60%, transparent 60% 100%)",
+                color: "#0ea5e9",
+                backgroundColor: "transparent",
+              }}
+              aria-hidden
+            />
+            Simulator output (server)
+          </span>
+          {serverPreview.isFetching ? (
+            <span className="text-slate-400">syncing…</span>
+          ) : serverPreview.error ? (
+            <span className="text-rose-500">{serverPreview.error}</span>
+          ) : null}
         </div>
       </div>
     </div>

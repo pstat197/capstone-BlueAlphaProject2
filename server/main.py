@@ -33,6 +33,7 @@ from app.pipeline_runner import run_pipeline  # noqa: E402
 from app.ui_yaml_io import load_example_text, load_ui_schema, yaml_dump  # noqa: E402
 from scripts.config.loader import load_config_from_dict  # noqa: E402
 from scripts.ground_truth_io import extract_ground_truth  # noqa: E402
+from scripts.revenue_simulation.revenue_generation import _seasonality  # noqa: E402
 from scripts.revenue_simulation.seasonality_fit import (  # noqa: E402
     fit_pattern_multipliers_to_fourier,
 )
@@ -177,6 +178,54 @@ def fit_pattern_endpoint(payload: FitPatternRequest) -> Dict[str, Any]:
     if not result:
         raise HTTPException(status_code=400, detail="Could not fit pattern")
     return result
+
+
+class EvaluateSeasonalityRequest(BaseModel):
+    """Render an arbitrary ``seasonality_config`` against a week grid."""
+
+    config: Dict[str, Any] = Field(
+        ..., description="A seasonality_config dict (sin/categorical/fourier/hybrid)."
+    )
+    weeks: int = Field(
+        52,
+        ge=1,
+        le=520,
+        description="Number of weeks to evaluate. Capped at 520 to keep the wire payload small.",
+    )
+    seed: Optional[int] = Field(
+        None,
+        description=(
+            "Fallback seed for random-Fourier components. Ignored for deterministic configs."
+        ),
+    )
+
+
+@app.post("/api/seasonality/evaluate")
+def evaluate_seasonality_endpoint(payload: EvaluateSeasonalityRequest) -> Dict[str, Any]:
+    """Run the simulator's own ``_seasonality`` evaluator and return the
+    resulting per-week multipliers.
+
+    The React Fourier editor renders a pure-TS port of the deterministic
+    Fourier math for snappy live previews; this endpoint is the
+    source-of-truth overlay so the user can verify the preview matches what
+    the pipeline will actually use, and so random-Fourier draws (no
+    coefficients) still have *something* to show in the chart.
+    """
+    import numpy as np
+
+    cfg = payload.config or {}
+    if not isinstance(cfg, dict):
+        raise HTTPException(status_code=400, detail="config must be a mapping")
+
+    weeks = int(payload.weeks)
+    t = np.arange(weeks, dtype=float)
+    try:
+        multipliers = _seasonality(t, cfg, fallback_seed=payload.seed)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    values = [float(v) for v in np.asarray(multipliers, dtype=float).ravel().tolist()]
+    return {"multipliers": values, "weeks": weeks}
 
 
 @app.post("/api/config/validate")

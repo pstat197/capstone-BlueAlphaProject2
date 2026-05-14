@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const SimulatorRoute = lazy(() => import("@/routes/Simulator"));
 const ResultsRoute = lazy(() => import("@/routes/Results"));
 const DiagnosticsRoute = lazy(() => import("@/routes/Diagnostics"));
-const MmmComingSoonRoute = lazy(() => import("@/routes/MmmComingSoon"));
+const MmmRoute = lazy(() => import("@/routes/Mmm"));
 
 function RouteFallback() {
   return (
@@ -57,7 +57,7 @@ export default function App() {
           path="/mmm"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <MmmComingSoonRoute />
+              <MmmRoute />
             </Suspense>
           }
         />

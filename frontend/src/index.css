@@ -33,7 +33,13 @@
   --color-warn-500: #f59e0b;
   --color-danger-500: #e11d48;
 
-  --color-brand-canvas: #f5f8fd;
+  /*
+   * Page canvas. White cards sit on top of this, so the contrast between
+   * `brand-canvas` and `brand-surface` is what makes the layered look read.
+   * Bumped from #f5f8fd → #e7eef9 (~5% darker) so the white surfaces don't
+   * disappear into the page on bright displays.
+   */
+  --color-brand-canvas: #e7eef9;
   --color-brand-surface: #ffffff;
   --color-brand-border: #e3eaf5;
   --color-brand-muted: #64748b;

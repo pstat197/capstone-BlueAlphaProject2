@@ -1,5 +1,4 @@
-import { ArrowLeftRight, ChartLine, Download } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ArrowLeftRight, Download } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,14 +39,6 @@ export function RunSummary({ run, onEditConfiguration }: RunSummaryProps) {
           <ArrowLeftRight className="h-3.5 w-3.5" />
           Edit configuration
         </Button>
-        {run.correlation && (
-          <Button variant="secondary" size="sm" asChild>
-            <Link to={`/results/${run.config_hash}/diagnostics`}>
-              <ChartLine className="h-3.5 w-3.5" />
-              Diagnostics
-            </Link>
-          </Button>
-        )}
         <Button size="sm" asChild>
           <a href={api.csvUrl(run.config_hash)} download>
             <Download className="h-3.5 w-3.5" />

@@ -396,23 +396,74 @@ def cache_status(config_hash: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Meridian (stub for now — full parity comes in a follow-up branch)
+# Bayesian MMM (Meridian)
 # ---------------------------------------------------------------------------
+
+
+from server.mmm import (  # noqa: E402
+    MmmRunRequest,
+    get_job_results,
+    get_job_status,
+    lookup_cached_fit,
+    start_fit,
+    status_payload,
+)
+
+
+class MmmFitRequest(BaseModel):
+    """Mirror of ``MmmRunRequest``. Pydantic gates / validates input shape."""
+
+    config_hash: str = Field(..., description="Hash of the cached simulator run to fit on.")
+    profile: str = Field("balanced", description="MCMC preset: fast | balanced | slow | custom.")
+    n_chains: int = Field(4, ge=1, le=32)
+    n_adapt: int = Field(1000, ge=100, le=20_000)
+    n_burnin: int = Field(500, ge=0, le=20_000)
+    n_keep: int = Field(500, ge=50, le=10_000)
+    n_prior: int = Field(500, ge=50, le=5_000)
+    seed: int = Field(0, ge=0, le=2_147_483_647)
+    enable_aks: bool = False
+    knots: Optional[List[int]] = None
+    channel_roi_mus: Optional[List[float]] = None
+    channel_roi_sigmas: Optional[List[float]] = None
 
 
 @app.get("/api/meridian/status")
 def meridian_status() -> Dict[str, Any]:
-    try:
-        import meridian  # type: ignore  # noqa: F401
+    return status_payload()
 
-        installed = True
-    except Exception:
-        installed = False
-    return {
-        "installed": installed,
-        "ui_status": "coming_soon",
-        "message": (
-            "The Bayesian MMM tab is still served by the Streamlit app on this branch. "
-            "It will land in the React UI in a follow-up."
-        ),
-    }
+
+@app.post("/api/mmm/fits")
+def create_mmm_fit(payload: MmmFitRequest) -> Dict[str, Any]:
+    req = MmmRunRequest(**payload.model_dump())
+    try:
+        return start_fit(req)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/mmm/fits/{job_id}")
+def get_mmm_fit_status(job_id: str) -> Dict[str, Any]:
+    job = get_job_status(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown MMM job id.")
+    return job
+
+
+@app.get("/api/mmm/fits/{job_id}/results")
+def get_mmm_fit_results(job_id: str) -> Dict[str, Any]:
+    out = get_job_results(job_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail="Unknown MMM job id.")
+    return out
+
+
+@app.get("/api/mmm/cache")
+def lookup_mmm_cache(config_hash: str, cache_key: str) -> Dict[str, Any]:
+    """Probe whether a fit already exists for this (simulator, mmm-config) pair
+    so the UI can flip the Run button into a 'open cached fit' affordance."""
+    cached = lookup_cached_fit(config_hash, cache_key)
+    return {"cached": cached is not None, "config_hash": config_hash, "cache_key": cache_key}

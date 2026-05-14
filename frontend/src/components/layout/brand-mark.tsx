@@ -31,7 +31,7 @@ export function BrandMark({ className, to = "/simulator" }: BrandMarkProps) {
         </svg>
       </span>
       <span className="flex flex-col leading-none">
-        <span className="text-sm font-semibold tracking-tight text-slate-900">Blue Alpha</span>
+        <span className="text-sm font-semibold tracking-tight text-slate-900">BlueAlpha</span>
         <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
           Simulator
         </span>

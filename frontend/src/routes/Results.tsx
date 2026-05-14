@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { useEffect } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { CorrelationPanel } from "@/components/diagnostics/correlation-panel";
 import { ConfigSnapshot } from "@/components/results/config-snapshot";
 import { GroundTruthCard } from "@/components/results/ground-truth-card";
 import { PreviewTable } from "@/components/results/preview-table";
@@ -91,6 +92,9 @@ export default function ResultsRoute() {
           <TabsTrigger value="preview">Data preview</TabsTrigger>
           <TabsTrigger value="ground-truth">Ground truth</TabsTrigger>
           <TabsTrigger value="config">Configuration</TabsTrigger>
+          {run.correlation && (
+            <TabsTrigger value="correlation">Correlation</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="charts">
@@ -105,6 +109,11 @@ export default function ResultsRoute() {
         <TabsContent value="config">
           <ConfigSnapshot config={run.config} />
         </TabsContent>
+        {run.correlation && (
+          <TabsContent value="correlation">
+            <CorrelationPanel correlation={run.correlation} showHeader />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

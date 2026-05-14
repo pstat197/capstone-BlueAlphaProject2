@@ -1,6 +1,9 @@
 import type {
   ExampleConfigResponse,
   MeridianStatus,
+  MmmFitRequest,
+  MmmFitResultsResponse,
+  MmmJob,
   RunListItem,
   RunResponse,
   SeasonalityConfig,
@@ -100,4 +103,13 @@ export const api = {
     request<{ removed: number }>("/api/cache/clear", { method: "POST" }),
 
   meridianStatus: () => request<MeridianStatus>("/api/meridian/status"),
+
+  startMmmFit: (body: MmmFitRequest) =>
+    request<MmmJob>("/api/mmm/fits", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getMmmFitStatus: (jobId: string) => request<MmmJob>(`/api/mmm/fits/${jobId}`),
+  getMmmFitResults: (jobId: string) =>
+    request<MmmFitResultsResponse>(`/api/mmm/fits/${jobId}/results`),
 };

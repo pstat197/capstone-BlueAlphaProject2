@@ -238,8 +238,126 @@ export interface RunListItem {
 
 export interface MeridianStatus {
   installed: boolean;
-  ui_status: string;
+  /** "available" once Meridian imports cleanly, "unavailable" otherwise. */
+  ui_status: "available" | "unavailable" | string;
   message: string;
+  /** Import error text when `installed` is false. */
+  error?: string | null;
+}
+
+/* -----------------------------------------------------------------------
+ * Bayesian MMM (Meridian) — see server/mmm.py for the source-of-truth shapes.
+ * --------------------------------------------------------------------- */
+
+export type MmmProfile = "fast" | "balanced" | "slow" | "custom";
+
+export type MmmJobStatus = "queued" | "running" | "succeeded" | "failed";
+
+export type MmmJobStage =
+  | "queued"
+  | "preparing"
+  | "sampling"
+  | "diagnostics"
+  | "serializing"
+  | "done"
+  | "error";
+
+export interface MmmFitRequest {
+  config_hash: string;
+  profile: MmmProfile;
+  n_chains?: number;
+  n_adapt?: number;
+  n_burnin?: number;
+  n_keep?: number;
+  n_prior?: number;
+  seed?: number;
+  enable_aks?: boolean;
+  knots?: number[] | null;
+  channel_roi_mus?: number[] | null;
+  channel_roi_sigmas?: number[] | null;
+}
+
+export interface MmmJob {
+  job_id: string;
+  status: MmmJobStatus;
+  stage: MmmJobStage;
+  config_hash: string;
+  cache_key: string;
+  profile: string;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  note: string | null;
+  cache_hit: boolean;
+  n_channels: number;
+  n_weeks: number;
+  channels: string[];
+}
+
+/** Single row in the Meridian "predictive accuracy" table (R², MAPE, wMAPE, ...). */
+export type MmmFitMetricRow = Record<string, number | string | boolean | null>;
+
+export interface MmmRoiForestRow {
+  channel: string;
+  /** Posterior mean ROI ($ revenue per $1 spend). */
+  mean: number;
+  /** Lower bound of the 50% credible interval. */
+  ci_low: number;
+  /** Upper bound of the 50% credible interval. */
+  ci_high: number;
+  /** True ROI from the simulator config when available. */
+  true_roi?: number | null;
+}
+
+export interface MmmRoiForest {
+  rows: MmmRoiForestRow[];
+  rhat_by_channel: Record<string, number | null>;
+  error?: string | null;
+}
+
+export interface MmmBudgetRow {
+  channel: string;
+  spend_baseline_total: number;
+  spend_optimized_total: number;
+  spend_baseline_weekly: number;
+  spend_optimized_weekly: number;
+  delta_weekly: number;
+  change_pct: number;
+}
+
+export interface MmmBudgetPieSlice {
+  channel: string;
+  value: number;
+  share: number;
+}
+
+export interface MmmBudgetOptimization {
+  rows?: MmmBudgetRow[];
+  pies?: { current: MmmBudgetPieSlice[]; optimized: MmmBudgetPieSlice[] };
+  total_spend_baseline?: number;
+  total_spend_optimized?: number;
+  n_weeks?: number;
+  /** Set when Meridian's BudgetOptimizer raised; the rest of the payload is empty. */
+  error?: string | null;
+}
+
+export interface MmmFitResults {
+  summary: {
+    rhat_max: number | null;
+    note: string | null;
+    ok: boolean;
+  };
+  channels: string[];
+  n_weeks: number;
+  fit_metrics: MmmFitMetricRow[];
+  fit_metrics_error?: string | null;
+  roi_forest: MmmRoiForest;
+  budget_optimization: MmmBudgetOptimization;
+}
+
+export interface MmmFitResultsResponse {
+  job: MmmJob;
+  results: MmmFitResults | null;
 }
 
 /** Path is a JSON-Pointer-ish array (e.g. ["channel_list", 0, "channel", "true_roi"]).

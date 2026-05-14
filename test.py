@@ -98,12 +98,14 @@ def test_load_default_yaml():
 def main():
     from tests import test_config
     from tests import test_spend_generation
+    from tests import test_correlation_analysis
     from tests import test_impressions_simulation
     from tests import test_revenue_simulation
     from tests import test_pipeline
 
     test_config.main()
     test_spend_generation.main()
+    test_correlation_analysis.main()
     test_impressions_simulation.main()
     test_revenue_simulation.main()
     test_pipeline.main()

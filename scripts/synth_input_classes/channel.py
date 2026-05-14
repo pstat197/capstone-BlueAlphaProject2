@@ -13,6 +13,8 @@ class Channel:
     spend_sampling_gamma_params: Dict[str, float]
     noise_variance: Dict[str, float]
     cpm: float
+    conversion_rate: float = 0.0
+    baseline_subscriptions: int = 0
 
     def get_channel_name(self) -> str:
         return self.channel_name
@@ -40,3 +42,9 @@ class Channel:
 
     def get_cpm(self) -> float:
         return self.cpm
+
+    def get_conversion_rate(self) -> float:
+        return self.conversion_rate
+
+    def get_baseline_subscriptions(self) -> int:
+        return self.baseline_subscriptions

@@ -1,11 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 from .channel import Channel
-from scripts.config.defaults import get_default_channel_template
+
 
 def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Resolve per-channel config defaults from injected template or default.yaml."""
+    from scripts.config.defaults import get_default_channel_template
     resolved_template = template or get_default_channel_template()
     return {
         "saturation_config": dict(resolved_template.get("saturation_config") or {}),
@@ -16,12 +17,17 @@ def _get_defaults(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+_VALID_KPI_MODES = ("revenue", "subscriptions", "both")
+
+
 @dataclass
 class InputConfigurations:
     run_identifier: str
     week_range: int
     channel_list: List[Channel]
     seed: Optional[int] = None
+    correlations: List[Dict[str, Any]] = field(default_factory=list)
+    kpi_mode: str = "revenue"
 
     @classmethod
     def from_yaml_dict(
@@ -67,13 +73,31 @@ class InputConfigurations:
                     spend_sampling_gamma_params=spend_sampling_gamma_params,
                     noise_variance=noise_variance,
                     cpm=cpm,
+                    conversion_rate=float(ch.get("conversion_rate", 0.0)),
+                    baseline_subscriptions=int(ch.get("baseline_subscriptions", 0)),
                 )
             )
+        correlations_raw = data.get("correlations") or []
+        correlations = []
+        for entry in correlations_raw:
+            correlations.append({
+                "channels": list(entry.get("channels", [])),
+                "rho": float(entry.get("rho", 0.0)),
+            })
+
+        kpi_mode = str(data.get("kpi_mode", "revenue"))
+        if kpi_mode not in _VALID_KPI_MODES:
+            raise ValueError(
+                f"Invalid kpi_mode '{kpi_mode}'. Expected one of: {_VALID_KPI_MODES}"
+            )
+
         return cls(
             run_identifier=str(data.get("run_identifier", "")),
             week_range=int(data.get("week_range", 0)),
             channel_list=channels,
             seed=seed,
+            correlations=correlations,
+            kpi_mode=kpi_mode,
         )
 
     def get_run_identifier(self) -> str:
@@ -87,6 +111,12 @@ class InputConfigurations:
 
     def get_seed(self) -> Optional[int]:
         return self.seed
+
+    def get_correlations(self) -> List[Dict[str, Any]]:
+        return self.correlations
+
+    def get_kpi_mode(self) -> str:
+        return self.kpi_mode
 
     def get_rng(self):  # -> np.random.Generator (avoid np import at module level)
         """Return the RNG for this config (same one used during load, seeded with get_seed() if set)."""

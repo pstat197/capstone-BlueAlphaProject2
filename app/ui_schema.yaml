@@ -1,0 +1,135 @@
+# group: layout. † = loader may jitter when auto-filling (excludes saturation/adstock dicts).
+# Paths are relative to channel_list.{i}.
+
+top_level_sliders: []
+
+per_channel_sliders:
+  - path: channel.true_roi
+    group: core
+    label: "ROI †"
+    help: "Multiplies saturated, adstocked effective media into revenue contribution (before noise)."
+    min: 0.0
+    max: 15.0
+    step: 0.1
+  - path: channel.baseline_revenue
+    group: core
+    label: "Baseline revenue †"
+    help: "Weekly revenue not explained by media (added after ROI scaling)."
+    min: 0.0
+    max: 100000.0
+    step: 100.0
+  - path: channel.cpm
+    group: core
+    label: "CPM †"
+    help: "Cost per thousand impressions; links spend to simulated impressions."
+    min: 0.5
+    max: 100.0
+    step: 0.5
+  - path: channel.spend_range
+    group: core
+    label: "Spend min †"
+    list_index: 0
+    help: "Lower bound of weekly spend sampling (gamma distribution)."
+    min: 0.0
+    max: 100000.0
+    step: 500.0
+  - path: channel.spend_range
+    group: core
+    label: "Spend max †"
+    list_index: 1
+    help: "Upper bound of weekly spend sampling."
+    min: 0.0
+    max: 200000.0
+    step: 500.0
+  - path: channel.noise_variance.impression
+    group: noise
+    label: "Impression noise"
+    help: "Scales random wobble on weekly impressions. Std dev = √(this) × base impressions (base = spend/CPM×1000). 0 = no impression noise. Open the Noise reference expander for detail."
+    min: 0.0
+    max: 1.0
+    step: 0.01
+  - path: channel.noise_variance.revenue
+    group: noise
+    label: "Revenue noise"
+    help: "Scales random wobble on weekly revenue after media math. Std dev = √(this) × |revenue before noise|. 0 = no revenue noise. Open the Noise reference expander for detail."
+    min: 0.0
+    max: 1.0
+    step: 0.01
+  - path: channel.saturation_config.slope
+    group: saturation
+    saturation_types: [linear, hill]
+    label: "Slope"
+    help: "Linear: multiplier on impressions (1 = identity). Hill: power in x^slope/(x^slope+K^slope); higher = sharper bend."
+    min: 0.1
+    max: 5.0
+    step: 0.1
+  - path: channel.saturation_config.K
+    group: saturation
+    saturation_types: [hill]
+    label: "K"
+    help: "Hill only: impression scale where the curve bends (larger K = need more impressions before flattening)."
+    min: 1.0
+    max: 200000.0
+    step: 1000.0
+  - path: channel.saturation_config.beta
+    group: saturation
+    saturation_types: [diminishing_returns]
+    label: "Beta"
+    help: "Diminishing returns: x/(1+beta*x). Larger beta = stronger saturation at moderate impressions."
+    min: 0.0
+    max: 2.0
+    step: 0.05
+  - path: channel.adstock_decay_config.lambda
+    group: adstock
+    adstock_types: [geometric, exponential]
+    label: "Lambda"
+    help: "Geometric/exponential: weight per lag step (closer to 1 = longer memory, closer to 0 = fast fade)."
+    min: 0.0
+    max: 1.0
+    step: 0.05
+  - path: channel.adstock_decay_config.lag
+    group: adstock
+    adstock_types: [linear, geometric, exponential]
+    label: "Lag"
+    help: "Linear: average over lag+1 weeks (0 = no carry-over). Geometric/exponential: how many decay terms in the kernel."
+    min: 0
+    max: 52
+    step: 1
+  - path: channel.conversion_rate
+    group: subscriptions
+    label: "Conversion rate"
+    help: "Fraction of effective (saturated, adstocked) impressions that convert to subscriptions. E.g. 0.001 = 1 per 1000 effective impressions."
+    min: 0.0
+    max: 1.0
+    step: 0.0001
+  - path: channel.baseline_subscriptions
+    group: subscriptions
+    label: "Baseline subscriptions"
+    help: "Weekly organic subscriptions not driven by media (added after conversion scaling). Output is rounded to non-negative integers."
+    min: 0
+    max: 10000
+    step: 10
+  - path: channel.noise_variance.subscription
+    group: subscriptions
+    label: "Subscription noise"
+    help: "Scales random wobble on weekly subscriptions. Std dev = √(this) × |subscriptions before noise|. 0 = no subscription noise."
+    min: 0.0
+    max: 1.0
+    step: 0.01
+
+per_channel_selects:
+  - path: channel.saturation_config.type
+    label: "Saturation type"
+    help: "linear = proportional scaling; hill = saturating S-curve (K + slope); diminishing_returns = smooth concave x/(1+bx). Open the reference expander in this section for details."
+    options:
+      - linear
+      - hill
+      - diminishing_returns
+  - path: channel.adstock_decay_config.type
+    label: "Adstock type"
+    help: "linear = flat moving average; geometric/exponential = exponentially decaying weights; weighted = custom kernel. Open the reference expander in this section for details."
+    options:
+      - linear
+      - geometric
+      - exponential
+      - weighted

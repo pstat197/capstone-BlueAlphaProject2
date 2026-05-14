@@ -1,4 +1,8 @@
 numpy
 pandas
+matplotlib>=3.8.0
 PyYAML
 pytest
+streamlit>=1.28.0
+plotly>=5.18.0
+# Bayesian MMM (tab 2): install separately — see requirements-meridian.txt

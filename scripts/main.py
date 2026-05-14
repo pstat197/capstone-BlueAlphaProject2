@@ -1,14 +1,18 @@
 import argparse
 import os
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
+import yaml
 import pandas as pd
 import numpy as np
 
 from scripts.spend_simulation.spend_generation import generate_spend
+from scripts.spend_simulation.correlation_analysis import analyze_spend_correlations, print_correlation_report
 from scripts.impressions_simulation.impressions_generation import generate_impressions
-from scripts.revenue_simulation.revenue_generation import generate_revenue
-from scripts.config.loader import load_config
+from scripts.revenue_simulation.revenue_generation import generate_revenue, generate_subscriptions
+
 from scripts.synth_input_classes.input_configurations import InputConfigurations
 
 
@@ -16,32 +20,22 @@ def construct_csv(
     config: InputConfigurations,
     spend_matrix: "np.ndarray",  # matrix: weeks x channels
     impressions_matrix: "np.ndarray",  # matrix: weeks x channels
-    revenue_vector: "np.ndarray",  # vector: weeks
+    revenue_matrix: "np.ndarray",  # matrix: weeks x channels
+    subscriptions_matrix: "Optional[np.ndarray]" = None,  # matrix: weeks x channels
 ) -> pd.DataFrame:
-    """
-    Construct a DataFrame: each row corresponds to a week.
-    Columns:
-      - 'week': week number (starting from 1)
-      - 'revenue': total revenue for the week
-      - For each channel: f"{channel}_impressions" and f"{channel}_spend"
-      - 'total_impressions', 'total_spend'
-    """
-    # Get channel names and week count
     channel_names = [ch.get_channel_name() for ch in config.get_channel_list()]
     num_weeks = spend_matrix.shape[0]
     num_channels = spend_matrix.shape[1]
 
-    # Prepare column names for each channel
     channel_impression_cols = [f"{name}_impressions" for name in channel_names]
     channel_spend_cols = [f"{name}_spend" for name in channel_names]
+    channel_revenue_cols = [f"{name}_revenue" for name in channel_names]
+    has_subs = subscriptions_matrix is not None
+    channel_subs_cols = [f"{name}_subscriptions" for name in channel_names] if has_subs else []
 
-    # Build rows
     data = []
     for week in range(num_weeks):
-        row = {
-            "week": week + 1,
-            "revenue": revenue_vector[week],
-        }
+        row: dict = {"week": week + 1}
         total_impressions = 0
         total_spend = 0
         for ch in range(num_channels):
@@ -49,38 +43,82 @@ def construct_csv(
             spd = spend_matrix[week, ch]
             row[channel_impression_cols[ch]] = imp
             row[channel_spend_cols[ch]] = spd
+            row[channel_revenue_cols[ch]] = float(revenue_matrix[week, ch])
+            if has_subs:
+                row[channel_subs_cols[ch]] = int(subscriptions_matrix[week, ch])
             total_impressions += imp
             total_spend += spd
+        row["revenue"] = float(revenue_matrix[week].sum())
+        if has_subs:
+            row["subscriptions"] = int(subscriptions_matrix[week].sum())
         row["total_impressions"] = total_impressions
         row["total_spend"] = total_spend
         data.append(row)
 
-    columns = (
-        ["week", "revenue"]
-        + [col for pair in zip(channel_impression_cols, channel_spend_cols) for col in pair]
-        + ["total_impressions", "total_spend"]
-    )
+    columns = ["week", "revenue"]
+    if has_subs:
+        columns.append("subscriptions")
+    for i in range(num_channels):
+        columns += [
+            channel_impression_cols[i],
+            channel_spend_cols[i],
+            channel_revenue_cols[i],
+        ]
+        if has_subs:
+            columns.append(channel_subs_cols[i])
+    columns += ["total_impressions", "total_spend"]
+    if has_subs:
+        columns.append("total_subscriptions")
+        for row in data:
+            row["total_subscriptions"] = row["subscriptions"]
     df = pd.DataFrame(data, columns=columns)
     return df
 
-def main(yaml_path):
 
-    # load config (merges with config/default.yaml; supports number_of_channels)
-    config = load_config(yaml_path)
+def run_simulation(
+    config: InputConfigurations,
+) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    """Run spend -> impressions -> revenue and return (DataFrame, correlation_results).
 
-    # generate spend
+    correlation_results is None when no correlations are configured.
+    """
     spend_matrix = generate_spend(config)
 
-    # generate impressions
+    corr_results: Optional[Dict[str, Any]] = None
+    if config.get_correlations():
+        corr_results = analyze_spend_correlations(config, spend_matrix)
+
     impressions_matrix = generate_impressions(config, spend_matrix)
+    revenue_by_channel = generate_revenue(config, impressions_matrix)
 
-    # generate revenue
-    revenue_matrix = generate_revenue(config, impressions_matrix)
+    subscriptions_by_channel = None
+    if config.get_kpi_mode() in ("subscriptions", "both"):
+        subscriptions_by_channel = generate_subscriptions(config, impressions_matrix)
 
-    # construct csv
-    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_matrix)
+    df = construct_csv(config, spend_matrix, impressions_matrix, revenue_by_channel,
+                       subscriptions_matrix=subscriptions_by_channel)
+    return df, corr_results
+
+
+def main(yaml_path):
+
+    # load config
+    path = Path(yaml_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+
+    with open(path, "r") as f:
+        data = yaml.safe_load(f)
+
+    config = InputConfigurations.from_yaml_dict(data)
+
+    df, corr_results = run_simulation(config)
+
+    if corr_results is not None:
+        print_correlation_report(corr_results)
 
     print(df.head())
+    print("Columns:", ", ".join(map(str, df.columns)))
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M')
     os.makedirs("output", exist_ok=True)

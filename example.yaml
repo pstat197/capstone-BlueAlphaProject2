@@ -51,3 +51,7 @@ channel_list:
         lag: 7
         weights: [0.7, 0.2, 0.1]
       cpm: 10
+
+correlations:
+  - channels: [TikTok, LinkedIn]
+    rho: 0.7

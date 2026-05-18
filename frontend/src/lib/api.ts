@@ -11,7 +11,19 @@ import type {
   ValidateConfigResponse,
 } from "@/types/api";
 
-const BASE = ""; // Vite dev proxies /api -> 127.0.0.1:8000
+/* API base URL.
+ *
+ * In local dev BASE stays empty so Vite's proxy in vite.config.ts forwards
+ * /api/* to 127.0.0.1:8000. In a hosted build (e.g. Vercel) the frontend and
+ * backend live on different origins, so we read the backend URL from a
+ * Vite-time env var:
+ *
+ *     # .env.production (or Vercel env)
+ *     VITE_API_BASE_URL=https://<your-hf-user>-bluealpha-api.hf.space
+ *
+ * Trailing slashes are stripped so paths always look like `${BASE}/api/...`.
+ */
+const BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -54,7 +66,7 @@ export const api = {
     }),
   getRun: (configHash: string) => request<RunResponse>(`/api/runs/${configHash}`),
   listRuns: () => request<{ runs: RunListItem[] }>("/api/runs"),
-  csvUrl: (configHash: string) => `/api/runs/${configHash}/csv`,
+  csvUrl: (configHash: string) => `${BASE}/api/runs/${configHash}/csv`,
   hashConfig: (config: SimConfig) =>
     request<{ config_hash: string }>("/api/config/hash", {
       method: "POST",

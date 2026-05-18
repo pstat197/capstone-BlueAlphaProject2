@@ -1,6 +1,19 @@
+---
+title: BlueAlpha Simulator API
+emoji: "\U0001F4CA"
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Marketing mix simulator + Bayesian MMM (Meridian) REST API.
+---
+
 # capstone-BlueAlphaProject2
 
 Marketing media simulation: sample weekly spend per channel, map spend to impressions, apply adstock and saturation in a configurable order (default adstock then saturation; `media_transform_order` in YAML or **Advanced → Media response order** in the app), combine per-channel **media** contributions, add **one** outcome-level baseline with optional trend and seasonality plus outcome revenue noise (MMM-style), and export a wide CSV. A Streamlit app edits the same YAML-shaped config, merges widget state, runs the pipeline with disk caching, and plots results.
+
+> The YAML block above is metadata for [Hugging Face Spaces](https://huggingface.co/docs/hub/spaces-config-reference); see [Deployment: frontend on Vercel, backend on Hugging Face Spaces](#deployment-frontend-on-vercel-backend-on-hugging-face-spaces) for the full setup.
 
 Additional narrative (Google Doc): [Documentation of Code](https://docs.google.com/document/d/1glQWezaB3eBH13Mxp2eR0Y7SM1zAaVAaS1qHFy2uu-o/edit?usp=sharing)
 
@@ -66,10 +79,79 @@ Then open <http://localhost:5173>. The simulator is at `/simulator`, results liv
 
 ---
 
+## Deployment: frontend on Vercel, backend on Hugging Face Spaces
+
+The React app and FastAPI server are split across two hosts so we can use both providers' free tiers:
+
+- **Frontend (Vercel, free)** — static SPA built from `frontend/`. Served at `https://<project>.vercel.app`.
+- **Backend (Hugging Face Spaces, free Docker CPU)** — FastAPI + Meridian image built from the root `Dockerfile`. Served at `https://<hf-user>-<space-name>.hf.space`.
+
+The free Spaces tier is 16 GB RAM / 2 vCPU, sleeps after ~48 h idle (~30 s cold start) and has **no persistent disk** — the `app/.cache/` directory resets on every restart, so all simulator runs and MMM fits need to be re-run after the Space wakes. Good enough for a demo, not for production.
+
+### 1. Push the API to a Hugging Face Space
+
+1. Create a free Hugging Face account, then create a new Space: **SDK = Docker**, **Hardware = CPU basic (free)**.
+2. Add the Space as a second git remote on this repo and push the current branch as `main`:
+
+   ```bash
+   # one-time
+   git remote add space https://huggingface.co/spaces/<hf-user>/<space-name>
+   # every deploy
+   git push space feature/sim-dashboard-integration:main
+   ```
+
+   The Space picks up the root `Dockerfile` and the front-matter at the top of this README (`sdk: docker`, `app_port: 7860`). The first build takes ~15–25 min because TensorFlow + Meridian are heavy; subsequent builds reuse the Docker layer cache and finish in ~1–3 min.
+
+3. Once the Space says **Running**, sanity-check the public URL:
+
+   ```bash
+   curl https://<hf-user>-<space-name>.hf.space/api/health
+   # -> {"ok":true,"name":"bluealpha-simulator-api"}
+   ```
+
+4. In the Space's **Settings → Variables and secrets**, add a public variable so the API allow-lists your Vercel origin:
+
+   | Key | Value |
+   |---|---|
+   | `CORS_ALLOW_ORIGINS` | `https://<your-project>.vercel.app` (comma-separated for more) |
+   | `CORS_ALLOW_ORIGIN_REGEX` *(optional)* | `^https://<your-project>-[a-z0-9-]+\.vercel\.app$` — allow Vercel preview deploys |
+
+   The Space restarts after saving env vars.
+
+### 2. Deploy the frontend on Vercel
+
+1. Create a Vercel project pointed at this repo, set **Root Directory** to `frontend/`. Vercel detects Vite automatically and uses [`frontend/vercel.json`](frontend/vercel.json) for the SPA rewrite (all routes fall back to `index.html`).
+2. Under **Project → Settings → Environment Variables** add:
+
+   | Key | Value |
+   |---|---|
+   | `VITE_API_BASE_URL` | `https://<hf-user>-<space-name>.hf.space` (no trailing slash) |
+
+3. Trigger a redeploy so the build picks up the env var. The frontend reads it in [`frontend/src/lib/api.ts`](frontend/src/lib/api.ts) and prefixes every `/api/*` call with it.
+
+See [`frontend/.env.example`](frontend/.env.example) for the local-dev contract (leave `VITE_API_BASE_URL` empty so Vite's proxy in `vite.config.ts` forwards `/api/*` to `127.0.0.1:8000`).
+
+### 3. Verifying the wired-up app
+
+Hit your Vercel URL and watch the browser's network panel: every `/api/*` request should go to your Space URL with `200`. If you see a CORS error, double-check that the Vercel origin (with the exact protocol and no trailing slash) is in `CORS_ALLOW_ORIGINS` on the Space and that the Space has finished restarting after the env-var change.
+
+### Costs / limits cheatsheet
+
+| Item | Free tier limit | What happens when you hit it |
+|---|---|---|
+| Vercel Hobby | 100 GB egress, 1 M requests / mo | Soft cap; build pauses for the month |
+| HF Spaces (CPU basic) | 16 GB RAM, 2 vCPU, ephemeral disk | OK for one Meridian fit at a time |
+| HF Spaces sleep | Sleeps after ~48 h of zero traffic | ~30 s cold start on next request |
+
+The Vercel Hobby plan technically prohibits "commercial use" — for a capstone / academic demo this is fine, but if BlueAlpha starts running paid work through it, switch the frontend to Cloudflare Pages or upgrade Vercel to Pro ($20/mo).
+
+---
+
 ## Table of contents
 
 - [Repository layout](#repository-layout)
 - [Setup](#setup)
+- [Deployment: frontend on Vercel, backend on Hugging Face Spaces](#deployment-frontend-on-vercel-backend-on-hugging-face-spaces)
 - [Config loading paths](#config-loading-paths)
 - [Running the pipeline](#running-the-pipeline)
 - [Streamlit UI](#streamlit-ui)

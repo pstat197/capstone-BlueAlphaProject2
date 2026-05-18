@@ -102,10 +102,11 @@ function PieCard({
               border: "1px solid #dbeafe",
               fontSize: 12,
             }}
-            formatter={(value: number, _name: string, props: { payload?: { share?: number } }) => [
-              `${formatCurrency(value)} (${(props.payload?.share ?? 0).toFixed(1)}%)`,
-              "spend",
-            ]}
+            formatter={(value, _name, props) => {
+              const v = typeof value === "number" ? value : Number(value ?? 0);
+              const share = (props as { payload?: { share?: number } })?.payload?.share ?? 0;
+              return [`${formatCurrency(v)} (${share.toFixed(1)}%)`, "spend"];
+            }}
           />
           <Pie
             data={data}

@@ -1,0 +1,52 @@
+# Keep the build context small so `docker build` / HF push is fast.
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python build artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+
+# Local venvs
+venv/
+.venv/
+env/
+
+# Test / coverage / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Frontend artefacts — the API image only serves /api/*, the SPA is hosted on Vercel.
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.vite/
+
+# Notebooks / docs that aren't needed at runtime.
+notebooks/
+docs/
+
+# Disk-backed simulation cache (Spaces free tier is ephemeral anyway).
+app/.cache/
+
+# Editor / OS junk
+.DS_Store
+.idea/
+.vscode/
+.cursor/
+.cursorignore
+.cursorindexingignore
+
+# Results / output samples
+results/
+output/

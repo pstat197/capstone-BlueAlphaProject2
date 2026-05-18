@@ -7,6 +7,7 @@ Run from repo root:
 from __future__ import annotations
 
 import io
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -49,14 +50,33 @@ app = FastAPI(
     description="HTTP wrapper around the marketing simulator + Bayesian MMM pipelines.",
 )
 
-# Vite dev server runs on 5173 by default.
+# CORS allow-list.
+#
+# Local dev origins (Vite dev server + Vite preview) are always allowed.
+# Production origins (e.g. the Vercel deployment) are added via the
+# CORS_ALLOW_ORIGINS env var as a comma-separated list:
+#
+#     CORS_ALLOW_ORIGINS="https://bluealpha.vercel.app,https://bluealpha-mmm.com"
+#
+# Set CORS_ALLOW_ORIGIN_REGEX to match the Vercel preview-deploy pattern
+# ("https://bluealpha-*.vercel.app") so PR previews work without re-deploying
+# the backend.
+_DEFAULT_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+]
+_extra_origins = [
+    o.strip()
+    for o in os.environ.get("CORS_ALLOW_ORIGINS", "").split(",")
+    if o.strip()
+]
+_origin_regex = os.environ.get("CORS_ALLOW_ORIGIN_REGEX") or None
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:4173",
-    ],
+    allow_origins=_DEFAULT_DEV_ORIGINS + _extra_origins,
+    allow_origin_regex=_origin_regex,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

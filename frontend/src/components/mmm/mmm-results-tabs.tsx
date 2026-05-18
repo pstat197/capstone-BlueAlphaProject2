@@ -16,15 +16,12 @@ export function MmmResultsTabs({ results }: Props) {
         <CardTitle>Fit results</CardTitle>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="fit">
+        <Tabs defaultValue="roi">
           <TabsList>
-            <TabsTrigger value="fit">Model fit & diagnostics</TabsTrigger>
             <TabsTrigger value="roi">Recovered media ROI</TabsTrigger>
+            <TabsTrigger value="fit">Model fit & diagnostics</TabsTrigger>
             <TabsTrigger value="opt">Budget optimization</TabsTrigger>
           </TabsList>
-          <TabsContent value="fit">
-            <MmmFitTab results={results} />
-          </TabsContent>
           <TabsContent value="roi">
             <p className="mb-3 text-xs text-slate-600">
               Per-channel posterior <strong>mean</strong> ROI with the 50% credible interval. The
@@ -32,6 +29,9 @@ export function MmmResultsTabs({ results }: Props) {
               YAML. Hover a row for details.
             </p>
             <MmmRoiForest data={results.roi_forest} />
+          </TabsContent>
+          <TabsContent value="fit">
+            <MmmFitTab results={results} />
           </TabsContent>
           <TabsContent value="opt">
             <MmmOptimizationTab data={results.budget_optimization} />

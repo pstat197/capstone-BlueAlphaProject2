@@ -16,20 +16,20 @@ export function BrandMark({ className, to = "/simulator" }: BrandMarkProps) {
         className,
       )}
     >
-      <span
+      {/*
+       * BlueAlpha brand mark. The source PNG already has the blue rounded
+       * square + white 'a' glyph, so we render it as an <img> rather than
+       * wrapping it in a coloured span. Width/height attributes are 2x the
+       * displayed size so the image stays crisp on retina displays.
+       */}
+      <img
+        src="/bluealpha-logo.png"
+        alt=""
         aria-hidden
-        className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-500 text-white shadow-[0_4px_12px_rgba(29,99,237,0.35)] transition-transform group-hover:scale-105"
-      >
-        <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
-          <path
-            d="M5 19V5l7 7 7-7v14"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </span>
+        width={64}
+        height={64}
+        className="h-8 w-8 rounded-xl shadow-[0_4px_12px_rgba(29,99,237,0.35)] transition-transform group-hover:scale-105"
+      />
       <span className="flex flex-col leading-none">
         <span className="text-sm font-semibold tracking-tight text-slate-900">BlueAlpha</span>
         <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">

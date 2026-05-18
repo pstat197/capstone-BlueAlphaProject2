@@ -20,29 +20,27 @@ interface PlotRow {
   rhat: number | null;
 }
 
-function rhatTone(rh: number | null): { color: string; label: string } | null {
-  if (rh == null || !Number.isFinite(rh)) return null;
-  let color = "#15803d";
-  if (rh > 1.1) color = "#dc2626";
-  else if (rh > 1.05) color = "#b45309";
-  return { color, label: `R̂ ${rh.toFixed(3)}${rh > 1.1 ? " ⚠" : ""}` };
-}
-
 export function MmmRoiForest({ data }: Props) {
   const [hover, setHover] = useState<{ row: PlotRow; x: number; y: number } | null>(null);
 
   const rows: PlotRow[] = useMemo(() => {
-    return (data.rows || []).map((r: MmmRoiForestRow) => ({
-      channel: String(r.channel),
-      mean: Number(r.mean),
-      ci_low: Number(r.ci_low),
-      ci_high: Number(r.ci_high),
-      true_roi: r.true_roi == null || !Number.isFinite(Number(r.true_roi)) ? null : Number(r.true_roi),
-      rhat:
-        data.rhat_by_channel[r.channel] == null
-          ? null
-          : Number(data.rhat_by_channel[r.channel]),
-    }));
+    return (data.rows || [])
+      /* Meridian's MediaSummary tacks on an aggregate "All Channels" row.
+       * The forest is a per-channel comparison and the aggregate squashes
+       * the y-axis when shown — drop it here. */
+      .filter((r: MmmRoiForestRow) => String(r.channel).toLowerCase() !== "all channels")
+      .map((r: MmmRoiForestRow) => ({
+        channel: String(r.channel),
+        mean: Number(r.mean),
+        ci_low: Number(r.ci_low),
+        ci_high: Number(r.ci_high),
+        true_roi:
+          r.true_roi == null || !Number.isFinite(Number(r.true_roi)) ? null : Number(r.true_roi),
+        rhat:
+          data.rhat_by_channel[r.channel] == null
+            ? null
+            : Number(data.rhat_by_channel[r.channel]),
+      }));
   }, [data]);
 
   const { xMin, xMax } = useMemo(() => {
@@ -78,10 +76,9 @@ export function MmmRoiForest({ data }: Props) {
     return <p className="text-sm text-slate-500">No channels to plot.</p>;
   }
 
-  /* SVG layout: fixed height per channel band; left margin for channel names,
-   * right margin for R̂ chip when present. */
+  /* SVG layout: fixed height per channel band; left margin for channel names. */
   const chartLeft = 160;
-  const chartRight = 110;
+  const chartRight = 32;
   const chartTop = 12;
   const rowHeight = 56;
   const totalHeight = chartTop + rows.length * rowHeight + 56;
@@ -142,7 +139,6 @@ export function MmmRoiForest({ data }: Props) {
           const xLo = xScale(r.ci_low);
           const xHi = xScale(r.ci_high);
           const xTrue = r.true_roi != null ? xScale(r.true_roi) : null;
-          const rh = rhatTone(r.rhat);
           return (
             <g
               key={r.channel}
@@ -202,18 +198,6 @@ export function MmmRoiForest({ data }: Props) {
                 stroke="white"
                 strokeWidth={1.5}
               />
-              {rh && (
-                <text
-                  x={chartLeft + innerWidth + 8}
-                  y={y + 4}
-                  textAnchor="start"
-                  fontSize="11"
-                  fill={rh.color}
-                  className="font-mono"
-                >
-                  {rh.label}
-                </text>
-              )}
             </g>
           );
         })}
